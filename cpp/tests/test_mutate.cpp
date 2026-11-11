@@ -249,7 +249,7 @@ TEST_CASE("mutate golden") {
         INFO(name);
         AnyNet any = genome_from_json(c["genome"].dump());
         Profile p = profile_from_json(c["profile"].dump());
-        std::string expected = std::visit([](auto& n) { return genome_to_json(n); },
+        std::string expected = std::visit([](const auto& n) { return genome_to_json(n); },
                                           genome_from_json(c["expected_genome"].dump()));
         std::visit([&](auto& net) {
             Rng r(c["seed"].get<std::uint64_t>());
@@ -266,9 +266,9 @@ TEST_CASE("create golden") {
                             parse_depth_type(c["depth_type"].get<std::string>()),
                             c["in_qty_max"].get<std::uint32_t>(),
                             parse_priority(c["priority"].get<std::string>()), r);
-        std::string expected = std::visit([](auto& n) { return genome_to_json(n); },
+        std::string expected = std::visit([](const auto& n) { return genome_to_json(n); },
                                           genome_from_json(c["expected_genome"].dump()));
-        CHECK(std::visit([](auto& n) { return genome_to_json(n); }, net) == expected);
+        CHECK(std::visit([](const auto& n) { return genome_to_json(n); }, net) == expected);
     }
 }
 

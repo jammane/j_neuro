@@ -27,7 +27,7 @@ def test_handmade_present():
 
 def test_depth_order_and_same_depth_independence():
     # out <- v(h2 add 1); h2 (depth 20) <- v(h1 mul 2); h1 (depth 10) <- v(in0 mul 3)
-    net = make_net(1, 1, 3, [(D16, V(3, "add", 1.0)), (20, V(4, "mul", 2.0)), (10, V(0, "mul", 3.0))])
+    net = make_net(1, 1, 3, [(D16, V(2, "add", 1.0)), (20, V(3, "mul", 2.0)), (10, V(0, "mul", 3.0))])
     assert net.step([1.0]) == [7.0]
 
 

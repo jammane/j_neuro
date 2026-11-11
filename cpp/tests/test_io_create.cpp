@@ -37,7 +37,7 @@ TEST_CASE("roundtrip all types") {
                                                  {10, V(0, VOp::Div, -1e-07, Inversion::Bitnot)},
                                                  {20, S(0, AggOp::Max, 4)}});
     auto text = genome_to_json(net);
-    CHECK(std::visit([](auto& n) { return genome_to_json(n); }, genome_from_json(text)) == text);
+    CHECK(std::visit([](const auto& n) { return genome_to_json(n); }, genome_from_json(text)) == text);
 }
 
 TEST_CASE("u64 depth roundtrip") {

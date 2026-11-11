@@ -6,3 +6,6 @@
 #include <jneuro/rng.hpp>
 #include <jneuro/aggregate.hpp>
 #include <jneuro/net.hpp>
+#include <jneuro/analysis.hpp>
+#include <jneuro/net_build.hpp>
+#include <jneuro/io.hpp>

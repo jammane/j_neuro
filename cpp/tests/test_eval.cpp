@@ -31,7 +31,7 @@ TEST_CASE("eval golden") {
 }
 
 TEST_CASE("depth order") {
-    auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(3, VOp::Add, 1.0)}, {20, V(4, VOp::Mul, 2.0)},
+    auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(2, VOp::Add, 1.0)}, {20, V(3, VOp::Mul, 2.0)},
                                                  {10, V(0, VOp::Mul, 3.0)}});
     CHECK(net.step({1.0}) == std::vector<double>{7.0});
 }
