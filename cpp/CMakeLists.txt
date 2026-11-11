@@ -40,7 +40,7 @@ if(JNEURO_BUILD_TESTS)
   find_package(Catch2 3 REQUIRED)
   include(CTest)
   include(Catch)
-  add_executable(jneuro_tests
+  set(JNEURO_TEST_SOURCES
     tests/test_numerics.cpp
     tests/test_rng.cpp
     tests/test_aggregate.cpp
@@ -48,7 +48,9 @@ if(JNEURO_BUILD_TESTS)
     tests/test_io_create.cpp
     tests/test_analysis.cpp
     tests/test_removal.cpp
-    tests/test_mutate.cpp)
+    tests/test_mutate.cpp
+    CACHE STRING "Test sources to build (all by default)")
+  add_executable(jneuro_tests ${JNEURO_TEST_SOURCES})
   target_link_libraries(jneuro_tests PRIVATE jneuro Catch2::Catch2WithMain)
   target_compile_definitions(jneuro_tests PRIVATE
     JNEURO_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../tests/golden")

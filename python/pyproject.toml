@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "0.1.0.dev0"
 description = "Evolutionary neural networks with bit-exact, cross-language reproducibility"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "../LICENSE" }
+license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
 dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
