@@ -1,6 +1,6 @@
 # j_neuro Specification
 
-**Version:** 0.2.0-draft
+**Version:** 0.3.0-draft
 
 This specification is **normative** for both the C++ and the Python implementation. Where an
 implementation and this document disagree, the implementation is wrong.
@@ -19,6 +19,7 @@ implementation and this document disagree, the implementation is wrong.
 | 08 | [RNG](08-rng.md) | PRNG and every random distribution, exactly |
 | 09 | [Serialization](09-serialization.md) | Genome, profile and run-log JSON formats |
 | 10 | [Conformance](10-conformance.md) | Shared golden-test format |
+| 11 | [Population](11-population.md) | Container of nets by id, evaluation, operations, RNG modes, replay |
 
 ## Normative language
 
@@ -49,7 +50,8 @@ An implementation conforms to a spec version when:
 Genome and profile files record the spec version they were written under
 ([09](09-serialization.md)).
 
-## Out of scope for v0.2
+## Out of scope
 
-Population management, fitness and selection, and crossover are not specified yet. Mutation
-is defined as a function from one parent genome to one offspring genome.
+Fitness, selection and culling decisions belong to the caller's trainer; the population
+([11](11-population.md)) only supplies outputs by id and operations by id. Crossover is not
+specified: two arbitrary nets have no meaningful combination.

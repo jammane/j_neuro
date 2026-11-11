@@ -7,7 +7,7 @@ from helpers import INF, M, S, V, load_golden, make_net, outputs_for, sample_inp
 
 from jneuro import DepthType, Inversion, Net, Node, Priority, SNeuron, ValidationError, VNeuron, VOp
 from jneuro.analysis import path_rule_ok
-from jneuro.io import RunLog, genome_to_json
+from jneuro.io import genome_to_json
 from jneuro.mutate import Profile, inject_diversity, mutate
 from jneuro.rng import Rng
 
@@ -168,21 +168,6 @@ def test_diversity_counts():
         assert changed in (1, 2)
     a = genome_to_json(inject_diversity(net, 70.0, Rng(9), sigma_reset=3.0))
     assert a == genome_to_json(inject_diversity(net, 70.0, Rng(9), sigma_reset=3.0))
-
-
-# ------------------------------------------------------------------ run log
-
-def test_runlog_roundtrip_with_diversity():
-    log = RunLog(7, Profile.default())
-    log.record(10, {"overall": {"sigma_weight": 0.05}})
-    log.record_diversity(12, 25.0, 1.5)
-    log.record(20, {"m": {"edit_max_pct": 2.0}})
-    again = RunLog.from_json(log.to_json())
-    assert again.to_json() == log.to_json()
-    assert again.profile_at(15).effective("sigma_weight", "v") == 0.05
-    assert not again.profile_at(15).has_override("edit_max_pct", "m")
-    assert again.profile_at(20).effective("edit_max_pct", "m") == 2.0
-    assert again.diversity_events() == [(12, 25.0, 1.5)]
 
 
 DIV = load_golden("diversity")

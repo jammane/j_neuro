@@ -63,6 +63,17 @@ The serialized result MUST be byte-identical to the serialized `expected_genome`
 `inject_diversity(genome, pct, seed(seed), sigma_reset)` serialized MUST be byte-identical to
 `expected_genome`.
 
+### `population`
+
+```json
+{"kind": "population", "log": { "…": "run log" },
+ "expected": {"generation": 1, "ids": [1, 2], "genomes": {"1": { "…": "…" }, "2": { "…": "…" }}},
+ "evaluate": {"inputs": [["…bits…"]], "outputs": {"1": [["…bits…"]], "2": [["…bits…"]]}}}
+```
+
+`Population.replay(log)` MUST yield exactly these ids, generation and genomes (byte-identical),
+and `evaluate` with `skip_warmup = true` MUST yield exactly these outputs.
+
 ### `invalid`
 
 ```json

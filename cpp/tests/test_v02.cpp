@@ -181,23 +181,6 @@ TEST_CASE("v02: diversity counts") {
     CHECK(genome_to_json(inject_diversity(net, 70.0, a, 3.0)) == genome_to_json(inject_diversity(net, 70.0, b, 3.0)));
 }
 
-TEST_CASE("v02: runlog roundtrip with diversity") {
-    RunLog log(7, Profile::defaults());
-    log.record(10, json{{"overall", {{"sigma_weight", 0.05}}}});
-    log.record_diversity(12, 25.0, 1.5);
-    log.record(20, json{{"m", {{"edit_max_pct", 2.0}}}});
-    auto again = RunLog::from_json(log.to_json());
-    CHECK(again.to_json() == log.to_json());
-    CHECK(again.profile_at(15).effective("sigma_weight", NeuronType::V) == 0.05);
-    CHECK_FALSE(again.profile_at(15).has_override("edit_max_pct", NeuronType::M));
-    CHECK(again.profile_at(20).effective("edit_max_pct", NeuronType::M) == 2.0);
-    auto ev = again.diversity_events();
-    REQUIRE(ev.size() == 1);
-    CHECK(ev[0].generation == 12);
-    CHECK(ev[0].pct == 25.0);
-    CHECK(ev[0].sigma_reset == 1.5);
-}
-
 TEST_CASE("v02: diversity golden") {
     auto cases = load_golden("diversity");
     REQUIRE(cases.size() >= 4);

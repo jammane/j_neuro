@@ -41,6 +41,7 @@ A per-type value overrides the overall value for neurons of that type.
 | `min_age_for_removal` | 5 | yes | Generations a neuron must exist before it can trigger a removal |
 | `add_method_weights` | `slot_fill 40, v_insert 30, s_insert 20, m_after_m 10` | no | Odds of each addition method |
 | `slot_fill_type_weights` | `v 1, s 1, m 1` | no | Odds of each neuron type created by slot fill |
+| `rng_mode` | `fresh` | no | Where a population's `mutate` draws random numbers: `fresh` or `shared` ([11](11-population.md#rng-modes)). Ignored by the standalone `mutate` function, which takes its RNG directly. |
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
 changed between generations; every change is recorded in the run log

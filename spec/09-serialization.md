@@ -24,7 +24,7 @@ produce **byte-identical** files (used by conformance, [10](10-conformance.md)).
 ```json
 {
   "format": "j_neuro.genome",
-  "spec_version": "0.2.0",
+  "spec_version": "0.3.0",
   "params": {
     "priority": "SPEED",
     "depth_type": "U16",
@@ -75,7 +75,7 @@ A reader MUST reject a genome unless all of these hold:
 ```json
 {
   "format": "j_neuro.profile",
-  "spec_version": "0.2.0",
+  "spec_version": "0.3.0",
   "overall": {
     "op_change_max_pct": 1.0,
     "edit_max_pct": 5.0,
@@ -104,26 +104,30 @@ only of fields marked overridable in [06](06-mutation.md#mutation-profile).
 
 ## Run log
 
-Reproduces a whole run: the seed, the starting profile, and every profile change.
+The journal of a population ([11](11-population.md#run-log)). Replaying it reproduces the
+population exactly.
 
 ```json
 {
   "format": "j_neuro.runlog",
-  "spec_version": "0.2.0",
-  "seed": 12345,
-  "initial_profile": { "...": "profile object as above" },
-  "changes": [
-    {"generation": 40, "patch": {"overall": {"sigma_weight": 0.05}}},
-    {"generation": 90, "patch": {"m": {"edit_max_pct": null}}},
-    {"generation": 120, "diversity": {"pct": 25.0, "sigma_reset": 1.0}}
+  "spec_version": "0.3.0",
+  "population": {"depth_type": "U32", "in_qty_max": 5, "n_inputs": 4, "n_outputs": 2,
+                 "priority": "BALANCED", "seed": 12345},
+  "profiles": [ { "...": "profile object" } ],
+  "ops": [
+    {"op": "create", "count": 10, "ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], "seed": 998877},
+    {"op": "mutate", "id": 3, "times": 2, "profile": 0, "new_id": 10, "seed": 5566},
+    {"op": "mutate", "id": 4, "times": 1, "profile": 0, "new_id": 11, "seed": null},
+    {"op": "clone", "id": 10, "new_id": 12},
+    {"op": "inject_diversity", "id": 12, "pct": 25.0, "sigma_reset": 1.0, "seed": 4433},
+    {"op": "add", "new_id": 13, "genome": { "...": "genome object" }},
+    {"op": "remove", "id": 0},
+    {"op": "next_generation"}
   ]
 }
 ```
 
-- A change takes effect **before** mutations of the given generation.
-- A `diversity` entry records an `inject_diversity` call made at that generation
-  ([06](06-mutation.md#diversity-injection)). Where it applies within a generation is defined
-  by the population loop, which is out of scope for v0.2.
-- `patch` is a JSON Merge Patch (RFC 7386) applied to the current profile; `null` removes a
-  per-type override.
-- Changes are only made between generations, so replaying the log reproduces the run exactly.
+- `seed` on an operation is the fresh seed it used, or `null` when it drew from the shared
+  stream.
+- `profile` is an index into `profiles`; identical profiles are stored once.
+- `evaluate`, `get`, `ids` and `size` change nothing and are not journaled.

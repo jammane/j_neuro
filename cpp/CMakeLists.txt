@@ -18,6 +18,7 @@ foreach(_v IN LISTS _jn_flag_vars)
 endforeach()
 
 find_package(nlohmann_json 3.11 REQUIRED)
+find_package(Threads REQUIRED)
 
 add_library(jneuro
   src/numerics.cpp
@@ -27,7 +28,7 @@ add_library(jneuro
   src/profile.cpp
   src/io.cpp)
 target_include_directories(jneuro PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(jneuro PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(jneuro PUBLIC nlohmann_json::nlohmann_json Threads::Threads)
 if(MSVC)
   target_compile_options(jneuro PUBLIC /fp:strict)
 else()
@@ -50,6 +51,7 @@ if(JNEURO_BUILD_TESTS)
     tests/test_removal.cpp
     tests/test_mutate.cpp
     tests/test_v02.cpp
+    tests/test_population.cpp
     CACHE STRING "Test sources to build (all by default)")
   add_executable(jneuro_tests ${JNEURO_TEST_SOURCES})
   target_link_libraries(jneuro_tests PRIVATE jneuro Catch2::Catch2WithMain)
