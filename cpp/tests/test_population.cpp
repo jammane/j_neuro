@@ -238,7 +238,7 @@ static void check_population_case(const json& c) {
         const auto& want = c["evaluate"]["outputs"][std::to_string(i)];
         REQUIRE(rows.size() == want.size());
         for (std::size_t s = 0; s < rows.size(); ++s)
-            for (std::size_t o = 0; o < rows[s].size(); ++o) CHECK(bits(rows[s][o]) == want[s][o].get<std::string>());
+            for (std::size_t o = 0; o < rows[s].size(); ++o) CHECK(bits(rows[s][o]) == want[s][o].template get<std::string>());
     }
 }
 

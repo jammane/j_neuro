@@ -32,7 +32,9 @@ DEFAULTS = {
     "min_age_for_removal": 5,
     "add_method_weights": {"slot_fill": 40, "v_insert": 30, "s_insert": 20, "m_after_m": 10},
     "slot_fill_type_weights": {"v": 1, "s": 1, "m": 1},
+    "rng_mode": "fresh",
 }
+CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared")}
 OVERRIDABLE = set(PHASE_FIELDS) | {"sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
                                    "rewire_prob", "insert_inversion_prob", "min_age_for_removal"}
 
@@ -66,6 +68,10 @@ class Profile:
                 raise ValidationError(f"unknown profile field {k!r}")
             if v is None:
                 self.overall[k] = copy.deepcopy(DEFAULTS[k])
+            elif k in CHOICES:
+                if v not in CHOICES[k]:
+                    raise ValidationError(f"{k} must be one of {CHOICES[k]}")
+                self.overall[k] = v
             elif isinstance(DEFAULTS[k], dict):
                 for kk, vv in v.items():
                     if kk not in DEFAULTS[k]:

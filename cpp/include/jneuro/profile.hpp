@@ -23,6 +23,8 @@ public:
     void set_overall(const std::string& field, double v);
 
     const std::string& depth_shift_mode() const { return mode_; }
+    /// "fresh" or "shared" (spec/11); used by Population::mutate.
+    const std::string& rng_mode() const { return rng_mode_; }
     /// Order: slot_fill, v_insert, s_insert, m_after_m.
     const std::array<double, 4>& add_method_weights() const { return amw_; }
     /// Order: v, s, m.
@@ -40,6 +42,7 @@ private:
 
     std::map<std::string, double> overall_;
     std::string mode_ = "uniform";
+    std::string rng_mode_ = "fresh";
     std::array<double, 4> amw_{40, 30, 20, 10};
     std::array<double, 3> sftw_{1, 1, 1};
     std::array<std::map<std::string, double>, 3> per_type_;
@@ -47,32 +50,6 @@ private:
 
 std::string profile_to_json(const Profile& p);
 
-/// Seed, starting profile, every profile change and every diversity injection (spec/09).
-class RunLog {
-public:
-    struct Diversity {
-        std::uint64_t generation;
-        double pct;
-        double sigma_reset;
-    };
-
-    RunLog(std::uint64_t seed, Profile initial) : seed_(seed), initial_(std::move(initial)) {}
-
-    void record(std::uint64_t generation, const nlohmann::json& patch);
-    void record_diversity(std::uint64_t generation, double pct, double sigma_reset = 1.0);
-    /// Profile in effect for mutations of `generation`.
-    Profile profile_at(std::uint64_t generation) const;
-    std::vector<Diversity> diversity_events() const;
-    std::uint64_t seed() const { return seed_; }
-
-    std::string to_json() const;
-    static RunLog from_json(const std::string& text);
-
-private:
-    std::uint64_t seed_;
-    Profile initial_;
-    nlohmann::json entries_ = nlohmann::json::array();
-};
 Profile profile_from_json(const std::string& text);
 
 }  // namespace jneuro

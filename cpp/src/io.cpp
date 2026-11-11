@@ -4,6 +4,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdlib>
+#include <random>
 
 namespace jneuro {
 
@@ -138,6 +139,11 @@ bool version_compatible(const std::string& v) {
     const auto ours = split(kSpecVersion), theirs = split(v);
     if (theirs.size() < 2 || theirs[0] != ours[0]) return false;
     return ours[0] != "0" || theirs[1] == ours[1];
+}
+
+std::uint64_t fresh_seed() {
+    std::random_device rd;
+    return (static_cast<std::uint64_t>(rd()) << 32) ^ static_cast<std::uint64_t>(rd());
 }
 
 AnyNet genome_from_json(const std::string& text) {

@@ -7,7 +7,7 @@ import math
 from .net import MNeuron, Net, Node, SNeuron, VNeuron
 from .types import AggOp, DepthType, Inversion, Priority, ValidationError, VOp
 
-SPEC_VERSION = "0.2.0"
+SPEC_VERSION = "0.3.0"
 GENOME_FORMAT = "j_neuro.genome"
 PROFILE_FORMAT = "j_neuro.profile"
 RUNLOG_FORMAT = "j_neuro.runlog"
@@ -154,44 +154,3 @@ def profile_from_json(text: str):
     d = json.loads(text)
     _check_version(d, PROFILE_FORMAT)
     return Profile.from_dict(d)
-
-
-# ------------------------------------------------------------------ run log
-
-class RunLog:
-    """Seed, starting profile, every profile change and every diversity injection (spec/09)."""
-
-    def __init__(self, seed: int, initial_profile, entries=None):
-        self.seed = seed
-        self.initial_profile = initial_profile
-        self.entries = list(entries or [])   # dicts: {"generation", "patch"} or {"generation", "diversity"}
-
-    def record(self, generation: int, patch: dict):
-        self.entries.append({"generation": generation, "patch": patch})
-
-    def record_diversity(self, generation: int, pct: float, sigma_reset: float = 1.0):
-        self.entries.append({"generation": generation,
-                             "diversity": {"pct": float(pct), "sigma_reset": float(sigma_reset)}})
-
-    def profile_at(self, generation: int):
-        """Profile in effect for mutations of `generation`."""
-        p = self.initial_profile.copy()
-        for e in self.entries:
-            if "patch" in e and e["generation"] <= generation:
-                p.apply_patch(e["patch"])
-        return p
-
-    def diversity_events(self):
-        return [(e["generation"], e["diversity"]["pct"], e["diversity"]["sigma_reset"])
-                for e in self.entries if "diversity" in e]
-
-    def to_json(self) -> str:
-        return _dumps({"format": RUNLOG_FORMAT, "spec_version": SPEC_VERSION, "seed": self.seed,
-                       "initial_profile": self.initial_profile.to_dict(), "changes": self.entries})
-
-    @classmethod
-    def from_json(cls, text: str) -> "RunLog":
-        from .mutate import Profile
-        d = json.loads(text)
-        _check_version(d, RUNLOG_FORMAT)
-        return cls(d["seed"], Profile.from_dict(d["initial_profile"]), d["changes"])

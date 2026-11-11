@@ -28,7 +28,8 @@ const std::set<std::string>& overridable() {
 const char* const kOverallOrder[] = {
     "op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pct", "depth_shift_max_pct",
     "depth_shift_mode", "sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots", "rewire_prob",
-    "insert_inversion_prob", "min_age_for_removal", "add_method_weights", "slot_fill_type_weights"};
+    "insert_inversion_prob", "min_age_for_removal", "add_method_weights", "slot_fill_type_weights",
+    "rng_mode"};
 const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m"};
 const char* const kTypes[] = {"v", "s", "m"};
 
@@ -75,6 +76,11 @@ void Profile::merge_overall(const json& body) {
             if (!v.is_string() || (v != "uniform" && v != "center"))
                 throw ValidationError("depth_shift_mode must be uniform or center");
             mode_ = v.get<std::string>();
+        } else if (k == "rng_mode") {
+            if (v.is_null()) { rng_mode_ = "fresh"; continue; }
+            if (!v.is_string() || (v != "fresh" && v != "shared"))
+                throw ValidationError("rng_mode must be fresh or shared");
+            rng_mode_ = v.get<std::string>();
         } else if (k == "add_method_weights" || k == "slot_fill_type_weights") {
             const bool am = k == "add_method_weights";
             if (v.is_null()) {
@@ -123,6 +129,7 @@ json Profile::to_json() const {
     for (const char* k : kOverallOrder) {
         std::string key = k;
         if (key == "depth_shift_mode") overall[key] = mode_;
+        else if (key == "rng_mode") overall[key] = rng_mode_;
         else if (key == "add_method_weights") {
             json w = json::object();
             for (std::size_t i = 0; i < 4; ++i) w[kMethods[i]] = amw_[i];
@@ -136,7 +143,7 @@ json Profile::to_json() const {
         }
     }
     o["format"] = "j_neuro.profile";
-    o["spec_version"] = "0.2.0";
+    o["spec_version"] = "0.3.0";
     o["overall"] = overall;
     for (std::size_t t = 0; t < 3; ++t) {
         json sec = json::object();
@@ -166,59 +173,6 @@ Profile profile_from_json(const std::string& text) {
     }
     check_format(d, "j_neuro.profile");
     return Profile::from_json(d);
-}
-
-void RunLog::record(std::uint64_t generation, const json& patch) {
-    json e = json::object();
-    e["generation"] = generation;
-    e["patch"] = patch;
-    entries_.push_back(e);
-}
-
-void RunLog::record_diversity(std::uint64_t generation, double pct, double sigma_reset) {
-    json e = json::object();
-    e["generation"] = generation;
-    e["diversity"] = json{{"pct", pct}, {"sigma_reset", sigma_reset}};
-    entries_.push_back(e);
-}
-
-Profile RunLog::profile_at(std::uint64_t generation) const {
-    Profile p = initial_;
-    for (auto& e : entries_)
-        if (e.contains("patch") && e.at("generation").get<std::uint64_t>() <= generation) p.apply_patch(e.at("patch"));
-    return p;
-}
-
-std::vector<RunLog::Diversity> RunLog::diversity_events() const {
-    std::vector<Diversity> out;
-    for (auto& e : entries_)
-        if (e.contains("diversity"))
-            out.push_back({e.at("generation").get<std::uint64_t>(), e.at("diversity").at("pct").get<double>(),
-                           e.at("diversity").at("sigma_reset").get<double>()});
-    return out;
-}
-
-std::string RunLog::to_json() const {
-    json o = json::object();
-    o["format"] = "j_neuro.runlog";
-    o["spec_version"] = "0.2.0";
-    o["seed"] = seed_;
-    o["initial_profile"] = initial_.to_json();
-    o["changes"] = entries_;
-    return o.dump();
-}
-
-RunLog RunLog::from_json(const std::string& text) {
-    json d;
-    try {
-        d = json::parse(text);
-    } catch (const json::exception& e) {
-        throw ValidationError(std::string("invalid JSON: ") + e.what());
-    }
-    check_format(d, "j_neuro.runlog");
-    RunLog log(d.at("seed").get<std::uint64_t>(), Profile::from_json(d.at("initial_profile")));
-    log.entries_ = d.at("changes");
-    return log;
 }
 
 }  // namespace jneuro

@@ -5,7 +5,7 @@
  "sigma_reset": 0.5,
  "genome": {
   "format": "j_neuro.genome",
-  "spec_version": "0.2.0",
+  "spec_version": "0.3.0",
   "params": {
    "priority": "SPEED",
    "depth_type": "U32",
@@ -100,7 +100,7 @@
  },
  "expected_genome": {
   "format": "j_neuro.genome",
-  "spec_version": "0.2.0",
+  "spec_version": "0.3.0",
   "params": {
    "priority": "SPEED",
    "depth_type": "U32",

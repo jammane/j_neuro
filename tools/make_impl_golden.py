@@ -12,7 +12,9 @@ import sys
 from jneuro import DepthType, Net, Priority
 from jneuro.io import genome_to_obj
 from jneuro.mutate import Profile, inject_diversity, mutate
+from jneuro.population import Population
 from jneuro.rng import Rng
+import struct
 
 ROOT = os.path.join("tests", "golden")
 PHASES = ["op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pct",
@@ -114,6 +116,41 @@ def make_diversity():
                                               "expected_genome": genome_to_obj(child)})
 
 
+def make_population():
+    def bits(x):
+        return struct.pack(">d", x).hex()
+
+    def heavy(mode):
+        p = Profile.default()
+        for f in PHASES:
+            p.overall[f] = 45.0
+        p.overall["rng_mode"] = mode
+        p.overall["min_age_for_removal"] = 1
+        return p
+
+    for i, dt in enumerate(["U16", "U32", "U64"]):
+        n_in, n_out, q = 2 + i, 1 + i, [3, 5, 3][i]
+        pop = Population(DepthType[dt], q, n_in, n_out, list(Priority)[i], seed=1000 + i)
+        ids = pop.create(4)                                   # fresh seeds, recorded in the log
+        ids += pop.create(2, rng_mode="shared")
+        for gen in range(6):
+            for nid in list(pop.ids()):
+                pop.mutate(nid, heavy("fresh" if (nid + gen) % 2 else "shared"))
+            for nid in pop.ids()[:-6]:
+                pop.remove(nid)
+            pop.inject_diversity(pop.ids()[0], 40.0, 1.5, "shared")
+            pop.next_generation()
+        pop.clone(pop.ids()[1])
+        rows = [[(r * 0.75 - 1.0) * (k + 1) for k in range(n_in)] for r in range(12)]
+        res = pop.evaluate(rows)
+        write("population", f"population_{dt}", {
+            "kind": "population", "log": json.loads(pop.run_log()),
+            "expected": {"generation": pop.generation, "ids": pop.ids(),
+                         "genomes": {str(k): genome_to_obj(pop.get(k)) for k in pop.ids()}},
+            "evaluate": {"inputs": [[bits(x) for x in r] for r in rows],
+                         "outputs": {str(k): [[bits(y) for y in r] for r in v] for k, v in res.items()}}})
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
     if what in ("create", "all"):
@@ -122,3 +159,5 @@ if __name__ == "__main__":
         make_mutate()
     if what in ("diversity", "all"):
         make_diversity()
+    if what in ("population", "all"):
+        make_population()

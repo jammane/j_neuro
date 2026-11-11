@@ -1,0 +1,1396 @@
+{
+ "kind": "population",
+ "log": {
+  "format": "j_neuro.runlog",
+  "spec_version": "0.3.0",
+  "population": {
+   "depth_type": "U16",
+   "in_qty_max": 3,
+   "n_inputs": 2,
+   "n_outputs": 1,
+   "priority": "SPEED",
+   "seed": 1000
+  },
+  "profiles": [
+   {
+    "format": "j_neuro.profile",
+    "spec_version": "0.3.0",
+    "overall": {
+     "op_change_max_pct": 45.0,
+     "edit_max_pct": 45.0,
+     "growth_max_pct": 45.0,
+     "removal_max_pct": 45.0,
+     "depth_shift_max_pct": 45.0,
+     "depth_shift_mode": "uniform",
+     "sigma_weight": 0.1,
+     "sign_flip_prob": 0.02,
+     "sigma_k": 1.0,
+     "sigma_slots": 1.0,
+     "rewire_prob": 0.1,
+     "insert_inversion_prob": 0.05,
+     "min_age_for_removal": 1,
+     "add_method_weights": {
+      "slot_fill": 40,
+      "v_insert": 30,
+      "s_insert": 20,
+      "m_after_m": 10
+     },
+     "slot_fill_type_weights": {
+      "v": 1,
+      "s": 1,
+      "m": 1
+     },
+     "rng_mode": "shared"
+    },
+    "v": {},
+    "s": {},
+    "m": {}
+   },
+   {
+    "format": "j_neuro.profile",
+    "spec_version": "0.3.0",
+    "overall": {
+     "op_change_max_pct": 45.0,
+     "edit_max_pct": 45.0,
+     "growth_max_pct": 45.0,
+     "removal_max_pct": 45.0,
+     "depth_shift_max_pct": 45.0,
+     "depth_shift_mode": "uniform",
+     "sigma_weight": 0.1,
+     "sign_flip_prob": 0.02,
+     "sigma_k": 1.0,
+     "sigma_slots": 1.0,
+     "rewire_prob": 0.1,
+     "insert_inversion_prob": 0.05,
+     "min_age_for_removal": 1,
+     "add_method_weights": {
+      "slot_fill": 40,
+      "v_insert": 30,
+      "s_insert": 20,
+      "m_after_m": 10
+     },
+     "slot_fill_type_weights": {
+      "v": 1,
+      "s": 1,
+      "m": 1
+     },
+     "rng_mode": "fresh"
+    },
+    "v": {},
+    "s": {},
+    "m": {}
+   }
+  ],
+  "ops": [
+   {
+    "op": "create",
+    "count": 4,
+    "ids": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "seed": 7058222928849655383
+   },
+   {
+    "op": "create",
+    "count": 2,
+    "ids": [
+     4,
+     5
+    ],
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 0,
+    "times": 1,
+    "profile": 0,
+    "new_id": 6,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 1,
+    "times": 1,
+    "profile": 1,
+    "new_id": 7,
+    "seed": 9161033312687334300
+   },
+   {
+    "op": "mutate",
+    "id": 2,
+    "times": 1,
+    "profile": 0,
+    "new_id": 8,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 3,
+    "times": 1,
+    "profile": 1,
+    "new_id": 9,
+    "seed": 5762391153102755355
+   },
+   {
+    "op": "mutate",
+    "id": 4,
+    "times": 1,
+    "profile": 0,
+    "new_id": 10,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 5,
+    "times": 1,
+    "profile": 1,
+    "new_id": 11,
+    "seed": 15307389192862925381
+   },
+   {
+    "op": "remove",
+    "id": 0
+   },
+   {
+    "op": "remove",
+    "id": 1
+   },
+   {
+    "op": "remove",
+    "id": 2
+   },
+   {
+    "op": "remove",
+    "id": 3
+   },
+   {
+    "op": "remove",
+    "id": 4
+   },
+   {
+    "op": "remove",
+    "id": 5
+   },
+   {
+    "op": "inject_diversity",
+    "id": 6,
+    "pct": 40.0,
+    "sigma_reset": 1.5,
+    "seed": null
+   },
+   {
+    "op": "next_generation"
+   },
+   {
+    "op": "mutate",
+    "id": 6,
+    "times": 1,
+    "profile": 1,
+    "new_id": 12,
+    "seed": 18172397178525372158
+   },
+   {
+    "op": "mutate",
+    "id": 7,
+    "times": 1,
+    "profile": 0,
+    "new_id": 13,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 8,
+    "times": 1,
+    "profile": 1,
+    "new_id": 14,
+    "seed": 3062606143866432221
+   },
+   {
+    "op": "mutate",
+    "id": 9,
+    "times": 1,
+    "profile": 0,
+    "new_id": 15,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 10,
+    "times": 1,
+    "profile": 1,
+    "new_id": 16,
+    "seed": 13095994472698365145
+   },
+   {
+    "op": "mutate",
+    "id": 11,
+    "times": 1,
+    "profile": 0,
+    "new_id": 17,
+    "seed": null
+   },
+   {
+    "op": "remove",
+    "id": 6
+   },
+   {
+    "op": "remove",
+    "id": 7
+   },
+   {
+    "op": "remove",
+    "id": 8
+   },
+   {
+    "op": "remove",
+    "id": 9
+   },
+   {
+    "op": "remove",
+    "id": 10
+   },
+   {
+    "op": "remove",
+    "id": 11
+   },
+   {
+    "op": "inject_diversity",
+    "id": 12,
+    "pct": 40.0,
+    "sigma_reset": 1.5,
+    "seed": null
+   },
+   {
+    "op": "next_generation"
+   },
+   {
+    "op": "mutate",
+    "id": 12,
+    "times": 1,
+    "profile": 0,
+    "new_id": 18,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 13,
+    "times": 1,
+    "profile": 1,
+    "new_id": 19,
+    "seed": 3429642780502905554
+   },
+   {
+    "op": "mutate",
+    "id": 14,
+    "times": 1,
+    "profile": 0,
+    "new_id": 20,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 15,
+    "times": 1,
+    "profile": 1,
+    "new_id": 21,
+    "seed": 174990760494543353
+   },
+   {
+    "op": "mutate",
+    "id": 16,
+    "times": 1,
+    "profile": 0,
+    "new_id": 22,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 17,
+    "times": 1,
+    "profile": 1,
+    "new_id": 23,
+    "seed": 3934235134050957203
+   },
+   {
+    "op": "remove",
+    "id": 12
+   },
+   {
+    "op": "remove",
+    "id": 13
+   },
+   {
+    "op": "remove",
+    "id": 14
+   },
+   {
+    "op": "remove",
+    "id": 15
+   },
+   {
+    "op": "remove",
+    "id": 16
+   },
+   {
+    "op": "remove",
+    "id": 17
+   },
+   {
+    "op": "inject_diversity",
+    "id": 18,
+    "pct": 40.0,
+    "sigma_reset": 1.5,
+    "seed": null
+   },
+   {
+    "op": "next_generation"
+   },
+   {
+    "op": "mutate",
+    "id": 18,
+    "times": 1,
+    "profile": 1,
+    "new_id": 24,
+    "seed": 4707934311613963728
+   },
+   {
+    "op": "mutate",
+    "id": 19,
+    "times": 1,
+    "profile": 0,
+    "new_id": 25,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 20,
+    "times": 1,
+    "profile": 1,
+    "new_id": 26,
+    "seed": 9233066633513186897
+   },
+   {
+    "op": "mutate",
+    "id": 21,
+    "times": 1,
+    "profile": 0,
+    "new_id": 27,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 22,
+    "times": 1,
+    "profile": 1,
+    "new_id": 28,
+    "seed": 2576189684071575442
+   },
+   {
+    "op": "mutate",
+    "id": 23,
+    "times": 1,
+    "profile": 0,
+    "new_id": 29,
+    "seed": null
+   },
+   {
+    "op": "remove",
+    "id": 18
+   },
+   {
+    "op": "remove",
+    "id": 19
+   },
+   {
+    "op": "remove",
+    "id": 20
+   },
+   {
+    "op": "remove",
+    "id": 21
+   },
+   {
+    "op": "remove",
+    "id": 22
+   },
+   {
+    "op": "remove",
+    "id": 23
+   },
+   {
+    "op": "inject_diversity",
+    "id": 24,
+    "pct": 40.0,
+    "sigma_reset": 1.5,
+    "seed": null
+   },
+   {
+    "op": "next_generation"
+   },
+   {
+    "op": "mutate",
+    "id": 24,
+    "times": 1,
+    "profile": 0,
+    "new_id": 30,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 25,
+    "times": 1,
+    "profile": 1,
+    "new_id": 31,
+    "seed": 16757973210176168099
+   },
+   {
+    "op": "mutate",
+    "id": 26,
+    "times": 1,
+    "profile": 0,
+    "new_id": 32,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 27,
+    "times": 1,
+    "profile": 1,
+    "new_id": 33,
+    "seed": 5860921668121772951
+   },
+   {
+    "op": "mutate",
+    "id": 28,
+    "times": 1,
+    "profile": 0,
+    "new_id": 34,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 29,
+    "times": 1,
+    "profile": 1,
+    "new_id": 35,
+    "seed": 760607319510555887
+   },
+   {
+    "op": "remove",
+    "id": 24
+   },
+   {
+    "op": "remove",
+    "id": 25
+   },
+   {
+    "op": "remove",
+    "id": 26
+   },
+   {
+    "op": "remove",
+    "id": 27
+   },
+   {
+    "op": "remove",
+    "id": 28
+   },
+   {
+    "op": "remove",
+    "id": 29
+   },
+   {
+    "op": "inject_diversity",
+    "id": 30,
+    "pct": 40.0,
+    "sigma_reset": 1.5,
+    "seed": null
+   },
+   {
+    "op": "next_generation"
+   },
+   {
+    "op": "mutate",
+    "id": 30,
+    "times": 1,
+    "profile": 1,
+    "new_id": 36,
+    "seed": 8393159906521224583
+   },
+   {
+    "op": "mutate",
+    "id": 31,
+    "times": 1,
+    "profile": 0,
+    "new_id": 37,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 32,
+    "times": 1,
+    "profile": 1,
+    "new_id": 38,
+    "seed": 5019886661525299341
+   },
+   {
+    "op": "mutate",
+    "id": 33,
+    "times": 1,
+    "profile": 0,
+    "new_id": 39,
+    "seed": null
+   },
+   {
+    "op": "mutate",
+    "id": 34,
+    "times": 1,
+    "profile": 1,
+    "new_id": 40,
+    "seed": 5983096657974236703
+   },
+   {
+    "op": "mutate",
+    "id": 35,
+    "times": 1,
+    "profile": 0,
+    "new_id": 41,
+    "seed": null
+   },
+   {
+    "op": "remove",
+    "id": 30
+   },
+   {
+    "op": "remove",
+    "id": 31
+   },
+   {
+    "op": "remove",
+    "id": 32
+   },
+   {
+    "op": "remove",
+    "id": 33
+   },
+   {
+    "op": "remove",
+    "id": 34
+   },
+   {
+    "op": "remove",
+    "id": 35
+   },
+   {
+    "op": "inject_diversity",
+    "id": 36,
+    "pct": 40.0,
+    "sigma_reset": 1.5,
+    "seed": null
+   },
+   {
+    "op": "next_generation"
+   },
+   {
+    "op": "clone",
+    "id": 37,
+    "new_id": 42
+   }
+  ]
+ },
+ "expected": {
+  "generation": 6,
+  "ids": [
+   36,
+   37,
+   38,
+   39,
+   40,
+   41,
+   42
+  ],
+  "genomes": {
+   "36": {
+    "format": "j_neuro.genome",
+    "spec_version": "0.3.0",
+    "params": {
+     "priority": "SPEED",
+     "depth_type": "U16",
+     "in_qty_max": 3,
+     "n_inputs": 2,
+     "n_outputs": 1
+    },
+    "next_birth": 7,
+    "nodes": [
+     {
+      "birth": 0,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 1,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 3,
+      "born_gen": 3,
+      "depth": 65535,
+      "neuron": {
+       "type": "v",
+       "input": 3,
+       "inversion": "none",
+       "op": "mul",
+       "weight": 0.8446257823280234
+      }
+     },
+     {
+      "birth": 4,
+      "born_gen": 4,
+      "depth": 26772,
+      "neuron": {
+       "type": "s",
+       "input": 4,
+       "op": "max",
+       "k": 1
+      }
+     },
+     {
+      "birth": 2,
+      "born_gen": 0,
+      "depth": 18395,
+      "neuron": {
+       "type": "m",
+       "op": "median",
+       "slots": [
+        0,
+        1,
+        6
+       ]
+      }
+     },
+     {
+      "birth": 5,
+      "born_gen": 5,
+      "depth": 6782,
+      "neuron": {
+       "type": "v",
+       "input": 0,
+       "inversion": "none",
+       "op": "add",
+       "weight": 0.0
+      }
+     },
+     {
+      "birth": 6,
+      "born_gen": 5,
+      "depth": 8414,
+      "neuron": {
+       "type": "v",
+       "input": 5,
+       "inversion": "none",
+       "op": "mul",
+       "weight": 0.0
+      }
+     }
+    ]
+   },
+   "37": {
+    "format": "j_neuro.genome",
+    "spec_version": "0.3.0",
+    "params": {
+     "priority": "SPEED",
+     "depth_type": "U16",
+     "in_qty_max": 3,
+     "n_inputs": 2,
+     "n_outputs": 1
+    },
+    "next_birth": 4,
+    "nodes": [
+     {
+      "birth": 0,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 1,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 3,
+      "born_gen": 3,
+      "depth": 65535,
+      "neuron": {
+       "type": "v",
+       "input": 3,
+       "inversion": "recip",
+       "op": "div",
+       "weight": 1.0
+      }
+     },
+     {
+      "birth": 2,
+      "born_gen": 0,
+      "depth": 57826,
+      "neuron": {
+       "type": "m",
+       "op": "min",
+       "slots": [
+        0,
+        1,
+        null
+       ]
+      }
+     }
+    ]
+   },
+   "38": {
+    "format": "j_neuro.genome",
+    "spec_version": "0.3.0",
+    "params": {
+     "priority": "SPEED",
+     "depth_type": "U16",
+     "in_qty_max": 3,
+     "n_inputs": 2,
+     "n_outputs": 1
+    },
+    "next_birth": 6,
+    "nodes": [
+     {
+      "birth": 0,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 1,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 2,
+      "born_gen": 0,
+      "depth": 65535,
+      "neuron": {
+       "type": "m",
+       "op": "max",
+       "slots": [
+        0,
+        1,
+        null
+       ]
+      }
+     }
+    ]
+   },
+   "39": {
+    "format": "j_neuro.genome",
+    "spec_version": "0.3.0",
+    "params": {
+     "priority": "SPEED",
+     "depth_type": "U16",
+     "in_qty_max": 3,
+     "n_inputs": 2,
+     "n_outputs": 1
+    },
+    "next_birth": 3,
+    "nodes": [
+     {
+      "birth": 0,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 1,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 2,
+      "born_gen": 0,
+      "depth": 65535,
+      "neuron": {
+       "type": "m",
+       "op": "max",
+       "slots": [
+        0,
+        1,
+        null
+       ]
+      }
+     }
+    ]
+   },
+   "40": {
+    "format": "j_neuro.genome",
+    "spec_version": "0.3.0",
+    "params": {
+     "priority": "SPEED",
+     "depth_type": "U16",
+     "in_qty_max": 3,
+     "n_inputs": 2,
+     "n_outputs": 1
+    },
+    "next_birth": 8,
+    "nodes": [
+     {
+      "birth": 0,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 1,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 3,
+      "born_gen": 0,
+      "depth": 65535,
+      "neuron": {
+       "type": "m",
+       "op": "max",
+       "slots": [
+        3,
+        null,
+        1
+       ]
+      }
+     },
+     {
+      "birth": 4,
+      "born_gen": 3,
+      "depth": 1341,
+      "neuron": {
+       "type": "m",
+       "op": "max",
+       "slots": [
+        4,
+        null,
+        6
+       ]
+      }
+     },
+     {
+      "birth": 2,
+      "born_gen": 0,
+      "depth": 811,
+      "neuron": {
+       "type": "m",
+       "op": "min",
+       "slots": [
+        0,
+        1,
+        null
+       ]
+      }
+     },
+     {
+      "birth": 7,
+      "born_gen": 5,
+      "depth": 102,
+      "neuron": {
+       "type": "s",
+       "input": 7,
+       "op": "min",
+       "k": 1
+      }
+     },
+     {
+      "birth": 6,
+      "born_gen": 4,
+      "depth": 109,
+      "neuron": {
+       "type": "v",
+       "input": 5,
+       "inversion": "none",
+       "op": "mul",
+       "weight": 0.0
+      }
+     },
+     {
+      "birth": 5,
+      "born_gen": 4,
+      "depth": 11,
+      "neuron": {
+       "type": "m",
+       "op": "min",
+       "slots": [
+        0,
+        1,
+        null
+       ]
+      }
+     }
+    ]
+   },
+   "41": {
+    "format": "j_neuro.genome",
+    "spec_version": "0.3.0",
+    "params": {
+     "priority": "SPEED",
+     "depth_type": "U16",
+     "in_qty_max": 3,
+     "n_inputs": 2,
+     "n_outputs": 1
+    },
+    "next_birth": 11,
+    "nodes": [
+     {
+      "birth": 0,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 1,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 3,
+      "born_gen": 1,
+      "depth": 65535,
+      "neuron": {
+       "type": "v",
+       "input": 3,
+       "inversion": "recip",
+       "op": "add",
+       "weight": 0.09975634814877116
+      }
+     },
+     {
+      "birth": 8,
+      "born_gen": 4,
+      "depth": 54845,
+      "neuron": {
+       "type": "v",
+       "input": 5,
+       "inversion": "none",
+       "op": "div",
+       "weight": 1.0
+      }
+     },
+     {
+      "birth": 2,
+      "born_gen": 0,
+      "depth": 48972,
+      "neuron": {
+       "type": "m",
+       "op": "max",
+       "slots": [
+        0,
+        1,
+        null
+       ]
+      }
+     },
+     {
+      "birth": 4,
+      "born_gen": 2,
+      "depth": 54684,
+      "neuron": {
+       "type": "m",
+       "op": "max",
+       "slots": [
+        4,
+        null,
+        7
+       ]
+      }
+     },
+     {
+      "birth": 9,
+      "born_gen": 5,
+      "depth": 4526,
+      "neuron": {
+       "type": "v",
+       "input": 0,
+       "inversion": "none",
+       "op": "div",
+       "weight": 1.0
+      }
+     },
+     {
+      "birth": 10,
+      "born_gen": 5,
+      "depth": 14418,
+      "neuron": {
+       "type": "v",
+       "input": 6,
+       "inversion": "none",
+       "op": "mul",
+       "weight": 0.0
+      }
+     }
+    ]
+   },
+   "42": {
+    "format": "j_neuro.genome",
+    "spec_version": "0.3.0",
+    "params": {
+     "priority": "SPEED",
+     "depth_type": "U16",
+     "in_qty_max": 3,
+     "n_inputs": 2,
+     "n_outputs": 1
+    },
+    "next_birth": 4,
+    "nodes": [
+     {
+      "birth": 0,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 1,
+      "born_gen": 0,
+      "depth": 0
+     },
+     {
+      "birth": 3,
+      "born_gen": 3,
+      "depth": 65535,
+      "neuron": {
+       "type": "v",
+       "input": 3,
+       "inversion": "recip",
+       "op": "div",
+       "weight": 1.0
+      }
+     },
+     {
+      "birth": 2,
+      "born_gen": 0,
+      "depth": 57826,
+      "neuron": {
+       "type": "m",
+       "op": "min",
+       "slots": [
+        0,
+        1,
+        null
+       ]
+      }
+     }
+    ]
+   }
+  }
+ },
+ "evaluate": {
+  "inputs": [
+   [
+    "bff0000000000000",
+    "c000000000000000"
+   ],
+   [
+    "bfd0000000000000",
+    "bfe0000000000000"
+   ],
+   [
+    "3fe0000000000000",
+    "3ff0000000000000"
+   ],
+   [
+    "3ff4000000000000",
+    "4004000000000000"
+   ],
+   [
+    "4000000000000000",
+    "4010000000000000"
+   ],
+   [
+    "4006000000000000",
+    "4016000000000000"
+   ],
+   [
+    "400c000000000000",
+    "401c000000000000"
+   ],
+   [
+    "4011000000000000",
+    "4021000000000000"
+   ],
+   [
+    "4014000000000000",
+    "4024000000000000"
+   ],
+   [
+    "4017000000000000",
+    "4027000000000000"
+   ],
+   [
+    "401a000000000000",
+    "402a000000000000"
+   ],
+   [
+    "401d000000000000",
+    "402d000000000000"
+   ]
+  ],
+  "outputs": {
+   "36": [
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ],
+    [
+     "3fe445617c8af980"
+    ]
+   ],
+   "37": [
+    [
+     "bfe0000000000000"
+    ],
+    [
+     "c000000000000000"
+    ],
+    [
+     "4000000000000000"
+    ],
+    [
+     "3fe999999999999a"
+    ],
+    [
+     "3fe0000000000000"
+    ],
+    [
+     "3fd745d1745d1746"
+    ],
+    [
+     "3fd2492492492492"
+    ],
+    [
+     "3fce1e1e1e1e1e1e"
+    ],
+    [
+     "3fc999999999999a"
+    ],
+    [
+     "3fc642c8590b2164"
+    ],
+    [
+     "3fc3b13b13b13b14"
+    ],
+    [
+     "3fc1a7b9611a7b96"
+    ]
+   ],
+   "38": [
+    [
+     "0000000000000000"
+    ],
+    [
+     "0000000000000000"
+    ],
+    [
+     "3ff0000000000000"
+    ],
+    [
+     "4004000000000000"
+    ],
+    [
+     "4010000000000000"
+    ],
+    [
+     "4016000000000000"
+    ],
+    [
+     "401c000000000000"
+    ],
+    [
+     "4021000000000000"
+    ],
+    [
+     "4024000000000000"
+    ],
+    [
+     "4027000000000000"
+    ],
+    [
+     "402a000000000000"
+    ],
+    [
+     "402d000000000000"
+    ]
+   ],
+   "39": [
+    [
+     "0000000000000000"
+    ],
+    [
+     "0000000000000000"
+    ],
+    [
+     "3ff0000000000000"
+    ],
+    [
+     "4004000000000000"
+    ],
+    [
+     "4010000000000000"
+    ],
+    [
+     "4016000000000000"
+    ],
+    [
+     "401c000000000000"
+    ],
+    [
+     "4021000000000000"
+    ],
+    [
+     "4024000000000000"
+    ],
+    [
+     "4027000000000000"
+    ],
+    [
+     "402a000000000000"
+    ],
+    [
+     "402d000000000000"
+    ]
+   ],
+   "40": [
+    [
+     "0000000000000000"
+    ],
+    [
+     "3ff0000000000000"
+    ],
+    [
+     "4004000000000000"
+    ],
+    [
+     "4010000000000000"
+    ],
+    [
+     "4016000000000000"
+    ],
+    [
+     "401c000000000000"
+    ],
+    [
+     "4021000000000000"
+    ],
+    [
+     "4024000000000000"
+    ],
+    [
+     "4027000000000000"
+    ],
+    [
+     "402a000000000000"
+    ],
+    [
+     "402d000000000000"
+    ]
+   ],
+   "41": [
+    [
+     "7fefffffffffffff"
+    ],
+    [
+     "7fefffffffffffff"
+    ],
+    [
+     "3ff1989a1ccde0b7"
+    ],
+    [
+     "3fdffc020cd11c77"
+    ],
+    [
+     "3fd66268733782dd"
+    ],
+    [
+     "3fd205512d660e80"
+    ],
+    [
+     "3fcf0df578b82a4c"
+    ],
+    [
+     "3fcbd3dff57e14c9"
+    ],
+    [
+     "3fc9919db33bd287"
+    ],
+    [
+     "3fc7e63512f4966c"
+    ],
+    [
+     "3fc69d6e7047a344"
+    ],
+    [
+     "3fc598ad96fc4385"
+    ]
+   ],
+   "42": [
+    [
+     "bfe0000000000000"
+    ],
+    [
+     "c000000000000000"
+    ],
+    [
+     "4000000000000000"
+    ],
+    [
+     "3fe999999999999a"
+    ],
+    [
+     "3fe0000000000000"
+    ],
+    [
+     "3fd745d1745d1746"
+    ],
+    [
+     "3fd2492492492492"
+    ],
+    [
+     "3fce1e1e1e1e1e1e"
+    ],
+    [
+     "3fc999999999999a"
+    ],
+    [
+     "3fc642c8590b2164"
+    ],
+    [
+     "3fc3b13b13b13b14"
+    ],
+    [
+     "3fc1a7b9611a7b96"
+    ]
+   ]
+  }
+ }
+}

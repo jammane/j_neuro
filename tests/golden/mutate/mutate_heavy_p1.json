@@ -4,7 +4,7 @@
  "generation": 20,
  "genome": {
   "format": "j_neuro.genome",
-  "spec_version": "0.2.0",
+  "spec_version": "0.3.0",
   "params": {
    "priority": "SPEED",
    "depth_type": "U32",
@@ -166,7 +166,7 @@
  },
  "profile": {
   "format": "j_neuro.profile",
-  "spec_version": "0.2.0",
+  "spec_version": "0.3.0",
   "overall": {
    "op_change_max_pct": 40.0,
    "edit_max_pct": 40.0,
@@ -191,7 +191,8 @@
     "v": 1,
     "s": 1,
     "m": 1
-   }
+   },
+   "rng_mode": "fresh"
   },
   "v": {},
   "s": {},
@@ -199,7 +200,7 @@
  },
  "expected_genome": {
   "format": "j_neuro.genome",
-  "spec_version": "0.2.0",
+  "spec_version": "0.3.0",
   "params": {
    "priority": "SPEED",
    "depth_type": "U32",

@@ -12,3 +12,4 @@
 #include <jneuro/profile.hpp>
 #include <jneuro/removal.hpp>
 #include <jneuro/mutate.hpp>
+#include <jneuro/population.hpp>

@@ -48,7 +48,7 @@ def genome(n_in, n_out, q, noninput, depth_type="U16"):
         nodes.append({"birth": n_in + j, "born_gen": 0, "depth": depth, "neuron": neuron})
     return {
         "format": "j_neuro.genome",
-        "spec_version": "0.2.0",
+        "spec_version": "0.3.0",
         "params": {"priority": "SPEED", "depth_type": depth_type, "in_qty_max": q,
                    "n_inputs": n_in, "n_outputs": n_out},
         "next_birth": len(nodes),
@@ -157,7 +157,7 @@ bad("duplicate_birth", "birth", lambda g: g["nodes"][4].__setitem__("birth", 3))
 bad("birth_too_large", "next_birth", lambda g: g.__setitem__("next_birth", 5))
 bad("format", "format", lambda g: g.__setitem__("format", "other"))
 bad("major_version", "spec_version", lambda g: g.__setitem__("spec_version", "1.0.0"))
-bad("minor_version_pre_1", "spec_version 0.x minor", lambda g: g.__setitem__("spec_version", "0.1.0"))
+bad("minor_version_pre_1", "spec_version 0.x minor", lambda g: g.__setitem__("spec_version", "0.2.0"))
 bad("median_even_k", "median k",
     lambda g: g["nodes"][4].__setitem__("neuron", s(1, "median", 2)))
 bad("k_too_large", "k range", lambda g: g["nodes"][4].__setitem__("neuron", s(1, "mean", 5)))

@@ -55,11 +55,16 @@ without an explicit decision by the maintainer and may be revisited.
 | P16 | nlohmann/json (MIT) for C++ parsing. | Exact uint64 support; attribution-only license. |
 | P17 | Commercial license terms are drafted outside this repository. | Legal, not code. |
 
-## Open
+## Population (v0.3)
 
-| # | Topic |
-|---|---|
-| P15 | Population, selection, fitness and crossover (evolution loop). Next design topic. |
+| # | Decision | Why |
+|---|---|---|
+| P15 | The library supplies a `Population` (nets by stable id, `evaluate`, `mutate`/`clone`/`inject_diversity`/`remove`, generation counter); scoring, selection and culling belong to the caller's trainer. | Training strategy is the user's job; the library supplies outputs and operations. |
+| P15a | Ids are never reused; `mutate` returns an offspring id and keeps the parent; `inject_diversity` works in place. | Stored ids stay valid after culling; elitism is trivial. |
+| P15b | RNG mode is a profile setting, `rng_mode` = `fresh` (default, OS entropy per operation) or `shared` (population stream). Fresh seeds are recorded in the run log. | Exploration by default, yet every run stays exactly replayable. |
+| P15c | Population priority controls evaluation concurrency (MEMORY 1 thread, BALANCED half, SPEED all); Python evaluates sequentially (GIL). | Concurrency is a speed/memory trade-off and cannot change results. |
+| P15d | No mixed nets in a population; no crossover. | Arbitrary nets have no meaningful combination. |
+| P15e | The run log is the population's operation journal (replaces the 0.2 profile/diversity log). | One mechanism for reproducibility. |
 
 ## Found during implementation (v0.1)
 

@@ -218,3 +218,10 @@ def test_population_golden(name, case):
     ev = case["evaluate"]
     res = q.evaluate([[from_hex(h) for h in row] for row in ev["inputs"]])
     assert {str(i): [[bits(y) for y in r] for r in rows] for i, rows in res.items()} == ev["outputs"]
+
+
+def test_returned_ids_do_not_alias_the_log():
+    p = pop()
+    ids = p.create(2)
+    ids += [99]
+    assert json.loads(p.run_log())["ops"][0]["ids"] == [0, 1]

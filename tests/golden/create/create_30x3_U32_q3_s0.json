@@ -8,7 +8,7 @@
  "priority": "BALANCED",
  "expected_genome": {
   "format": "j_neuro.genome",
-  "spec_version": "0.2.0",
+  "spec_version": "0.3.0",
   "params": {
    "priority": "BALANCED",
    "depth_type": "U32",

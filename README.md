@@ -6,8 +6,9 @@ An **evolutionary neural-network library**, written twice — once in **C++** an
 **Python** — as exact mirrors of a single language-neutral specification. Networks are not
 trained by gradients; they are **grown, tuned and pruned by mutation**.
 
-> **Status:** spec v0.2.0-draft is implemented in both Python and C++. The two produce
-> byte-identical results on every shared golden case. Next: the population / evolution loop.
+> **Status:** spec v0.3.0-draft is implemented in both Python and C++. The two produce
+> byte-identical results on every shared golden case, and a run logged in either language
+> replays exactly in the other.
 
 ## Quick start
 
@@ -30,6 +31,28 @@ auto& net = std::get<jneuro::Net<std::uint32_t>>(any);
 auto out = net.step({0.1, 0.2, 0.3, 0.4});
 jneuro::Rng rng(42);
 auto child = jneuro::mutate(net, jneuro::Profile::defaults(), 1, rng);
+```
+
+### Writing a trainer
+
+j_neuro does not decide which nets are good; your trainer does. A `Population` gives you every
+net's outputs by id and operations to apply by id:
+
+```python
+from jneuro import DepthType
+from jneuro.population import Population
+
+pop = Population(DepthType.U32, 5, n_inputs=4, n_outputs=2)
+pop.create(50)
+for gen in range(100):
+    results = pop.evaluate(inputs)                     # {id: output rows}, warm-up skipped
+    ranked = sorted(results, key=lambda i: my_score(results[i]))   # your fitness
+    for i in ranked[:25]:
+        pop.remove(i)                                  # cull
+    for i in ranked[25:]:
+        pop.mutate(i, profile, times=2)                # offspring get new ids
+    pop.next_generation()
+open("run.json", "w").write(pop.run_log())             # replay exactly with Population.replay
 ```
 
 Build and test instructions: [cpp/README.md](cpp/README.md), [python/README.md](python/README.md).

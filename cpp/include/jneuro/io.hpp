@@ -10,12 +10,17 @@
 
 namespace jneuro {
 
-inline constexpr const char* kSpecVersion = "0.2.0";
+inline constexpr const char* kSpecVersion = "0.3.0";
 
 /// Same MAJOR; while MAJOR is 0, also the same MINOR (spec/README).
 bool version_compatible(const std::string& v);
 
 using AnyNet = std::variant<Net<std::uint16_t>, Net<std::uint32_t>, Net<std::uint64_t>>;
+
+/// Validate a document's format and spec_version (throws ValidationError).
+void check_format(const nlohmann::json& d, const char* fmt);
+/// A new 64-bit seed from the operating system's entropy source.
+std::uint64_t fresh_seed();
 
 /// Canonical text of a finite binary64 value (Python repr rules, spec/09).
 std::string format_double(double x);

@@ -36,7 +36,7 @@ def test_format_double(x, s):
 def test_canonical_text():
     net = make_net(1, 1, 3, [(D16, V(0, "add", 0.5))])
     assert genome_to_json(net) == (
-        '{"format":"j_neuro.genome","spec_version":"0.2.0","params":{"priority":"SPEED",'
+        '{"format":"j_neuro.genome","spec_version":"0.3.0","params":{"priority":"SPEED",'
         '"depth_type":"U16","in_qty_max":3,"n_inputs":1,"n_outputs":1},"next_birth":2,'
         '"nodes":[{"birth":0,"born_gen":0,"depth":0},{"birth":1,"born_gen":0,"depth":65535,'
         '"neuron":{"type":"v","input":0,"inversion":"none","op":"add","weight":0.5}}]}')
