@@ -7,9 +7,15 @@ produce **byte-identical** files (used by conformance, [10](10-conformance.md)).
 
 - Integers (ids, depths, counts) are JSON integers. Readers MUST parse them exactly, including
   `U64` depths above 2⁵³.
-- binary64 values (weights) are JSON numbers written in the **shortest representation that
-  round-trips exactly** (C++ `std::to_chars`, Python `repr`), parsed exactly. Weights are
-  always finite.
+- binary64 values (weights) are JSON numbers, parsed exactly, written exactly as Python's
+  `repr(float)` writes them:
+  - digits: the shortest decimal digit string that round-trips exactly;
+  - if `1e-4 ≤ |x| < 1e16` (or `x` is zero), positional notation with at least one digit after
+    the point (`1.0`, `0.0001`, `123.25`, `-0.0`);
+  - otherwise scientific notation `d[.ddd]e±XX` with at least two exponent digits
+    (`1e+16`, `1.5e-05`, `5e-324`).
+
+  Weights are always finite.
 - **Canonical form** (what writers emit): compact JSON with no whitespace, separators `,` and
   `:`, keys in the order shown. The examples below are pretty-printed for reading only.
 

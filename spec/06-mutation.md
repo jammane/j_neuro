@@ -168,8 +168,8 @@ unchanged.
 2. **Find the gap.** `lo` = (largest depth among N's connections) + 1, or 1 if N has none.
    `hi = depth(A) − 1`.
    If `lo > hi` and A is hidden: let `ub` = (smallest depth among A's readers) − 1, or
-   `D_MAX − 1` if A has no readers; if `ub > depth(A)`, set `depth(A) = ub` and recompute
-   `hi`. If still `lo > hi` → skip.
+   `D_MAX − 1` if A has no readers. If `lo ≤ ub − 1`, set `depth(A) = ub` and
+   `hi = ub − 1`; otherwise skip (A is not moved).
 3. **Place B.** `depth(B) = lo + below(hi − lo + 1)`. B is appended as a new node. N, with its
    `birth` and `born_gen`, moves to B.
 4. **Create X** at A:

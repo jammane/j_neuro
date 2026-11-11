@@ -66,7 +66,10 @@ depend on each other.
 ## Minimal net
 
 `create(n_inputs, n_outputs, depth_type, in_qty_max, priority, rng)` builds the smallest net
-satisfying the path rule. All new nodes get `born_gen = 0` and consecutive `birth` ids equal
+satisfying the path rule. The caller supplies only the input and output counts; no layers or
+starting neurons are specified by hand. All other arguments are optional, with these defaults
+(identical in both implementations): `depth_type = U32`, `in_qty_max = 5`,
+`priority = BALANCED`, `rng = seed(0)`. All new nodes get `born_gen = 0` and consecutive `birth` ids equal
 to their `id`.
 
 Let `n = n_inputs`, `Q = in_qty_max`.

@@ -1,0 +1,121 @@
+{
+ "kind": "eval",
+ "genome": {
+  "format": "j_neuro.genome",
+  "spec_version": "0.1.0",
+  "params": {
+   "priority": "SPEED",
+   "depth_type": "U16",
+   "in_qty_max": 3,
+   "n_inputs": 1,
+   "n_outputs": 4
+  },
+  "next_birth": 5,
+  "nodes": [
+   {
+    "birth": 0,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 1,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "v",
+     "input": 0,
+     "inversion": "bitnot",
+     "op": "mul",
+     "weight": 1.0
+    }
+   },
+   {
+    "birth": 2,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "v",
+     "input": 0,
+     "inversion": "recip",
+     "op": "mul",
+     "weight": 1.0
+    }
+   },
+   {
+    "birth": 3,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "v",
+     "input": 0,
+     "inversion": "bitnot",
+     "op": "add",
+     "weight": 0.0
+    }
+   },
+   {
+    "birth": 4,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "v",
+     "input": 0,
+     "inversion": "recip",
+     "op": "div",
+     "weight": 2.0
+    }
+   }
+  ]
+ },
+ "priorities": [
+  "SPEED",
+  "MEMORY",
+  "BALANCED"
+ ],
+ "steps": [
+  {
+   "inputs": [
+    "3ff0000000000000"
+   ],
+   "outputs": [
+    "c00fffffffffffff",
+    "3ff0000000000000",
+    "c00fffffffffffff",
+    "3fe0000000000000"
+   ]
+  },
+  {
+   "inputs": [
+    "0000000000000000"
+   ],
+   "outputs": [
+    "0000000000000000",
+    "7ff0000000000000",
+    "0000000000000000",
+    "7ff0000000000000"
+   ]
+  },
+  {
+   "inputs": [
+    "4000000000000000"
+   ],
+   "outputs": [
+    "bfffffffffffffff",
+    "3fe0000000000000",
+    "bfffffffffffffff",
+    "3fd0000000000000"
+   ]
+  },
+  {
+   "inputs": [
+    "fff0000000000000"
+   ],
+   "outputs": [
+    "000fffffffffffff",
+    "0000000000000000",
+    "000fffffffffffff",
+    "0000000000000000"
+   ]
+  }
+ ]
+}
