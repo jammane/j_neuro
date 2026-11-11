@@ -71,6 +71,11 @@ Keeping the module boundaries identical makes the two code bases easy to compare
 
 Every combination MUST produce identical results; golden `eval` cases run under all three.
 
+**Vectorization.** The bit-exact rules forbid reordering arithmetic *within* one neuron (for
+example the compensated mean), not computing many neurons at once. All neurons at one depth
+are independent, so a future SIMD or matrix layout can evaluate them side by side, one neuron
+per lane, each in its own fixed order. Independent episodes or nets can also run in parallel.
+
 ## Testing strategy
 
 1. Unit tests per module in each language.

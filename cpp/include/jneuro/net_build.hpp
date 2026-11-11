@@ -77,6 +77,7 @@ Net<D> Net<D>::create(std::uint32_t n_inputs, std::uint32_t n_outputs, std::uint
             net.nodes[n_inputs + o].neuron = MNeuron{op, slots(level, 0, level.size())};
         }
     }
+    if (net.nodes.size() > d_max) throw ValidationError("node cap: too many nodes for the depth type");
     for (std::size_t i = 0; i < net.nodes.size(); ++i) net.nodes[i].birth = i;
     net.next_birth = net.nodes.size();
     return net;
@@ -87,6 +88,7 @@ void Net<D>::validate() const {
     detail::check_params(n_inputs, n_outputs, in_qty_max);
     const std::size_t n = nodes.size();
     if (n < std::size_t{n_inputs} + n_outputs) throw ValidationError("fewer nodes than inputs + outputs");
+    if (n > d_max) throw ValidationError("node cap: more than D_MAX nodes");
     std::set<std::uint64_t> births;
     for (NodeId i = 0; i < n; ++i) {
         const auto& node = nodes[i];

@@ -73,6 +73,16 @@ class Net:
         return Net(self.priority, self.depth_type, self.in_qty_max, self.n_inputs,
                    self.n_outputs, _copy.deepcopy(self.nodes), self.next_birth)
 
+    def get_warmup_steps(self) -> int:
+        """Steps after a reset before every s_neuron history on any path is filled (spec/05)."""
+        from .analysis import connections
+        w = [0] * len(self.nodes)
+        for nid in self._order():
+            n = self.nodes[nid].neuron
+            own = n.k if isinstance(n, SNeuron) else 0
+            w[nid] = own + max((w[c] for c in connections(n)), default=0)
+        return max((w[o] for o in range(self.n_inputs, self.n_inputs + self.n_outputs)), default=0)
+
     # ------------------------------------------------------------ evaluation (spec/05)
 
     def reset(self):
@@ -187,6 +197,8 @@ class Net:
                     nodes[nid].depth = (d_max // (n_levels + 1)) * li
             for o in range(n_outputs):
                 nodes[n_inputs + o].neuron = MNeuron(AggOp(rng.choice(4)), slots(level))
+        if len(nodes) > d_max:
+            raise ValidationError(f"node cap: {len(nodes)} nodes exceed D_MAX of {depth_type.name}")
         for i, node in enumerate(nodes):
             node.birth = i
         return cls(priority, depth_type, q, n_inputs, n_outputs, nodes, len(nodes))
@@ -201,6 +213,8 @@ class Net:
         if n < self.n_inputs + self.n_outputs:
             raise ValidationError("fewer nodes than inputs + outputs")
         d_max = self.d_max
+        if n > d_max:
+            raise ValidationError(f"node cap: {n} nodes exceed D_MAX")
         births = set()
         for i, node in enumerate(self.nodes):
             if not isinstance(node.depth, int) or isinstance(node.depth, bool) or not 0 <= node.depth <= d_max:

@@ -1,0 +1,148 @@
+{
+ "kind": "diversity",
+ "seed": 41,
+ "pct": 25.0,
+ "sigma_reset": 1.0,
+ "genome": {
+  "format": "j_neuro.genome",
+  "spec_version": "0.2.0",
+  "params": {
+   "priority": "SPEED",
+   "depth_type": "U32",
+   "in_qty_max": 5,
+   "n_inputs": 5,
+   "n_outputs": 2
+  },
+  "next_birth": 7,
+  "nodes": [
+   {
+    "birth": 0,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 1,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 2,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 3,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 4,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 5,
+    "born_gen": 0,
+    "depth": 4294967295,
+    "neuron": {
+     "type": "m",
+     "op": "median",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ]
+    }
+   },
+   {
+    "birth": 6,
+    "born_gen": 0,
+    "depth": 4294967295,
+    "neuron": {
+     "type": "m",
+     "op": "max",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ]
+    }
+   }
+  ]
+ },
+ "expected_genome": {
+  "format": "j_neuro.genome",
+  "spec_version": "0.2.0",
+  "params": {
+   "priority": "SPEED",
+   "depth_type": "U32",
+   "in_qty_max": 5,
+   "n_inputs": 5,
+   "n_outputs": 2
+  },
+  "next_birth": 7,
+  "nodes": [
+   {
+    "birth": 0,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 1,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 2,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 3,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 4,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 5,
+    "born_gen": 0,
+    "depth": 4294967295,
+    "neuron": {
+     "type": "m",
+     "op": "median",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ]
+    }
+   },
+   {
+    "birth": 6,
+    "born_gen": 0,
+    "depth": 4294967295,
+    "neuron": {
+     "type": "m",
+     "op": "max",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ]
+    }
+   }
+  ]
+ }
+}

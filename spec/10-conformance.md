@@ -53,6 +53,16 @@ listed priority.
 
 The serialized result MUST be byte-identical to the serialized `expected_genome`.
 
+### `diversity`
+
+```json
+{"kind": "diversity", "seed": 3, "pct": 40.0, "sigma_reset": 1.0,
+ "genome": { "…": "…" }, "expected_genome": { "…": "…" }}
+```
+
+`inject_diversity(genome, pct, seed(seed), sigma_reset)` serialized MUST be byte-identical to
+`expected_genome`.
+
 ### `invalid`
 
 ```json

@@ -124,9 +124,20 @@ void check_format(const json& d, const char* fmt) {
     if (!d.contains("spec_version") || !d.at("spec_version").is_string())
         throw ValidationError("missing spec_version");
     std::string v = d.at("spec_version").get<std::string>();
-    std::string ours = kSpecVersion;
-    if (v.substr(0, v.find('.')) != ours.substr(0, ours.find('.')))
-        throw ValidationError("unsupported spec_version " + v);
+    if (!version_compatible(v)) throw ValidationError("unsupported spec_version " + v);
+}
+
+bool version_compatible(const std::string& v) {
+    auto split = [](const std::string& s) {
+        std::vector<std::string> parts;
+        std::size_t start = 0;
+        for (std::size_t i = 0; i <= s.size(); ++i)
+            if (i == s.size() || s[i] == '.') { parts.push_back(s.substr(start, i - start)); start = i + 1; }
+        return parts;
+    };
+    const auto ours = split(kSpecVersion), theirs = split(v);
+    if (theirs.size() < 2 || theirs[0] != ours[0]) return false;
+    return ours[0] != "0" || theirs[1] == ours[1];
 }
 
 AnyNet genome_from_json(const std::string& text) {

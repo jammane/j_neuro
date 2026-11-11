@@ -81,6 +81,9 @@ public:
     /// Throws ValidationError unless every invariant of spec/03 and spec/09 holds.
     void validate() const;
 
+    /// Steps after a reset before every s_neuron history on any path is filled (spec/05).
+    std::uint64_t get_warmup_steps() const;
+
     /// Evaluate one step (spec/05). Call reset() after editing nodes directly.
     std::vector<double> step(const std::vector<double>& inputs);
     /// Clear all s_neuron state and cached evaluation plans.
@@ -133,6 +136,24 @@ std::vector<NodeId> Net<D>::evaluation_order() const {
     std::stable_sort(order.begin(), order.end(),
                      [&](NodeId a, NodeId b) { return nodes[a].depth < nodes[b].depth; });
     return order;
+}
+
+template <class D>
+std::uint64_t Net<D>::get_warmup_steps() const {
+    std::vector<std::uint64_t> w(nodes.size(), 0);
+    for (NodeId id : evaluation_order()) {
+        const Neuron& n = *nodes[id].neuron;
+        std::uint64_t best = 0;
+        auto see = [&](const std::optional<NodeId>& r) { if (r && w[*r] > best) best = w[*r]; };
+        if (auto* m = std::get_if<MNeuron>(&n)) for (auto& s : m->slots) see(s);
+        else if (auto* v = std::get_if<VNeuron>(&n)) see(v->input);
+        else see(std::get<SNeuron>(n).input);
+        const auto* s = std::get_if<SNeuron>(&n);
+        w[id] = (s ? s->k : 0) + best;
+    }
+    std::uint64_t out = 0;
+    for (NodeId o = n_inputs; o < n_inputs + n_outputs; ++o) out = std::max(out, w[o]);
+    return out;
 }
 
 template <class D>

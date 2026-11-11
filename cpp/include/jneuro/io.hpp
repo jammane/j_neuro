@@ -10,7 +10,10 @@
 
 namespace jneuro {
 
-inline constexpr const char* kSpecVersion = "0.1.0";
+inline constexpr const char* kSpecVersion = "0.2.0";
+
+/// Same MAJOR; while MAJOR is 0, also the same MINOR (spec/README).
+bool version_compatible(const std::string& v);
 
 using AnyNet = std::variant<Net<std::uint16_t>, Net<std::uint32_t>, Net<std::uint64_t>>;
 

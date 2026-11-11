@@ -3,6 +3,7 @@ import math
 import struct
 
 _MASK64 = (1 << 64) - 1
+MAX_FINITE = 1.7976931348623157e308
 
 
 def to_bits(x: float) -> int:
@@ -14,9 +15,13 @@ def from_bits(b: int) -> float:
 
 
 def canon(x: float) -> float:
-    """NaN and -0.0 become +0.0; everything else (including +-inf) is unchanged."""
+    """NaN and -0.0 become +0.0, +-inf become +-MAX_FINITE; finite values are unchanged."""
     if x != x or x == 0.0:
         return 0.0
+    if x == math.inf:
+        return MAX_FINITE
+    if x == -math.inf:
+        return -MAX_FINITE
     return x
 
 

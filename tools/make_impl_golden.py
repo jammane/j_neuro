@@ -11,7 +11,7 @@ import sys
 
 from jneuro import DepthType, Net, Priority
 from jneuro.io import genome_to_obj
-from jneuro.mutate import Profile, mutate
+from jneuro.mutate import Profile, inject_diversity, mutate
 from jneuro.rng import Rng
 
 ROOT = os.path.join("tests", "golden")
@@ -98,9 +98,27 @@ def make_mutate():
                    "expected_genome": genome_to_obj(child)})
 
 
+def make_diversity():
+    grow = Profile.default()
+    for f in PHASES:
+        grow.overall[f] = 35.0
+    for i, (pct, sigma) in enumerate([(0.0, 1.0), (25.0, 1.0), (60.0, 0.5), (100.0, 3.0)]):
+        r = Rng(900 + i)
+        net = Net.create(5, 2, DepthType.U32, 5, Priority.SPEED, r)
+        for gen in range(1, 10):
+            net = mutate(net, grow, gen, r)
+        seed = 40 + i
+        child = inject_diversity(net, pct, Rng(seed), sigma)
+        write("diversity", f"diversity_{i}", {"kind": "diversity", "seed": seed, "pct": pct,
+                                              "sigma_reset": sigma, "genome": genome_to_obj(net),
+                                              "expected_genome": genome_to_obj(child)})
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
     if what in ("create", "all"):
         make_create()
     if what in ("mutate", "all"):
         make_mutate()
+    if what in ("diversity", "all"):
+        make_diversity()

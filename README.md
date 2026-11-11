@@ -6,19 +6,21 @@ An **evolutionary neural-network library**, written twice — once in **C++** an
 **Python** — as exact mirrors of a single language-neutral specification. Networks are not
 trained by gradients; they are **grown, tuned and pruned by mutation**.
 
-> **Status:** spec v0.1.0-draft is implemented in both Python and C++. The two produce
-> byte-identical results on every shared golden case.
+> **Status:** spec v0.2.0-draft is implemented in both Python and C++. The two produce
+> byte-identical results on every shared golden case. Next: the population / evolution loop.
 
 ## Quick start
 
 ```python
 from jneuro import Net
-from jneuro.mutate import Profile, mutate
+from jneuro.mutate import Profile, inject_diversity, mutate
 from jneuro.rng import Rng
 
 net = Net.create(4, 2)              # minimal net from input/output counts only
 print(net.step([0.1, 0.2, 0.3, 0.4]))
 child = mutate(net, Profile.default(), generation=1, rng=Rng(42))
+skip = net.get_warmup_steps()        # outputs to ignore after reset() (s_neuron history filling)
+fresh = inject_diversity(child, 20.0, Rng(7))   # explicit: re-randomize 20% of v weights
 ```
 
 ```cpp

@@ -27,12 +27,14 @@ DEFAULTS = {
     "sign_flip_prob": 0.02,
     "sigma_k": 1.0,
     "sigma_slots": 1.0,
+    "rewire_prob": 0.1,
+    "insert_inversion_prob": 0.05,
     "min_age_for_removal": 5,
     "add_method_weights": {"slot_fill": 40, "v_insert": 30, "s_insert": 20, "m_after_m": 10},
     "slot_fill_type_weights": {"v": 1, "s": 1, "m": 1},
 }
 OVERRIDABLE = set(PHASE_FIELDS) | {"sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
-                                   "min_age_for_removal"}
+                                   "rewire_prob", "insert_inversion_prob", "min_age_for_removal"}
 
 
 def _tkey(t) -> str:
@@ -191,6 +193,8 @@ class _Mutation:
             return None
         n = self.net.nodes[nid].neuron
         rng, p = self.rng, self.p
+        if t in ("v", "s") and rng.u() < p.effective("rewire_prob", t):
+            return self.rewire(nid, n, t)
         if t == "v":
             z = rng.normal()
             sw = p.effective("sigma_weight", "v")
@@ -238,11 +242,34 @@ class _Mutation:
                 changed = True
         return t if changed else None
 
+    def rewire(self, nid, n, t):
+        net, rng = self.net, self.rng
+        old = n.input
+        if old is not None and readers(net, self.removed)[old] == [nid]:
+            return None                                   # old input would be orphaned
+        my_depth = net.nodes[nid].depth
+        cands = [j for j in self.live_nodes() if net.nodes[j].depth < my_depth and j != old]
+        if not cands:
+            return None
+        n.input = cands[rng.below(len(cands))]
+        if not path_rule_ok(net, self.removed):
+            n.input = old
+            return None
+        return t
+
+    def new_inversion(self):
+        if self.rng.u() < self.p.effective("insert_inversion_prob", "v"):
+            return Inversion(1 + self.rng.below(2))
+        return Inversion.NONE
+
     # phase 3
     def growth(self, caps, used):
         rng = self.rng
         w = self.p.overall["add_method_weights"]
         method = METHODS[rng.weighted([float(w[m]) for m in METHODS])]
+        needed = 2 if method == "slot_fill" else 1
+        if len(self.live_nodes()) + needed > self.net.d_max:
+            return None                                   # node cap (spec/03)
         if method == "slot_fill":
             return self.slot_fill(caps, used)
         t = {"v_insert": "v", "s_insert": "s", "m_after_m": "m"}[method]
@@ -277,7 +304,7 @@ class _Mutation:
         net.nodes.append(Node(node_a.birth, node_a.born_gen, d_b, node_a.neuron))
         if method == "v_insert":
             op = VOp(rng.choice(4))
-            x = VNeuron(b, Inversion.NONE, op, IDENTITY_WEIGHT[op])
+            x = VNeuron(b, self.new_inversion(), op, IDENTITY_WEIGHT[op])
         elif method == "s_insert":
             x = SNeuron(b, AggOp(rng.choice(4)), 1)
         else:
@@ -312,7 +339,7 @@ class _Mutation:
         if t == "v":
             inp = cands[rng.below(len(cands))]
             op = VOp(rng.choice(4))
-            qn = VNeuron(inp, Inversion.NONE, op, IDENTITY_WEIGHT[op])
+            qn = VNeuron(inp, self.new_inversion(), op, IDENTITY_WEIGHT[op])
         elif t == "s":
             inp = cands[rng.below(len(cands))]
             qn = SNeuron(inp, AggOp(rng.choice(4)), 1)
@@ -385,3 +412,14 @@ class _Mutation:
 def mutate(parent: Net, profile: Profile, generation: int, rng: Rng) -> Net:
     """Return a mutated offspring; the parent is not modified (spec/06)."""
     return _Mutation(parent, profile, generation, rng).run()
+
+
+def inject_diversity(parent: Net, pct: float, rng: Rng, sigma_reset: float = 1.0) -> Net:
+    """Give pct % of the v_neurons a new random weight; only weights change (spec/06)."""
+    net = parent.copy()
+    vs = [i for i, node in enumerate(net.nodes) if isinstance(node.neuron, VNeuron)]
+    count = min(len(vs), rng.prob_round(pct * float(len(vs)) / 100.0))
+    for _ in range(count):
+        i = vs.pop(rng.below(len(vs)))
+        net.nodes[i].neuron.weight = rng.normal() * sigma_reset
+    return net

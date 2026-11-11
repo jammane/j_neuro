@@ -12,6 +12,10 @@ namespace jneuro {
 template <class D>
 Net<D> mutate(const Net<D>& parent, const Profile& profile, std::uint64_t generation, Rng& rng);
 
+/// Give pct % of the v_neurons a new random weight; only weights change (spec/06).
+template <class D>
+Net<D> inject_diversity(const Net<D>& parent, double pct, Rng& rng, double sigma_reset = 1.0);
+
 // ------------------------------------------------------------------ implementation
 
 namespace detail {
@@ -125,6 +129,8 @@ private:
         auto id = pick_neuron();
         if (!id) return std::nullopt;
         Neuron& n = *net_.nodes[*id].neuron;
+        const NeuronType t = type_of(n);
+        if (t != NeuronType::M && rng_.u() < p_.effective("rewire_prob", t)) return rewire(*id, t);
         if (auto* v = std::get_if<VNeuron>(&n)) {
             const double z = rng_.normal();
             const double sw = p_.effective("sigma_weight", NeuronType::V);
@@ -179,10 +185,43 @@ private:
         return changed ? std::optional<NeuronType>(NeuronType::M) : std::nullopt;
     }
 
+    std::optional<NodeId>& input_ref(NodeId id) {
+        Neuron& n = *net_.nodes[id].neuron;
+        if (auto* v = std::get_if<VNeuron>(&n)) return v->input;
+        return std::get<SNeuron>(n).input;
+    }
+
+    std::optional<NeuronType> rewire(NodeId id, NeuronType t) {
+        const std::optional<NodeId> old = input_ref(id);
+        if (old) {
+            const auto rd = readers(net_, &removed_);
+            if (rd[*old].size() == 1 && rd[*old][0] == id) return std::nullopt;  // would orphan old
+        }
+        const D my_depth = net_.nodes[id].depth;
+        std::vector<NodeId> cands;
+        for (NodeId j : live_nodes())
+            if (net_.nodes[j].depth < my_depth && (!old || j != *old)) cands.push_back(j);
+        if (cands.empty()) return std::nullopt;
+        input_ref(id) = pick(cands);
+        if (!path_rule_ok(net_, &removed_)) {
+            input_ref(id) = old;
+            return std::nullopt;
+        }
+        return t;
+    }
+
+    Inversion new_inversion() {
+        if (rng_.u() < p_.effective("insert_inversion_prob", NeuronType::V))
+            return static_cast<Inversion>(1 + rng_.below(2));
+        return Inversion::None;
+    }
+
     // phase 3
     std::optional<NeuronType> growth() {
         const auto& w = p_.add_method_weights();
         const std::size_t method = rng_.weighted({w[0], w[1], w[2], w[3]});
+        const std::uint64_t needed = method == 0 ? 2 : 1;
+        if (live_nodes().size() + needed > static_cast<std::uint64_t>(Net<D>::d_max)) return std::nullopt;  // node cap
         if (method == 0) return slot_fill();
         const NeuronType t = method == 1 ? NeuronType::V : method == 2 ? NeuronType::S : NeuronType::M;
         if (cap_reached(t)) return std::nullopt;
@@ -222,7 +261,8 @@ private:
         Neuron x;
         if (method == 1) {
             const VOp op = static_cast<VOp>(rng_.choice(4));
-            x = VNeuron{b, Inversion::None, op, identity_weight(op)};
+            const Inversion inv = new_inversion();
+            x = VNeuron{b, inv, op, identity_weight(op)};
         } else if (method == 2) {
             x = SNeuron{b, static_cast<AggOp>(rng_.choice(4)), 1};
         } else {
@@ -265,7 +305,8 @@ private:
         if (t == NeuronType::V) {
             const NodeId in = pick(cands);
             const VOp op = static_cast<VOp>(rng_.choice(4));
-            qn = VNeuron{in, Inversion::None, op, identity_weight(op)};
+            const Inversion inv = new_inversion();
+            qn = VNeuron{in, inv, op, identity_weight(op)};
         } else if (t == NeuronType::S) {
             const NodeId in = pick(cands);
             qn = SNeuron{in, static_cast<AggOp>(rng_.choice(4)), 1};
@@ -334,6 +375,23 @@ private:
 template <class D>
 Net<D> mutate(const Net<D>& parent, const Profile& profile, std::uint64_t generation, Rng& rng) {
     return detail::Mutation<D>(parent, profile, generation, rng).run();
+}
+
+template <class D>
+Net<D> inject_diversity(const Net<D>& parent, double pct, Rng& rng, double sigma_reset) {
+    Net<D> net = parent.copy_genome();
+    std::vector<NodeId> vs;
+    for (NodeId i = 0; i < net.nodes.size(); ++i)
+        if (net.nodes[i].neuron && std::holds_alternative<VNeuron>(*net.nodes[i].neuron)) vs.push_back(i);
+    const std::int64_t want = rng.prob_round(pct * static_cast<double>(vs.size()) / 100.0);
+    const std::size_t count = std::min<std::size_t>(vs.size(), static_cast<std::size_t>(std::max<std::int64_t>(want, 0)));
+    for (std::size_t c = 0; c < count; ++c) {
+        const std::size_t k = static_cast<std::size_t>(rng.below(vs.size()));
+        const NodeId i = vs[k];
+        vs.erase(vs.begin() + static_cast<std::ptrdiff_t>(k));
+        std::get<VNeuron>(*net.nodes[i].neuron).weight = rng.normal() * sigma_reset;
+    }
+    return net;
 }
 
 }  // namespace jneuro

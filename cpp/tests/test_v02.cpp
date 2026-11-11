@@ -20,7 +20,7 @@ static Profile zero_profile() {
 }
 
 TEST_CASE("v02: outputs always finite") {
-    auto net = make_net<std::uint16_t>(1, 2, 3, {{D16, V(0, VOp::Div, 0.0)}, {D16, V(0, VOp::Mul, 1e300)}});
+    auto net = make_net<std::uint16_t>(1, 2, 3, {{D16, V(0, VOp::Div, 0.0)}, {D16, V(0, VOp::Mul, 1e308)}});
     CHECK(net.step({5.0}) == std::vector<double>{MAXD, MAXD});
     CHECK(net.step({INF}) == std::vector<double>{MAXD, MAXD});
     CHECK(net.step({-INF}) == std::vector<double>{-MAXD, -MAXD});
@@ -76,7 +76,7 @@ static Profile rewire_profile() {
 
 static std::optional<NodeId> input_of(const N16& n, NodeId i) { return std::get<VNeuron>(*n.nodes[i].neuron).input; }
 
-TEST_CASE("v02: rewire respects orphans and path rule") {
+TEST_CASE("v02: rewire keeps every node and the path rule") {
     auto net = rewire_net();
     auto p = rewire_profile();
     bool rewired = false;
@@ -85,12 +85,20 @@ TEST_CASE("v02: rewire respects orphans and path rule") {
         auto child = mutate(net, p, 1, r);
         child.validate();
         CHECK(path_rule_ok(child));
-        CHECK(input_of(child, 5) == std::optional<NodeId>(1));
-        auto a = input_of(child, 3), b = input_of(child, 4);
-        CHECK_FALSE((a == std::optional<NodeId>(1) && b == std::optional<NodeId>(1)));
-        rewired = rewired || a == std::optional<NodeId>(1) || b == std::optional<NodeId>(1);
+        CHECK(child.nodes.size() == net.nodes.size());
+        rewired = rewired || input_of(child, 3) != std::optional<NodeId>(0) ||
+                  input_of(child, 4) != std::optional<NodeId>(0) || input_of(child, 5) != std::optional<NodeId>(1);
     }
     CHECK(rewired);
+}
+
+TEST_CASE("v02: rewire never orphans") {
+    auto net = make_net<std::uint16_t>(2, 1, 3, {{D16, M(AggOp::Mean, {3, 4, none})}, {10, V(0)}, {20, V(1)}});
+    auto p = rewire_profile();
+    for (std::uint64_t seed = 0; seed < 30; ++seed) {
+        Rng r(seed);
+        CHECK(genome_to_json(mutate(net, p, 1, r)) == genome_to_json(net));
+    }
 }
 
 TEST_CASE("v02: rewire prob zero never rewires") {
@@ -188,4 +196,19 @@ TEST_CASE("v02: runlog roundtrip with diversity") {
     CHECK(ev[0].generation == 12);
     CHECK(ev[0].pct == 25.0);
     CHECK(ev[0].sigma_reset == 1.5);
+}
+
+TEST_CASE("v02: diversity golden") {
+    auto cases = load_golden("diversity");
+    REQUIRE(cases.size() >= 4);
+    for (auto& [name, c] : cases) {
+        INFO(name);
+        AnyNet any = genome_from_json(c["genome"].dump());
+        std::string expected = std::visit([](const auto& n) { return genome_to_json(n); },
+                                          genome_from_json(c["expected_genome"].dump()));
+        std::visit([&](const auto& net) {
+            Rng r(c["seed"].get<std::uint64_t>());
+            CHECK(genome_to_json(inject_diversity(net, c["pct"].get<double>(), r, c["sigma_reset"].get<double>())) == expected);
+        }, any);
+    }
 }

@@ -15,9 +15,11 @@ PHASE_FIELDS = ["op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_
 
 
 def profile(**overall):
+    """Only the given phases enabled; new v_neurons never inverted, so insertions stay neutral."""
     p = Profile.default()
     for f in PHASE_FIELDS:
         p.overall[f] = 0.0
+    p.overall["insert_inversion_prob"] = 0.0
     p.overall.update(overall)
     return p
 

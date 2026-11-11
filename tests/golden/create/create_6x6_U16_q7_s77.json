@@ -8,7 +8,7 @@
  "priority": "SPEED",
  "expected_genome": {
   "format": "j_neuro.genome",
-  "spec_version": "0.1.0",
+  "spec_version": "0.2.0",
   "params": {
    "priority": "SPEED",
    "depth_type": "U16",

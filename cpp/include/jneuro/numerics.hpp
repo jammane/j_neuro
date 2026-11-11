@@ -17,7 +17,7 @@ namespace jneuro {
 std::uint64_t to_bits(double x);
 double from_bits(std::uint64_t b);
 
-/// NaN and -0.0 become +0.0; everything else (including +-inf) is unchanged.
+/// NaN and -0.0 become +0.0, +-inf become +-max finite; finite values are unchanged.
 double canon(double x);
 /// Flip all 64 bits of the binary64 pattern.
 double bitnot(double x);

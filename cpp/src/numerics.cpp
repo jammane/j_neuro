@@ -10,6 +10,8 @@ double from_bits(std::uint64_t b) { return std::bit_cast<double>(b); }
 
 double canon(double x) {
     if (x != x || x == 0.0) return 0.0;
+    if (x == std::numeric_limits<double>::infinity()) return std::numeric_limits<double>::max();
+    if (x == -std::numeric_limits<double>::infinity()) return -std::numeric_limits<double>::max();
     return x;
 }
 

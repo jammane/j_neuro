@@ -3,7 +3,7 @@ diversity injection, run-log diversity entries."""
 import json
 
 import pytest
-from helpers import INF, M, S, V, make_net, outputs_for, sample_inputs
+from helpers import INF, M, S, V, load_golden, make_net, outputs_for, sample_inputs
 
 from jneuro import DepthType, Inversion, Net, Node, Priority, SNeuron, ValidationError, VNeuron, VOp
 from jneuro.analysis import path_rule_ok
@@ -27,7 +27,7 @@ def zero_profile():
 # ------------------------------------------------------------------ finite values
 
 def test_outputs_always_finite():
-    net = make_net(1, 2, 3, [(D16, V(0, "div", 0.0)), (D16, V(0, "mul", 1e300))])
+    net = make_net(1, 2, 3, [(D16, V(0, "div", 0.0)), (D16, V(0, "mul", 1e308))])
     assert net.step([5.0]) == [MAX, MAX]
     assert net.step([INF]) == [MAX, MAX]
     assert net.step([-INF]) == [-MAX, -MAX]
@@ -81,7 +81,7 @@ def rewire_profile():
     return p
 
 
-def test_rewire_respects_orphans_and_path_rule():
+def test_rewire_keeps_every_node_and_the_path_rule():
     net = rewire_net()
     p = rewire_profile()
     rewired = False
@@ -89,11 +89,18 @@ def test_rewire_respects_orphans_and_path_rule():
         child = mutate(net, p, 1, Rng(seed))
         child.validate()
         assert path_rule_ok(child)
-        assert child.nodes[5].neuron.input == 1                      # in1 would be orphaned
-        ins = (child.nodes[3].neuron.input, child.nodes[4].neuron.input)
-        assert ins != (1, 1)                                          # in0 keeps a reader
-        rewired = rewired or 1 in ins
+        assert len(child.nodes) == len(net.nodes)                    # nothing orphaned / collected
+        ins = [child.nodes[i].neuron.input for i in (3, 4, 5)]
+        rewired = rewired or ins != [0, 0, 1]
     assert rewired
+
+
+def test_rewire_never_orphans():
+    # every v_neuron is the only reader of its input, so no rewire is allowed
+    net = make_net(2, 1, 3, [(D16, M("mean", [3, 4, None])), (10, V(0)), (20, V(1))])
+    p = rewire_profile()
+    for seed in range(30):
+        assert genome_to_json(mutate(net, p, 1, Rng(seed))) == genome_to_json(net)
 
 
 def test_rewire_prob_zero_never_rewires():
@@ -176,3 +183,14 @@ def test_runlog_roundtrip_with_diversity():
     assert not again.profile_at(15).has_override("edit_max_pct", "m")
     assert again.profile_at(20).effective("edit_max_pct", "m") == 2.0
     assert again.diversity_events() == [(12, 25.0, 1.5)]
+
+
+DIV = load_golden("diversity")
+
+
+@pytest.mark.parametrize("name,case", DIV, ids=[c[0] for c in DIV])
+def test_diversity_golden(name, case):
+    from jneuro.io import genome_from_json
+    net = genome_from_json(json.dumps(case["genome"]))
+    child = inject_diversity(net, case["pct"], Rng(case["seed"]), case["sigma_reset"])
+    assert genome_to_json(child) == genome_to_json(genome_from_json(json.dumps(case["expected_genome"])))

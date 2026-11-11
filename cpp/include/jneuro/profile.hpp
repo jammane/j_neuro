@@ -46,6 +46,33 @@ private:
 };
 
 std::string profile_to_json(const Profile& p);
+
+/// Seed, starting profile, every profile change and every diversity injection (spec/09).
+class RunLog {
+public:
+    struct Diversity {
+        std::uint64_t generation;
+        double pct;
+        double sigma_reset;
+    };
+
+    RunLog(std::uint64_t seed, Profile initial) : seed_(seed), initial_(std::move(initial)) {}
+
+    void record(std::uint64_t generation, const nlohmann::json& patch);
+    void record_diversity(std::uint64_t generation, double pct, double sigma_reset = 1.0);
+    /// Profile in effect for mutations of `generation`.
+    Profile profile_at(std::uint64_t generation) const;
+    std::vector<Diversity> diversity_events() const;
+    std::uint64_t seed() const { return seed_; }
+
+    std::string to_json() const;
+    static RunLog from_json(const std::string& text);
+
+private:
+    std::uint64_t seed_;
+    Profile initial_;
+    nlohmann::json entries_ = nlohmann::json::array();
+};
 Profile profile_from_json(const std::string& text);
 
 }  // namespace jneuro

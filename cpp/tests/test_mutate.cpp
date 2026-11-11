@@ -11,9 +11,11 @@ using N32 = Net<std::uint32_t>;
 static const char* PHASES[] = {"op_change_max_pct", "edit_max_pct", "growth_max_pct",
                                "removal_max_pct", "depth_shift_max_pct"};
 
+// Only the given phases enabled; new v_neurons never inverted, so insertions stay neutral.
 static Profile zero_profile() {
     Profile p = Profile::defaults();
     for (auto f : PHASES) p.set_overall(f, 0.0);
+    p.set_overall("insert_inversion_prob", 0.0);
     return p;
 }
 
