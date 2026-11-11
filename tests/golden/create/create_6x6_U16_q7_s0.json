@@ -1,0 +1,161 @@
+{
+ "kind": "create",
+ "seed": 0,
+ "n_inputs": 6,
+ "n_outputs": 6,
+ "depth_type": "U16",
+ "in_qty_max": 7,
+ "priority": "MEMORY",
+ "expected_genome": {
+  "format": "j_neuro.genome",
+  "spec_version": "0.1.0",
+  "params": {
+   "priority": "MEMORY",
+   "depth_type": "U16",
+   "in_qty_max": 7,
+   "n_inputs": 6,
+   "n_outputs": 6
+  },
+  "next_birth": 12,
+  "nodes": [
+   {
+    "birth": 0,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 1,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 2,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 3,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 4,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 5,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 6,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      null
+     ]
+    }
+   },
+   {
+    "birth": 7,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "m",
+     "op": "min",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      null
+     ]
+    }
+   },
+   {
+    "birth": 8,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      null
+     ]
+    }
+   },
+   {
+    "birth": 9,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      null
+     ]
+    }
+   },
+   {
+    "birth": 10,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "m",
+     "op": "median",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      null
+     ]
+    }
+   },
+   {
+    "birth": 11,
+    "born_gen": 0,
+    "depth": 65535,
+    "neuron": {
+     "type": "m",
+     "op": "min",
+     "slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      null
+     ]
+    }
+   }
+  ]
+ }
+}

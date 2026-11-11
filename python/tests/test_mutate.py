@@ -186,13 +186,13 @@ def test_op_change_resets_weight():
 
 
 def test_edits_valid():
-    net = make_net(2, 2, 5, [(D16, M("mean", [3, 4, None, None, None])), (D16, S(4, "median", 3)),
-                             (10, V(0, "mul", 2.0)), (20, V(1, "add", 1.0))])
+    net = make_net(2, 1, 5, [(D16, M("mean", [3, 4, 5, None, None])), (10, V(0, "mul", 2.0)),
+                             (20, V(1, "add", 1.0)), (30, S(4, "median", 3))])
     p = profile(edit_max_pct=100.0)
     for seed in range(30):
         child = mutate(net, p, 1, Rng(seed))
         child.validate()
-        assert child.nodes[3].neuron.k % 2 == 1
+        assert all(n.neuron.k % 2 == 1 for n in child.nodes if isinstance(n.neuron, SNeuron))
 
 
 def test_depth_shift_neutral():

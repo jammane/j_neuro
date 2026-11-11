@@ -1,0 +1,439 @@
+{
+ "kind": "create",
+ "seed": 0,
+ "n_inputs": 30,
+ "n_outputs": 3,
+ "depth_type": "U32",
+ "in_qty_max": 3,
+ "priority": "BALANCED",
+ "expected_genome": {
+  "format": "j_neuro.genome",
+  "spec_version": "0.1.0",
+  "params": {
+   "priority": "BALANCED",
+   "depth_type": "U32",
+   "in_qty_max": 3,
+   "n_inputs": 30,
+   "n_outputs": 3
+  },
+  "next_birth": 49,
+  "nodes": [
+   {
+    "birth": 0,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 1,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 2,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 3,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 4,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 5,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 6,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 7,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 8,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 9,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 10,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 11,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 12,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 13,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 14,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 15,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 16,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 17,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 18,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 19,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 20,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 21,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 22,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 23,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 24,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 25,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 26,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 27,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 28,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 29,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 30,
+    "born_gen": 0,
+    "depth": 4294967295,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      47,
+      48,
+      null
+     ]
+    }
+   },
+   {
+    "birth": 31,
+    "born_gen": 0,
+    "depth": 4294967295,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      47,
+      48,
+      null
+     ]
+    }
+   },
+   {
+    "birth": 32,
+    "born_gen": 0,
+    "depth": 4294967295,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      47,
+      48,
+      null
+     ]
+    }
+   },
+   {
+    "birth": 33,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      0,
+      1,
+      2
+     ]
+    }
+   },
+   {
+    "birth": 34,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "min",
+     "slots": [
+      3,
+      4,
+      5
+     ]
+    }
+   },
+   {
+    "birth": 35,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      6,
+      7,
+      8
+     ]
+    }
+   },
+   {
+    "birth": 36,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      9,
+      10,
+      11
+     ]
+    }
+   },
+   {
+    "birth": 37,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "median",
+     "slots": [
+      12,
+      13,
+      14
+     ]
+    }
+   },
+   {
+    "birth": 38,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "min",
+     "slots": [
+      15,
+      16,
+      17
+     ]
+    }
+   },
+   {
+    "birth": 39,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      18,
+      19,
+      20
+     ]
+    }
+   },
+   {
+    "birth": 40,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "max",
+     "slots": [
+      21,
+      22,
+      23
+     ]
+    }
+   },
+   {
+    "birth": 41,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "median",
+     "slots": [
+      24,
+      25,
+      26
+     ]
+    }
+   },
+   {
+    "birth": 42,
+    "born_gen": 0,
+    "depth": 1073741823,
+    "neuron": {
+     "type": "m",
+     "op": "median",
+     "slots": [
+      27,
+      28,
+      29
+     ]
+    }
+   },
+   {
+    "birth": 43,
+    "born_gen": 0,
+    "depth": 2147483646,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      33,
+      34,
+      35
+     ]
+    }
+   },
+   {
+    "birth": 44,
+    "born_gen": 0,
+    "depth": 2147483646,
+    "neuron": {
+     "type": "m",
+     "op": "median",
+     "slots": [
+      36,
+      37,
+      38
+     ]
+    }
+   },
+   {
+    "birth": 45,
+    "born_gen": 0,
+    "depth": 2147483646,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      39,
+      40,
+      41
+     ]
+    }
+   },
+   {
+    "birth": 46,
+    "born_gen": 0,
+    "depth": 2147483646,
+    "neuron": {
+     "type": "m",
+     "op": "max",
+     "slots": [
+      42,
+      null,
+      null
+     ]
+    }
+   },
+   {
+    "birth": 47,
+    "born_gen": 0,
+    "depth": 3221225469,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      43,
+      44,
+      45
+     ]
+    }
+   },
+   {
+    "birth": 48,
+    "born_gen": 0,
+    "depth": 3221225469,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      46,
+      null,
+      null
+     ]
+    }
+   }
+  ]
+ }
+}

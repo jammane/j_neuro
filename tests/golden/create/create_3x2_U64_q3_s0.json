@@ -1,0 +1,66 @@
+{
+ "kind": "create",
+ "seed": 0,
+ "n_inputs": 3,
+ "n_outputs": 2,
+ "depth_type": "U64",
+ "in_qty_max": 3,
+ "priority": "BALANCED",
+ "expected_genome": {
+  "format": "j_neuro.genome",
+  "spec_version": "0.1.0",
+  "params": {
+   "priority": "BALANCED",
+   "depth_type": "U64",
+   "in_qty_max": 3,
+   "n_inputs": 3,
+   "n_outputs": 2
+  },
+  "next_birth": 5,
+  "nodes": [
+   {
+    "birth": 0,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 1,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 2,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 3,
+    "born_gen": 0,
+    "depth": 18446744073709551615,
+    "neuron": {
+     "type": "m",
+     "op": "mean",
+     "slots": [
+      0,
+      1,
+      2
+     ]
+    }
+   },
+   {
+    "birth": 4,
+    "born_gen": 0,
+    "depth": 18446744073709551615,
+    "neuron": {
+     "type": "m",
+     "op": "min",
+     "slots": [
+      0,
+      1,
+      2
+     ]
+    }
+   }
+  ]
+ }
+}

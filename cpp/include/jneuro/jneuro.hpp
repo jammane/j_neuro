@@ -9,3 +9,6 @@
 #include <jneuro/analysis.hpp>
 #include <jneuro/net_build.hpp>
 #include <jneuro/io.hpp>
+#include <jneuro/profile.hpp>
+#include <jneuro/removal.hpp>
+#include <jneuro/mutate.hpp>

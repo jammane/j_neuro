@@ -191,16 +191,18 @@ TEST_CASE("op change resets weight") {
 }
 
 TEST_CASE("edits valid") {
-    auto net = make_net<std::uint16_t>(2, 2, 5, {{D16, M(AggOp::Mean, {3, 4, none, none, none})},
-                                                 {D16, S(4, AggOp::Median, 3)},
-                                                 {10, V(0, VOp::Mul, 2.0)}, {20, V(1, VOp::Add, 1.0)}});
+    auto net = make_net<std::uint16_t>(2, 1, 5, {{D16, M(AggOp::Mean, {3, 4, 5, none, none})},
+                                                 {10, V(0, VOp::Mul, 2.0)}, {20, V(1, VOp::Add, 1.0)},
+                                                 {30, S(4, AggOp::Median, 3)}});
     auto p = zero_profile();
     p.set_overall("edit_max_pct", 100.0);
     for (std::uint64_t seed = 0; seed < 30; ++seed) {
         Rng r(seed);
         auto child = mutate(net, p, 1, r);
         child.validate();
-        CHECK(std::get<SNeuron>(*child.nodes[3].neuron).k % 2 == 1);
+        for (auto& n : child.nodes)
+            if (n.neuron && std::holds_alternative<SNeuron>(*n.neuron))
+                CHECK(std::get<SNeuron>(*n.neuron).k % 2 == 1);
     }
 }
 

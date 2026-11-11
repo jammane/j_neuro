@@ -1,1 +1,171 @@
-// Mutation profile (milestone 5).
+#include <jneuro/profile.hpp>
+
+#include <set>
+
+namespace jneuro {
+
+using json = nlohmann::json;
+
+void check_format(const json& d, const char* fmt);  // io.cpp
+
+namespace {
+const std::map<std::string, double>& numeric_defaults() {
+    static const std::map<std::string, double> d = {
+        {"op_change_max_pct", 1.0}, {"edit_max_pct", 5.0}, {"growth_max_pct", 1.5},
+        {"removal_max_pct", 1.0},   {"depth_shift_max_pct", 5.0}, {"sigma_weight", 0.1},
+        {"sign_flip_prob", 0.02},   {"sigma_k", 1.0}, {"sigma_slots", 1.0},
+        {"min_age_for_removal", 5.0}};
+    return d;
+}
+const std::set<std::string>& overridable() {
+    static const std::set<std::string> s = {
+        "op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pct",
+        "depth_shift_max_pct", "sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
+        "min_age_for_removal"};
+    return s;
+}
+// Key order of the overall section as written by to_json (matches spec/09).
+const char* const kOverallOrder[] = {
+    "op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pct", "depth_shift_max_pct",
+    "depth_shift_mode", "sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
+    "min_age_for_removal", "add_method_weights", "slot_fill_type_weights"};
+const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m"};
+const char* const kTypes[] = {"v", "s", "m"};
+
+double number(const json& v, const std::string& k) {
+    if (!v.is_number()) throw ValidationError("profile field " + k + " must be a number");
+    return v.get<double>();
+}
+}  // namespace
+
+Profile::Profile() : overall_(numeric_defaults()) {}
+
+double Profile::overall(const std::string& f) const {
+    auto it = overall_.find(f);
+    if (it == overall_.end()) throw ValidationError("unknown profile field " + f);
+    return it->second;
+}
+
+double Profile::effective(const std::string& f, NeuronType t) const {
+    const auto& m = per_type_[static_cast<std::size_t>(t)];
+    auto it = m.find(f);
+    return it != m.end() ? it->second : overall(f);
+}
+
+bool Profile::has_override(const std::string& f, NeuronType t) const {
+    return per_type_[static_cast<std::size_t>(t)].count(f) > 0;
+}
+
+double Profile::override_value(const std::string& f, NeuronType t) const {
+    return per_type_[static_cast<std::size_t>(t)].at(f);
+}
+
+void Profile::set_overall(const std::string& f, double v) {
+    if (!numeric_defaults().count(f)) throw ValidationError("unknown profile field " + f);
+    overall_[f] = v;
+}
+
+void Profile::merge_overall(const json& body) {
+    if (!body.is_object()) throw ValidationError("overall must be an object");
+    for (auto& [k, v] : body.items()) {
+        if (numeric_defaults().count(k)) {
+            overall_[k] = v.is_null() ? numeric_defaults().at(k) : number(v, k);
+        } else if (k == "depth_shift_mode") {
+            if (v.is_null()) { mode_ = "uniform"; continue; }
+            if (!v.is_string() || (v != "uniform" && v != "center"))
+                throw ValidationError("depth_shift_mode must be uniform or center");
+            mode_ = v.get<std::string>();
+        } else if (k == "add_method_weights" || k == "slot_fill_type_weights") {
+            const bool am = k == "add_method_weights";
+            if (v.is_null()) {
+                if (am) amw_ = {40, 30, 20, 10}; else sftw_ = {1, 1, 1};
+                continue;
+            }
+            if (!v.is_object()) throw ValidationError(k + " must be an object");
+            for (auto& [kk, vv] : v.items()) {
+                std::size_t idx = 99;
+                if (am) { for (std::size_t i = 0; i < 4; ++i) if (kk == kMethods[i]) idx = i; }
+                else    { for (std::size_t i = 0; i < 3; ++i) if (kk == kTypes[i]) idx = i; }
+                if (idx == 99) throw ValidationError("unknown key " + kk + " in " + k);
+                const double def = am ? std::array<double, 4>{40, 30, 20, 10}[idx] : 1.0;
+                double val = vv.is_null() ? def : number(vv, kk);
+                if (am) amw_[idx] = val; else sftw_[idx] = val;
+            }
+        } else {
+            throw ValidationError("unknown profile field " + k);
+        }
+    }
+}
+
+void Profile::set_override(std::size_t t, const std::string& k, const json& v) {
+    if (!overridable().count(k)) throw ValidationError(k + " cannot be overridden per type");
+    if (v.is_null()) per_type_[t].erase(k);
+    else per_type_[t][k] = number(v, k);
+}
+
+void Profile::apply_patch(const json& patch) {
+    if (!patch.is_object()) throw ValidationError("patch must be an object");
+    for (auto& [sec, body] : patch.items()) {
+        if (sec == "overall") { merge_overall(body); continue; }
+        if (sec == "format" || sec == "spec_version") continue;
+        std::size_t t = 99;
+        for (std::size_t i = 0; i < 3; ++i) if (sec == kTypes[i]) t = i;
+        if (t == 99) throw ValidationError("unknown profile section " + sec);
+        if (body.is_null()) continue;
+        if (!body.is_object()) throw ValidationError("profile section must be an object");
+        for (auto& [k, v] : body.items()) set_override(t, k, v);
+    }
+}
+
+json Profile::to_json() const {
+    json o = json::object();
+    json overall = json::object();
+    for (const char* k : kOverallOrder) {
+        std::string key = k;
+        if (key == "depth_shift_mode") overall[key] = mode_;
+        else if (key == "add_method_weights") {
+            json w = json::object();
+            for (std::size_t i = 0; i < 4; ++i) w[kMethods[i]] = amw_[i];
+            overall[key] = w;
+        } else if (key == "slot_fill_type_weights") {
+            json w = json::object();
+            for (std::size_t i = 0; i < 3; ++i) w[kTypes[i]] = sftw_[i];
+            overall[key] = w;
+        } else {
+            overall[key] = overall_.at(key);
+        }
+    }
+    o["format"] = "j_neuro.profile";
+    o["spec_version"] = "0.1.0";
+    o["overall"] = overall;
+    for (std::size_t t = 0; t < 3; ++t) {
+        json sec = json::object();
+        for (auto& [k, v] : per_type_[t]) sec[k] = v;
+        o[kTypes[t]] = sec;
+    }
+    return o;
+}
+
+Profile Profile::from_json(const json& d) {
+    Profile p;
+    json patch = json::object();
+    if (d.contains("overall")) patch["overall"] = d.at("overall");
+    for (const char* t : kTypes) if (d.contains(t)) patch[t] = d.at(t);
+    p.apply_patch(patch);
+    return p;
+}
+
+std::string profile_to_json(const Profile& p) { return p.to_json().dump(); }
+
+Profile profile_from_json(const std::string& text) {
+    json d;
+    try {
+        d = json::parse(text);
+    } catch (const json::exception& e) {
+        throw ValidationError(std::string("invalid JSON: ") + e.what());
+    }
+    check_format(d, "j_neuro.profile");
+    return Profile::from_json(d);
+}
+
+}  // namespace jneuro

@@ -6,7 +6,31 @@ An **evolutionary neural-network library**, written twice — once in **C++** an
 **Python** — as exact mirrors of a single language-neutral specification. Networks are not
 trained by gradients; they are **grown, tuned and pruned by mutation**.
 
-> **Status:** design / specification only (spec v0.1.0-draft). No implementation yet.
+> **Status:** spec v0.1.0-draft is implemented in both Python and C++. The two produce
+> byte-identical results on every shared golden case.
+
+## Quick start
+
+```python
+from jneuro import Net
+from jneuro.mutate import Profile, mutate
+from jneuro.rng import Rng
+
+net = Net.create(4, 2)              # minimal net from input/output counts only
+print(net.step([0.1, 0.2, 0.3, 0.4]))
+child = mutate(net, Profile.default(), generation=1, rng=Rng(42))
+```
+
+```cpp
+#include <jneuro/jneuro.hpp>
+auto any = jneuro::create(4, 2);    // AnyNet; default depth type U32
+auto& net = std::get<jneuro::Net<std::uint32_t>>(any);
+auto out = net.step({0.1, 0.2, 0.3, 0.4});
+jneuro::Rng rng(42);
+auto child = jneuro::mutate(net, jneuro::Profile::defaults(), 1, rng);
+```
+
+Build and test instructions: [cpp/README.md](cpp/README.md), [python/README.md](python/README.md).
 
 ## Goals
 
@@ -41,9 +65,10 @@ The full, normative definition lives in [`spec/`](spec/README.md).
 ```
 spec/        language-neutral specification (normative)
 docs/        architecture notes and the design decision log
-cpp/         C++ implementation   (not started)
-python/      Python implementation (not started)
-tests/golden shared cross-language conformance cases (planned)
+cpp/         C++ implementation (C++20, header-mostly)
+python/      Python implementation (NumPy)
+tests/golden shared cross-language conformance cases
+tools/       golden-case generators and the RNG reference oracle
 ```
 
 ## Documentation

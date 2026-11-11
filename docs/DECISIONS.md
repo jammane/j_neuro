@@ -55,3 +55,13 @@ without an explicit decision by the maintainer and may be revisited.
 | P15 | Population, selection, fitness and crossover are out of scope for v0.1 (mutation only). | Not yet designed. |
 | P16 | nlohmann/json (MIT) for C++ serialization. | Exact uint64 support; attribution-only license. |
 | P17 | Commercial license contract terms not drafted. | Recommend a lawyer when the first buyer appears. |
+
+## Found during implementation (v0.1)
+
+| # | Decision | Why |
+|---|---|---|
+| I1 | Canonical float text follows Python `repr` exactly; C++ reformats `std::to_chars` output to match (spec/09). | Byte-identical genome files across languages. |
+| I2 | Path insertion moves the target node only when that move actually opens a gap; otherwise nothing changes (spec/06). | A skipped attempt must leave the net unchanged. |
+| I3 | `create` needs only input/output counts; defaults `U32`, `in_qty_max 5`, `BALANCED`, seed 0 (spec/03). | User request: no hand-specified layers or starting neurons. |
+| I4 | Immunity is computed by a path-rule check with the node cut out, not by dominator trees. | Same result as the spec definition and simpler; dominators remain an optimization option. |
+| I5 | `BALANCED` currently uses the same execution plan as `SPEED`; `MEMORY` recomputes the order each step and frees values after their last reader. | Results are identical either way; finer tuning can come later. |

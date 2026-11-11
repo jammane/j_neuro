@@ -1,0 +1,144 @@
+{
+ "kind": "mutate",
+ "seed": 74,
+ "generation": 20,
+ "genome": {
+  "format": "j_neuro.genome",
+  "spec_version": "0.1.0",
+  "params": {
+   "priority": "SPEED",
+   "depth_type": "U64",
+   "in_qty_max": 3,
+   "n_inputs": 1,
+   "n_outputs": 2
+  },
+  "next_birth": 4,
+  "nodes": [
+   {
+    "birth": 0,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 1,
+    "born_gen": 0,
+    "depth": 18446744073709551615,
+    "neuron": {
+     "type": "v",
+     "input": 0,
+     "inversion": "none",
+     "op": "add",
+     "weight": 0.0
+    }
+   },
+   {
+    "birth": 3,
+    "born_gen": 3,
+    "depth": 18446744073709551615,
+    "neuron": {
+     "type": "s",
+     "input": 3,
+     "op": "max",
+     "k": 1
+    }
+   },
+   {
+    "birth": 2,
+    "born_gen": 0,
+    "depth": 9652483803649308730,
+    "neuron": {
+     "type": "v",
+     "input": 0,
+     "inversion": "bitnot",
+     "op": "sub",
+     "weight": 0.019662915074063925
+    }
+   }
+  ]
+ },
+ "profile": {
+  "format": "j_neuro.profile",
+  "spec_version": "0.1.0",
+  "overall": {
+   "op_change_max_pct": 0.0,
+   "edit_max_pct": 0.0,
+   "growth_max_pct": 0.0,
+   "removal_max_pct": 100.0,
+   "depth_shift_max_pct": 0.0,
+   "depth_shift_mode": "uniform",
+   "sigma_weight": 0.1,
+   "sign_flip_prob": 0.02,
+   "sigma_k": 1.0,
+   "sigma_slots": 1.0,
+   "min_age_for_removal": 0,
+   "add_method_weights": {
+    "slot_fill": 40,
+    "v_insert": 30,
+    "s_insert": 20,
+    "m_after_m": 10
+   },
+   "slot_fill_type_weights": {
+    "v": 1,
+    "s": 1,
+    "m": 1
+   }
+  },
+  "v": {},
+  "s": {},
+  "m": {}
+ },
+ "expected_genome": {
+  "format": "j_neuro.genome",
+  "spec_version": "0.1.0",
+  "params": {
+   "priority": "SPEED",
+   "depth_type": "U64",
+   "in_qty_max": 3,
+   "n_inputs": 1,
+   "n_outputs": 2
+  },
+  "next_birth": 4,
+  "nodes": [
+   {
+    "birth": 0,
+    "born_gen": 0,
+    "depth": 0
+   },
+   {
+    "birth": 1,
+    "born_gen": 0,
+    "depth": 18446744073709551615,
+    "neuron": {
+     "type": "v",
+     "input": 0,
+     "inversion": "none",
+     "op": "add",
+     "weight": 0.0
+    }
+   },
+   {
+    "birth": 3,
+    "born_gen": 3,
+    "depth": 18446744073709551615,
+    "neuron": {
+     "type": "s",
+     "input": 3,
+     "op": "max",
+     "k": 1
+    }
+   },
+   {
+    "birth": 2,
+    "born_gen": 0,
+    "depth": 9652483803649308730,
+    "neuron": {
+     "type": "v",
+     "input": 0,
+     "inversion": "bitnot",
+     "op": "sub",
+     "weight": 0.019662915074063925
+    }
+   }
+  ]
+ }
+}
