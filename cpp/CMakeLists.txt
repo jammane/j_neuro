@@ -49,6 +49,7 @@ if(JNEURO_BUILD_TESTS)
     tests/test_analysis.cpp
     tests/test_removal.cpp
     tests/test_mutate.cpp
+    tests/test_v02.cpp
     CACHE STRING "Test sources to build (all by default)")
   add_executable(jneuro_tests ${JNEURO_TEST_SOURCES})
   target_link_libraries(jneuro_tests PRIVATE jneuro Catch2::Catch2WithMain)

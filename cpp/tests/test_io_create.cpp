@@ -6,7 +6,7 @@ using namespace th;
 
 TEST_CASE("invalid golden") {
     auto cases = load_golden("invalid");
-    REQUIRE(cases.size() >= 18);
+    REQUIRE(cases.size() >= 19);
     for (auto& [name, c] : cases) {
         INFO(name);
         CHECK_THROWS_AS(genome_from_json(c["genome"].dump()), ValidationError);
@@ -26,7 +26,7 @@ TEST_CASE("format_double matches Python repr") {
 TEST_CASE("canonical text") {
     auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(0, VOp::Add, 0.5)}});
     CHECK(genome_to_json(net) ==
-          "{\"format\":\"j_neuro.genome\",\"spec_version\":\"0.1.0\",\"params\":{\"priority\":\"SPEED\","
+          "{\"format\":\"j_neuro.genome\",\"spec_version\":\"0.2.0\",\"params\":{\"priority\":\"SPEED\","
           "\"depth_type\":\"U16\",\"in_qty_max\":3,\"n_inputs\":1,\"n_outputs\":1},\"next_birth\":2,"
           "\"nodes\":[{\"birth\":0,\"born_gen\":0,\"depth\":0},{\"birth\":1,\"born_gen\":0,\"depth\":65535,"
           "\"neuron\":{\"type\":\"v\",\"input\":0,\"inversion\":\"none\",\"op\":\"add\",\"weight\":0.5}}]}");

@@ -36,6 +36,8 @@ A per-type value overrides the overall value for neurons of that type.
 | `sign_flip_prob` | 0.02 | yes (v) | Probability a weight edit also flips its sign |
 | `sigma_k` | 1.0 | yes (s) | History-length mutation scale |
 | `sigma_slots` | 1.0 | yes (m) | Scale of how many slots change per m edit |
+| `rewire_prob` | 0.1 | yes (v, s) | Probability a v/s edit rewires the input instead of editing a parameter |
+| `insert_inversion_prob` | 0.05 | yes (v) | Probability a newly added v_neuron starts with an inversion |
 | `min_age_for_removal` | 5 | yes | Generations a neuron must exist before it can trigger a removal |
 | `add_method_weights` | `slot_fill 40, v_insert 30, s_insert 20, m_after_m 10` | no | Odds of each addition method |
 | `slot_fill_type_weights` | `v 1, s 1, m 1` | no | Odds of each neuron type created by slot fill |
@@ -96,6 +98,20 @@ Each attempt picks a neuron and changes its operation to a different one, unifor
 
 Each attempt picks a neuron and edits it by type.
 
+**v and s — rewire or parameter.** The attempt first draws `x = u()`. If
+`x < rewire_prob` (effective for the neuron's type) it **rewires** the input; otherwise it
+edits the parameter as described below.
+
+```
+rewire:
+    old = current input (may be missing)
+    if old is connected and this neuron is old's only reader: skip   # would orphan old
+    C = live nodes with depth < depth(this node), ≠ old, ascending id
+    if C is empty: skip
+    input = C[below(len(C))]
+    if the path rule is now broken: restore old; skip
+```
+
 **v — weight.**
 
 ```
@@ -151,11 +167,23 @@ Each attempt:
 method = weighted(add_method_weights)   # order: slot_fill, v_insert, s_insert, m_after_m
 ```
 
-then performs that method. If the method's new neuron type has reached its cap, or the
-method is unavailable, the attempt is skipped.
+then performs that method. Immediately after the method is drawn, the attempt is skipped
+(with no further draws) if it would exceed the node cap ([03](03-net-structure.md#per-net-parameters)):
+slot fill adds 2 nodes, path insertion 1. It is also skipped if the method's new neuron type
+has reached its cap, or the method is unavailable.
 
 New neurons receive a new `birth` id (`next_birth++`) and `born_gen = generation`.
-New v_neurons always have inversion `none`.
+
+**Inversion of new v_neurons.** Right after a new v_neuron's `op` is drawn (v_insert, or a
+v-type Q in slot fill; never the silencing wrapper W):
+
+```
+if u() < insert_inversion_prob: inversion = [bitnot, recip][below(2)]
+else:                           inversion = none
+```
+
+The weight stays the op's identity weight. With an inversion the insertion is no longer
+neutral (except behind the slot-fill wrapper), which the low default probability reflects.
 
 ### Path insertion (v_insert, s_insert, m_after_m)
 
@@ -173,13 +201,14 @@ unchanged.
 3. **Place B.** `depth(B) = lo + below(hi − lo + 1)`. B is appended as a new node. N, with its
    `birth` and `born_gen`, moves to B.
 4. **Create X** at A:
-   - `v_insert`: v_neuron, input B, `op = choice(4)`, identity weight. **Exactly neutral.**
+   - `v_insert`: v_neuron, input B, `op = choice(4)`, identity weight, inversion as above.
+     **Exactly neutral** when no inversion is drawn.
    - `s_insert`: s_neuron, input B, `op = choice(4)`, `k = 1`. Disruptive by nature.
    - `m_after_m`: m_neuron, slot 0 = B, other slots empty, op `max`. Exactly neutral when B
      is never negative (e.g. N is a `max` m_neuron with an empty slot); otherwise clamps
      negative values to 0. Later slot fills into it are exactly neutral.
 
-RNG order: method, A, depth(B), op (if drawn).
+RNG order: method, A, depth(B), op (if drawn), inversion draws (v only).
 
 ### Slot fill
 
@@ -194,7 +223,7 @@ silencing v_neuron **W** (`mul`, weight `0.0`) so the net's outputs are unchange
    `depth(W) = 2 + below(depth(R) − 2)`; `depth(Q) = 1 + below(depth(W) − 1)`.
 5. **Build Q.** `C` = live nodes with depth < depth(Q), ascending id (never empty: inputs
    qualify).
-   - v: `input = C[below(len(C))]`, `op = choice(4)`, identity weight.
+   - v: `input = C[below(len(C))]`, `op = choice(4)`, inversion as above, identity weight.
    - s: `input = C[below(len(C))]`, `op = choice(4)`, `k = 1`.
    - m: `count = 1 + below(min(in_qty_max, len(C)))`; for each of `count` slots in order,
      pick a node from `C` not yet chosen (`below` over the remaining list, ascending id);
@@ -224,3 +253,24 @@ depth = d
 ```
 
 Depth shifts never change outputs. They redistribute gaps so later insertions find room.
+
+## Diversity injection
+
+```
+inject_diversity(parent, pct, rng, sigma_reset = 1.0) -> offspring
+```
+
+An **explicit** call, never part of `mutate`. It gives a percentage of v_neurons a new random
+weight, to restore diversity when a population has converged. The parent is not modified;
+the offspring starts in the reset state.
+
+```
+V     = v_neurons in ascending id order
+count = min(len(V), prob_round(pct * len(V) / 100.0))     # pct * len(V) evaluated first
+repeat count times:
+    v = V.pop(below(len(V)))                               # distinct neurons
+    v.weight = normal() * sigma_reset
+```
+
+Only weights change: operations, inversions, inputs and structure are untouched. Each call is
+recorded in the run log ([09](09-serialization.md#run-log)).

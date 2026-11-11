@@ -2,7 +2,7 @@
  "kind": "eval",
  "genome": {
   "format": "j_neuro.genome",
-  "spec_version": "0.1.0",
+  "spec_version": "0.2.0",
   "params": {
    "priority": "SPEED",
    "depth_type": "U16",
@@ -79,7 +79,7 @@
    ],
    "outputs": [
     "401e000000000000",
-    "7ff0000000000000",
+    "7fefffffffffffff",
     "3ff8000000000000",
     "3ff0000000000000"
    ]
@@ -122,10 +122,10 @@
     "7ff0000000000000"
    ],
    "outputs": [
-    "7ff0000000000000",
-    "7ff0000000000000",
-    "7ff0000000000000",
-    "7ff0000000000000"
+    "7fefffffffffffff",
+    "7fefffffffffffff",
+    "7fefffffffffffff",
+    "7fefffffffffffff"
    ]
   },
   {
@@ -134,7 +134,7 @@
    ],
    "outputs": [
     "c014000000000000",
-    "fff0000000000000",
+    "ffefffffffffffff",
     "c00c000000000000",
     "c010000000000000"
    ]

@@ -9,7 +9,7 @@ def test_canon():
     assert same(canon(NAN), 0.0)
     assert same(canon(-0.0), 0.0)
     assert same(canon(0.0), 0.0)
-    assert canon(INF) == INF and canon(-INF) == -INF
+    assert canon(INF) == 1.7976931348623157e308 and canon(-INF) == -1.7976931348623157e308
     assert same(canon(-2.5), -2.5)
 
 

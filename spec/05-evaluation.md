@@ -27,6 +27,21 @@ s_neurons make a net stateful: `step` results depend on the sequence of earlier 
 the last `reset`. Callers evaluating independent episodes MUST call `reset()` between them.
 A single net instance MUST NOT be stepped concurrently.
 
+## Warm-up
+
+s_neuron histories start empty after a reset, so early outputs do not yet reflect a full
+history. Because s_neurons can be chained, a net is fully warmed up only after
+
+```
+get_warmup_steps() = max over output nodes o of W(o)
+W(n) = (k if n is an s_neuron else 0) + max(W(c) for c in connections of n), or the own term
+       alone if n has no connections; W(input) = 0
+```
+
+steps. A net without s_neurons has 0 warm-up steps. Fitness evaluation SHOULD ignore the
+outputs of the first `get_warmup_steps()` steps after every `reset()`. Both implementations
+MUST provide `get_warmup_steps()` on the net.
+
 ## Priority invariance
 
 For any genome and input sequence, outputs MUST be bit-identical under `SPEED`, `MEMORY` and

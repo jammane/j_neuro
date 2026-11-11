@@ -37,4 +37,5 @@ Nets are not trained by gradients; they change by **mutation**.
 | **Identity neuron** | v_neuron that returns its input unchanged ([07](07-removal.md#candidates)). |
 | **Silenced neuron** | Neuron whose output is always 0 ([07](07-removal.md#candidates)). |
 | **Immune neuron** | Neuron whose removal would break the path rule ([07](07-removal.md#immunity)). |
-| **Canonical value** | binary64 value that is not NaN and not −0.0 ([02](02-numerics.md#canonical-values)). |
+| **Canonical value** | Finite binary64 value that is not −0.0 ([02](02-numerics.md#canonical-values)). |
+| **Warm-up steps** | Steps after a reset before every s_neuron history is filled ([05](05-evaluation.md#warm-up)). |

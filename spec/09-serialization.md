@@ -24,7 +24,7 @@ produce **byte-identical** files (used by conformance, [10](10-conformance.md)).
 ```json
 {
   "format": "j_neuro.genome",
-  "spec_version": "0.1.0",
+  "spec_version": "0.2.0",
   "params": {
     "priority": "SPEED",
     "depth_type": "U16",
@@ -59,7 +59,9 @@ s_neuron history is state and is **not** serialized.
 
 A reader MUST reject a genome unless all of these hold:
 
-- Known `format`; `spec_version` with the same MAJOR version.
+- Known `format`; `spec_version` with the same MAJOR version (and, while MAJOR is 0, the same
+  MINOR version).
+- At most `D_MAX` nodes in total.
 - `in_qty_max` odd and ≥ 3; `n_inputs`, `n_outputs` ≥ 1.
 - Node order and depths as in [03](03-net-structure.md#nodes); depths within `depth_type`.
 - Exactly the non-input nodes have a neuron; all fields valid; `k` within range and odd for
@@ -73,7 +75,7 @@ A reader MUST reject a genome unless all of these hold:
 ```json
 {
   "format": "j_neuro.profile",
-  "spec_version": "0.1.0",
+  "spec_version": "0.2.0",
   "overall": {
     "op_change_max_pct": 1.0,
     "edit_max_pct": 5.0,
@@ -85,6 +87,8 @@ A reader MUST reject a genome unless all of these hold:
     "sign_flip_prob": 0.02,
     "sigma_k": 1.0,
     "sigma_slots": 1.0,
+    "rewire_prob": 0.1,
+    "insert_inversion_prob": 0.05,
     "min_age_for_removal": 5,
     "add_method_weights": {"slot_fill": 40, "v_insert": 30, "s_insert": 20, "m_after_m": 10},
     "slot_fill_type_weights": {"v": 1, "s": 1, "m": 1}
@@ -105,17 +109,21 @@ Reproduces a whole run: the seed, the starting profile, and every profile change
 ```json
 {
   "format": "j_neuro.runlog",
-  "spec_version": "0.1.0",
+  "spec_version": "0.2.0",
   "seed": 12345,
   "initial_profile": { "...": "profile object as above" },
   "changes": [
     {"generation": 40, "patch": {"overall": {"sigma_weight": 0.05}}},
-    {"generation": 90, "patch": {"m": {"edit_max_pct": null}}}
+    {"generation": 90, "patch": {"m": {"edit_max_pct": null}}},
+    {"generation": 120, "diversity": {"pct": 25.0, "sigma_reset": 1.0}}
   ]
 }
 ```
 
 - A change takes effect **before** mutations of the given generation.
+- A `diversity` entry records an `inject_diversity` call made at that generation
+  ([06](06-mutation.md#diversity-injection)). Where it applies within a generation is defined
+  by the population loop, which is out of scope for v0.2.
 - `patch` is a JSON Merge Patch (RFC 7386) applied to the current profile; `null` removes a
   per-type override.
 - Changes are only made between generations, so replaying the log reproduces the run exactly.

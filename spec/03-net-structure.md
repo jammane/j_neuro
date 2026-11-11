@@ -13,8 +13,10 @@
 `depth_type`, `in_qty_max`, `n_inputs` and `n_outputs` are fixed when the net is created.
 `priority` MAY be changed at any time without affecting results.
 
-Informative: `depth_type` indirectly bounds net size by bounding how many distinct depth
-levels exist and how often a new node can be inserted between two existing ones.
+**Node cap.** A net MUST NOT have more than `D_MAX` nodes in total (inputs, outputs and
+hidden). `depth_type` therefore bounds net size directly: at most 65,535 nodes for `U16`,
+about 4.3 billion for `U32`, and effectively unbounded for `U64`. It also bounds how often a
+new node can be inserted between two existing ones.
 
 ## Nodes
 
@@ -94,6 +96,8 @@ slots empty.
 
 With `L` hidden levels, nodes of hidden level `ℓ` (1-based) get depth
 `(D_MAX / (L + 1)) * ℓ`, using integer division first.
+
+If the resulting net would exceed the node cap, `create` fails with a validation error.
 
 **RNG order.** Exactly one op choice is drawn per neuron, in this order: hidden neurons level
 by level (each level in chunk order), then output neurons in output order. Hidden node ids are

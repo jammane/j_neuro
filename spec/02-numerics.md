@@ -30,18 +30,22 @@ Implementations MUST NOT:
 Every value stored in a node is **canonical**:
 
 ```
-canon(x) = +0.0   if x is NaN
-         = +0.0   if x == 0   (covers −0.0)
-         = x      otherwise
+canon(x) = +0.0       if x is NaN
+         = +0.0       if x == 0   (covers −0.0)
+         = +MAX       if x == +inf
+         = −MAX       if x == −inf
+         = x          otherwise
 ```
 
-- `canon` is applied to **every neuron output** and to **every caller-supplied input value**.
-- ±infinity is a valid canonical value and passes through unchanged.
-- Consequences: nodes never hold NaN or −0.0; equal canonical values have identical bits, so
-  ties in `min`, `max` and `median` never depend on order.
+`MAX` is the largest finite binary64 value, 1.7976931348623157e308.
 
-Inside a single neuron computation, intermediate values may be NaN, −0.0 or infinite; only
-the neuron's final output is canonicalized.
+- `canon` is applied to **every neuron output** and to **every caller-supplied input value**.
+- Consequences: nodes only ever hold **finite** values, never NaN, ±inf or −0.0; equal
+  canonical values have identical bits, so ties in `min`, `max` and `median` never depend on
+  order.
+
+Inside a single neuron computation, intermediate values may be NaN, −0.0 or infinite (for
+example `x / 0`, or an overflowing sum); only the neuron's final output is canonicalized.
 
 ## Division
 

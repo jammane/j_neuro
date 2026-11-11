@@ -75,6 +75,9 @@ The golden set SHOULD include at least:
 - Bypass, silenced removal with downstream cascade stopping at a `min` reader and at a
   nonzero constant, immunity skip, garbage collection and compaction.
 - Every `DEPTH` type, including `U64` depths above 2⁵³.
+- Infinite and overflowing intermediates clamped to ±MAX; v/s rewiring including the orphan
+  and path-rule skips; inversions on new v_neurons; the node cap; `get_warmup_steps()`;
+  `inject_diversity`.
 
 ## Generating golden files
 

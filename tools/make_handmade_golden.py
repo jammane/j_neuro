@@ -12,6 +12,7 @@ import os
 import struct
 
 INF = math.inf
+MAX = 1.7976931348623157e308   # largest finite binary64; canon clamps +-inf to +-MAX
 NAN = math.nan
 D16, D32, D64 = 2**16 - 1, 2**32 - 1, 2**64 - 1
 ALL_PRIORITIES = ["SPEED", "MEMORY", "BALANCED"]
@@ -47,7 +48,7 @@ def genome(n_in, n_out, q, noninput, depth_type="U16"):
         nodes.append({"birth": n_in + j, "born_gen": 0, "depth": depth, "neuron": neuron})
     return {
         "format": "j_neuro.genome",
-        "spec_version": "0.1.0",
+        "spec_version": "0.2.0",
         "params": {"priority": "SPEED", "depth_type": depth_type, "in_qty_max": q,
                    "n_inputs": n_in, "n_outputs": n_out},
         "next_birth": len(nodes),
@@ -67,12 +68,12 @@ cases = {}
 g = genome(1, 4, 3, [(D16, v(0, "mul", 2.5)), (D16, v(0, "div", 0.0)),
                      (D16, v(0, "add", -1.5)), (D16, v(0, "sub", 2.0))])
 cases["eval_v_ops"] = eval_case(g, [
-    ([3.0], [7.5, INF, 1.5, 1.0]),
+    ([3.0], [7.5, MAX, 1.5, 1.0]),                    # 3/0 = inf -> MAX
     ([0.0], [0.0, 0.0, -1.5, -2.0]),      # 0/0 = NaN -> 0
     ([-0.0], [0.0, 0.0, -1.5, -2.0]),     # input canonicalized
     ([NAN], [0.0, 0.0, -1.5, -2.0]),      # input canonicalized
-    ([INF], [INF, INF, INF, INF]),
-    ([-2.0], [-5.0, -INF, -3.5, -4.0]),
+    ([INF], [MAX, MAX, MAX, MAX]),                    # input clamped to MAX; overflow -> MAX
+    ([-2.0], [-5.0, -MAX, -3.5, -4.0]),
 ])
 
 # 2. inversions
@@ -80,9 +81,9 @@ g = genome(1, 4, 3, [(D16, v(0, "mul", 1.0, "bitnot")), (D16, v(0, "mul", 1.0, "
                      (D16, v(0, "add", 0.0, "bitnot")), (D16, v(0, "div", 2.0, "recip"))])
 cases["eval_v_inversions"] = eval_case(g, [
     ([1.0], [bn(1.0), 1.0, bn(1.0), 0.5]),
-    ([0.0], [0.0, INF, 0.0, INF]),                    # bitnot(+0) is NaN -> 0
+    ([0.0], [0.0, MAX, 0.0, MAX]),                    # bitnot(+0) is NaN -> 0; 1/0 = inf -> MAX
     ([2.0], [bn(2.0), 0.5, bn(2.0), 0.25]),
-    ([-INF], [bn(-INF), 0.0, bn(-INF), 0.0]),         # 1/-inf = -0 -> +0
+    ([-INF], [bn(-MAX), 1.0 / -MAX, bn(-MAX), (1.0 / -MAX) / 2.0]),   # input clamped to -MAX
 ])
 assert bn(1.0) == -3.9999999999999996
 
@@ -92,14 +93,14 @@ g = genome(2, 4, 5, [(D16, m(op, [0, 1, None, None, None]))
 cases["eval_m_empty_slots"] = eval_case(g, [
     ([3.0, 5.0], [8.0 / 5.0, 0.0, 3.0, 5.0]),
     ([-3.0, -5.0], [-8.0 / 5.0, 0.0, -5.0, 0.0]),     # max sees the empty zeros; min skips them
-    ([INF, -INF], [0.0, 0.0, -INF, INF]),             # inf + -inf = NaN -> 0
+    ([INF, -INF], [0.0, 0.0, -MAX, MAX]),             # inputs clamped; MAX + -MAX = 0
 ])
 
 # 4. full m (Q=3): compensated mean and overflow
 g = genome(3, 4, 3, [(D16, m(op, [0, 1, 2])) for op in ("mean", "median", "min", "max")])
 cases["eval_m_full_compensated"] = eval_case(g, [
     ([1e16, 1.0, -1e16], [1.0 / 3.0, 1.0, -1e16, 1e16]),   # naive sum would give 0
-    ([1e308, 1e308, -1e308], [INF, 1e308, -1e308, 1e308]),  # overflow -> plain IEEE sum
+    ([1e308, 1e308, -1e308], [MAX, 1e308, -1e308, 1e308]),  # overflow: plain sum inf -> MAX
 ])
 
 # 5. s warm-up (history excludes current value, zero-filled; min skips unfilled)
@@ -156,6 +157,7 @@ bad("duplicate_birth", "birth", lambda g: g["nodes"][4].__setitem__("birth", 3))
 bad("birth_too_large", "next_birth", lambda g: g.__setitem__("next_birth", 5))
 bad("format", "format", lambda g: g.__setitem__("format", "other"))
 bad("major_version", "spec_version", lambda g: g.__setitem__("spec_version", "1.0.0"))
+bad("minor_version_pre_1", "spec_version 0.x minor", lambda g: g.__setitem__("spec_version", "0.1.0"))
 bad("median_even_k", "median k",
     lambda g: g["nodes"][4].__setitem__("neuron", s(1, "median", 2)))
 bad("k_too_large", "k range", lambda g: g["nodes"][4].__setitem__("neuron", s(1, "mean", 5)))

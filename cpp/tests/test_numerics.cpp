@@ -12,8 +12,8 @@ static const double NaN = std::numeric_limits<double>::quiet_NaN();
 TEST_CASE("canon") {
     CHECK(same(canon(NaN), 0.0));
     CHECK(same(canon(-0.0), 0.0));
-    CHECK(canon(INF) == INF);
-    CHECK(canon(-INF) == -INF);
+    CHECK(canon(INF) == std::numeric_limits<double>::max());
+    CHECK(canon(-INF) == -std::numeric_limits<double>::max());
     CHECK(same(canon(-2.5), -2.5));
 }
 
