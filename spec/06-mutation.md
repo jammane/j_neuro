@@ -56,6 +56,8 @@ A per-type value overrides the overall value for neurons of that type.
 | `width_peak` | 0.5 | no | Depth fraction in (0, 1) where receivers are favored most (slot fill, m_clone, links) |
 | `tap_peak` | 0.25 | no | The same, for input taps |
 | `link_max_span` | 0.25 | no | Longest connection a link, rewire or retarget may make, as a fraction of `D_MAX`: the new source is at most `floor(link_max_span × D_MAX)` shallower than the neuron that reads it |
+| `growth_gen_prob` | 1.0 | no | Chance a generation is a growth generation ([growth](#phase-3--growth)); outside one, phase 3 does not run |
+| `growth_net_prob` | 1.0 | no | Chance phase 3 runs for a given offspring in a growth generation |
 | `prune` | `static` | no | `any` or `static`: with `static`, edits never cut a live branch — an m slot is emptied only if its source is constant ([07](07-removal.md#constant-folding)), and a retarget never leaves its old source without readers |
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
@@ -206,6 +208,20 @@ repeat c times:
 The attempt counts as successful if at least one slot changed.
 
 ## Phase 3 — Growth
+
+**Gating.** Phase 3 runs only if the mutation is in a growth generation and then, unless
+`growth_net_prob` is 1.0, only if `u() < growth_net_prob` (one draw, before the budget; none when
+1.0). Whether a generation is a growth generation is decided without state, so it is the same for
+every net of the generation, on replay and after a save and load:
+
+```
+is_growth_generation(seed, generation) = true                                  if growth_gen_prob == 1.0
+                                         Rng(seed XOR (generation × 0x9E3779B97F4A7C15 mod 2^64)).u()
+                                             < growth_gen_prob                  otherwise
+```
+
+A population uses its own seed ([11](11-population.md)). The standalone `mutate` takes the answer
+as an argument (default: a growth generation).
 
 Each attempt:
 

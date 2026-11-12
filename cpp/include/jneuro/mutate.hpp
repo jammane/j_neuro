@@ -25,9 +25,19 @@ inline const std::vector<std::string>& mutation_operations() {
 }
 
 /// Mutated offspring (spec/06). If `counts` is given, successful uses of each operation are added.
+/// `growth_generation` false skips phase 3 (see is_growth_generation).
 template <class D>
 Net<D> mutate(const Net<D>& parent, const Profile& profile, std::uint64_t generation, Rng& rng,
-              MutationCounts* counts = nullptr);
+              MutationCounts* counts = nullptr, bool growth_generation = true);
+
+/// Whether `generation` is a growth generation for a population seeded `seed` (spec/06): a
+/// stateless draw, the same on replay and after a save and load.
+inline bool is_growth_generation(std::uint64_t seed, std::uint64_t generation, const Profile& profile) {
+    const double p = profile.overall("growth_gen_prob");
+    if (p >= 1.0) return true;
+    Rng r(seed ^ (generation * 0x9E3779B97F4A7C15ull));
+    return r.u() < p;
+}
 
 /// Give pct % of the v_neurons a new random weight; only weights change (spec/06).
 template <class D>
@@ -40,16 +50,16 @@ namespace detail {
 template <class D>
 class Mutation {
 public:
-    Mutation(const Net<D>& parent, const Profile& p, std::uint64_t gen, Rng& rng)
+    Mutation(const Net<D>& parent, const Profile& p, std::uint64_t gen, Rng& rng, bool growth_generation = true)
         : net_(parent.copy_genome()), p_(p), gen_(gen), rng_(rng), q_(net_.in_qty_max),
-          removed_(net_.nodes.size(), false) {}
+          removed_(net_.nodes.size(), false), growth_generation_(growth_generation) {}
 
     MutationCounts counts;  // operation -> successful uses
 
     Net<D> run() {
         run_phase("op_change_max_pct", &Mutation::op_change);
         run_phase("edit_max_pct", &Mutation::edit);
-        run_phase("growth_max_pct", &Mutation::growth);
+        if (grows()) run_phase("growth_max_pct", &Mutation::growth);
         run_phase("removal_max_pct", &Mutation::removal);
         run_phase("depth_shift_max_pct", &Mutation::depth_shift);
         if (p_.constant_folding() == "on") {
@@ -66,12 +76,20 @@ private:
     using Attempt = std::optional<NeuronType> (Mutation::*)();
     static constexpr std::array<NeuronType, 3> kTypes{NeuronType::V, NeuronType::S, NeuronType::M};
 
+    /// Phase 3 runs only in a growth generation, and then with growth_net_prob (spec/06).
+    bool grows() {
+        if (!growth_generation_) return false;
+        const double p = p_.overall("growth_net_prob");
+        return p >= 1.0 || rng_.u() < p;  // no draw when 1.0
+    }
+
     Net<D> net_;
     const Profile& p_;
     std::uint64_t gen_;
     Rng& rng_;
     std::uint32_t q_;
     Removed removed_;
+    bool growth_generation_ = true;
     std::array<std::optional<std::int64_t>, 3> caps_{};
     std::array<std::int64_t, 3> used_{};
 
@@ -721,8 +739,8 @@ private:
 
 template <class D>
 Net<D> mutate(const Net<D>& parent, const Profile& profile, std::uint64_t generation, Rng& rng,
-              MutationCounts* counts) {
-    detail::Mutation<D> m(parent, profile, generation, rng);
+              MutationCounts* counts, bool growth_generation) {
+    detail::Mutation<D> m(parent, profile, generation, rng, growth_generation);
     Net<D> child = m.run();
     if (counts)
         for (auto& [k, v] : m.counts) (*counts)[k] += v;

@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Union
 
 from .io import RUNLOG_FORMAT, SPEC_VERSION, _check_version, _dumps
 from .jnet import Reader, Writer, net_from_bytes, net_to_bytes, sha256, write_header
-from .mutate import Profile, inject_diversity, mutate
+from .mutate import Profile, inject_diversity, is_growth_generation, mutate
 from .net import Net, _check_max_run, _check_params, _check_path_mix
 from .rng import Rng
 from .types import DepthType, Priority, ValidationError
@@ -126,8 +126,9 @@ class Population:
             raise ValueError("times must be >= 1")
         rng, seed = self._op_rng(profile.overall["rng_mode"], _seed)
         child = parent
+        grow_gen = is_growth_generation(self.seed, self._generation, profile)
         for _ in range(times):
-            child = mutate(child, profile, self._generation, rng, self._mutation_counts)
+            child = mutate(child, profile, self._generation, rng, self._mutation_counts, grow_gen)
         nid = self._store(child)
         self._ops.append({"op": "mutate", "id": net_id, "times": times,
                           "profile": self._profile_index(profile), "new_id": nid, "seed": seed})

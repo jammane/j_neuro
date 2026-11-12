@@ -47,7 +47,9 @@
    "width_peak": 0.5,
    "tap_peak": 0.25,
    "prune": "static",
-   "link_max_span": 0.25
+   "link_max_span": 0.25,
+   "growth_gen_prob": 1.0,
+   "growth_net_prob": 1.0
   },
   "v": {
    "growth_max_pct": 5.0,

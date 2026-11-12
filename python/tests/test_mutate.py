@@ -588,3 +588,25 @@ def test_prune_static_keeps_live_branches():
                 for s in net.nodes[i].neuron.slots:
                     if s is not None and const[s] is None:
                         assert s in x.neuron.slots             # live sources are never cut
+
+
+
+def test_growth_net_prob():
+    net = base_net(5)
+    only_v = only_method("v_insert")
+    grew = {}
+    for prob in (0.0, 0.5, 1.0):
+        p = profile(growth_max_pct=1e-9, growth_budget="exact", add_method_weights=only_v, growth_net_prob=prob)
+        grew[prob] = sum(len(mutate(net, p, 1, Rng(s)).nodes) > len(net.nodes) for s in range(60))
+    assert grew[0.0] == 0 and grew[1.0] == 60 and 15 < grew[0.5] < 45
+    p = profile(growth_max_pct=1e-9, growth_budget="exact", add_method_weights=only_v)
+    assert all(len(mutate(net, p, 1, Rng(s), growth_generation=False).nodes) == len(net.nodes) for s in range(10))
+
+
+def test_growth_generation_is_stateless():
+    from jneuro.mutate import is_growth_generation
+    p = profile(growth_gen_prob=0.5)
+    days = [is_growth_generation(42, g, p) for g in range(200)]
+    assert days == [is_growth_generation(42, g, p) for g in range(200)]   # same every time
+    assert 60 < sum(days) < 140
+    assert all(is_growth_generation(42, g, profile()) for g in range(20))  # 1.0: always

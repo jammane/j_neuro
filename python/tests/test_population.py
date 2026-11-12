@@ -334,3 +334,23 @@ def test_mutation_counts_cover_every_operation():
     assert not unused, unused
     p.reset_mutation_counts()
     assert sum(p.mutation_counts().values()) == 0
+
+
+
+def test_growth_generations_shared_by_all_nets():
+    from jneuro.mutate import is_growth_generation
+    p = Population(DepthType.U32, 5, 3, 2, Priority.SPEED, seed=21)
+    ids = p.create(8)
+    prof = heavy("fresh")
+    prof.overall["growth_gen_prob"] = 0.5
+    prof.overall["add_method_weights"] = {k: (1.0 if k == "v_insert" else 0.0) for k in prof.overall["add_method_weights"]}
+    for gen in range(6):
+        before = {i: p.get(i).next_birth for i in ids}
+        kids = [p.mutate(i, prof) for i in ids]
+        grown = [p.get(k).next_birth > before[i] for i, k in zip(ids, kids)]
+        if not is_growth_generation(21, gen, prof):
+            assert not any(grown)                              # no net grows outside a growth generation
+        ids = kids
+        p.next_generation()
+    q = Population.replay(p.run_log())
+    assert [net_to_bytes(q.get(i)) for i in q.ids()] == [net_to_bytes(p.get(i)) for i in p.ids()]

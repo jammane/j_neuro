@@ -47,7 +47,7 @@ is exactly replayable from its run log (below).
 | `get(id)` | The net itself (for direct inspection or stepping). |
 | `ids()`, `size()`, `generation` | Inspection. |
 | `evaluate(inputs, skip_warmup = true)` → `{id: outputs}` | For every net, in ascending id order: `reset()`, then `step` each input row in order. Returns one output row per step; with `skip_warmup`, the first `get_warmup_steps()` rows of that net are dropped. |
-| `mutate(id, profile, times = 1)` → new id | Offspring: `mutate` applied `times` times in a row to a copy of the net, all with the same operation RNG and the current `generation`. The parent stays. |
+| `mutate(id, profile, times = 1)` → new id | Offspring: `mutate` applied `times` times in a row to a copy of the net, all with the same operation RNG and the current `generation`, and with `is_growth_generation(population seed, generation)` ([06](06-mutation.md#phase-3--growth)). The parent stays. |
 | `clone(id)` → new id | Exact copy of the genome. |
 | `inject_diversity(id, pct, sigma_reset = 1.0, rng_mode)` | Replaces the net at `id` with `inject_diversity(net, pct, rng, sigma_reset)` ([06](06-mutation.md#diversity-injection)). The id is kept. |
 | `remove(id)` | Culls the net. Its id is never reused. |

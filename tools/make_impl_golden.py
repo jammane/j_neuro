@@ -71,6 +71,10 @@ def profile_variants():
     mid.overall["insert_depth"] = "midpoint"
     mid.overall["add_method_weights"].update({"v_tap": 20, "s_tap": 20, "m_tap": 20, "m_clone": 20})
     out["midpoint"] = mid
+    gated = Profile.default()
+    gated.overall["growth_max_pct"] = 30.0
+    gated.overall["growth_net_prob"] = 0.5
+    out["gated"] = gated
     heavy = Profile.default()
     for f in PHASES:
         heavy.overall[f] = 40.0
@@ -174,6 +178,8 @@ def make_population():
             p.overall[f] = 45.0
         p.overall["rng_mode"] = mode
         p.overall["min_age_for_removal"] = 1
+        p.overall["growth_gen_prob"] = 0.5
+        p.overall["growth_net_prob"] = 0.7
         return p
 
     for i, dt in enumerate(["U16", "U32", "U64"]):

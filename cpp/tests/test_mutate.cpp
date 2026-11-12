@@ -593,3 +593,30 @@ TEST_CASE("mutation keeps run rule") {
         CHECK(run_ok(three) == ok);
     }
 }
+
+TEST_CASE("growth gating") {
+    const N32 net = base_net(5);
+    int grew[3] = {0, 0, 0};
+    const double probs[3] = {0.0, 0.5, 1.0};
+    for (int k = 0; k < 3; ++k) {
+        Profile p = growth_only("v_insert");
+        p.set_overall("growth_max_pct", 1e-9);
+        p.set_overall("growth_net_prob", probs[k]);
+        p.apply_patch(json{{"overall", {{"growth_budget", "exact"}}}});
+        for (std::uint64_t s = 0; s < 60; ++s) {
+            Rng r(s);
+            grew[k] += mutate(net, p, 1, r).nodes.size() > net.nodes.size();
+        }
+    }
+    CHECK(grew[0] == 0);
+    CHECK(grew[2] == 60);
+    CHECK((grew[1] > 15 && grew[1] < 45));
+    Profile g = Profile::defaults();
+    g.set_overall("growth_gen_prob", 0.5);
+    int days = 0;
+    for (std::uint64_t gen = 0; gen < 200; ++gen) {
+        CHECK(is_growth_generation(42, gen, g) == is_growth_generation(42, gen, g));
+        days += is_growth_generation(42, gen, g);
+    }
+    CHECK((days > 60 && days < 140));
+}

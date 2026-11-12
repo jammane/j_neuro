@@ -12,9 +12,10 @@
 //                       [--inputs N] [--outputs N] [--in-qty-max N] [--path-mix N]
 //                       [--edit PCT] [--op PCT] [--growth PCT] [--removal PCT] [--depth-shift PCT]
 //                       [--tap-weight W] [--clone-weight W] [--patch JSON]
-//                       [--grow-gen PCT] [--grow-net PCT]
-// --grow-gen / --grow-net: each generation grows with --grow-gen % chance, and then each lineage
-// with --grow-net % chance (default 100 / 100: every lineage, every generation).
+//                       [--grow-gen PCT] [--grow-net PCT] [--profile FILE]
+// --profile loads a saved profile (e.g. profiles/expansion.json) in place of the settings built
+// from the flags above; --patch, --grow-gen and --grow-net still apply on top of it.
+// --grow-gen / --grow-net set the profile's growth_gen_prob / growth_net_prob (in %).
 // --patch applies a profile merge patch last, e.g.
 //   --patch '{"overall":{"width_peak":0.4,"add_method_weights":{"v_insert":10}}}' 
 // Growth defaults to one exact attempt per mutation. --growth PCT makes it an "up to" percentage;
@@ -104,7 +105,8 @@ int main(int argc, char** argv) {
     std::uint32_t n_in = 9, n_out = 1, q = 3, path_mix = 2;
     double edit = 20, op = 1, growth = 0, removal = 0, depth_shift = 5, tap_weight = -1, clone_weight = -1;
     std::string user_patch;
-    double grow_gen = 100, grow_net = 100;  // % chance a generation grows; % chance a lineage then grows
+    double grow_gen = -1, grow_net = -1;  // % chance a generation grows; % chance a lineage then grows
+    std::string profile_file;
     bool growth_exact = true;
     for (int i = 1; i + 1 < argc; i += 2) {
         const std::string a = argv[i], v = argv[i + 1];
@@ -127,6 +129,7 @@ int main(int argc, char** argv) {
         else if (a == "--patch") user_patch = v;
         else if (a == "--grow-gen") grow_gen = std::stod(v);
         else if (a == "--grow-net") grow_net = std::stod(v);
+        else if (a == "--profile") profile_file = v;
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
     }
     fs::create_directories(out);
@@ -145,9 +148,15 @@ int main(int argc, char** argv) {
         patch["overall"]["add_method_weights"].update({{"v_tap", tap_weight}, {"s_tap", tap_weight}, {"m_tap", tap_weight}});
     if (clone_weight >= 0) patch["overall"]["add_method_weights"]["m_clone"] = clone_weight;
     p.apply_patch(patch);
+    if (!profile_file.empty()) {  // a saved profile replaces the settings above
+        std::ifstream in(profile_file);
+        std::stringstream text;
+        text << in.rdbuf();
+        p = profile_from_json(text.str());
+    }
     if (!user_patch.empty()) p.apply_patch(nlohmann::json::parse(user_patch));
-    Profile steady = p;  // the same profile without growth, for lineages that don't grow this generation
-    steady.set_overall("growth_max_pct", 0.0);
+    if (grow_gen >= 0) p.set_overall("growth_gen_prob", grow_gen / 100.0);
+    if (grow_net >= 0) p.set_overall("growth_net_prob", grow_net / 100.0);
 
     const auto& ops = mutation_operations();
     std::vector<Net<D>> nets;
@@ -161,8 +170,8 @@ int main(int argc, char** argv) {
     {
         std::ofstream info(out / "run_info.txt");
         info << "seed " << seed << " lineages " << lineages << " generations " << generations << " inputs " << n_in
-             << " outputs " << n_out << " in_qty_max " << q << " path_mix " << path_mix << " grow_gen_pct "
-             << grow_gen << " grow_net_pct " << grow_net << "\nprofile "
+             << " outputs " << n_out << " in_qty_max " << q << " path_mix " << path_mix
+             << (profile_file.empty() ? std::string() : " profile_file " + profile_file) << "\nprofile "
              << profile_to_json(p) << "\n";
     }
     std::ofstream csv(out / "log.csv");
@@ -179,17 +188,14 @@ int main(int argc, char** argv) {
     std::vector<Shape> before(lineages);
     for (int l = 0; l < lineages; ++l) before[l] = measure(nets[l]);
     const unsigned threads = std::max(1u, std::thread::hardware_concurrency());
-    Rng growth_rng(seed ^ 0x9E3779B97F4A7C15ull);
     for (int g = 1; g <= generations; ++g) {
-        const bool growth_gen = growth_rng.u() * 100.0 < grow_gen;
-        std::vector<char> grows(lineages);
-        for (int l = 0; l < lineages; ++l) grows[l] = growth_gen && growth_rng.u() * 100.0 < grow_net;
+        const bool growth_gen = is_growth_generation(seed, static_cast<std::uint64_t>(g), p);  // spec/06
         std::vector<MutationCounts> used(lineages);
         std::vector<Shape> after(lineages);
         std::atomic<int> next{0};
         auto worker = [&] {
             for (int l; (l = next++) < lineages;) {
-                nets[l] = mutate(nets[l], grows[l] ? p : steady, static_cast<std::uint64_t>(g), rngs[l], &used[l]);
+                nets[l] = mutate(nets[l], p, static_cast<std::uint64_t>(g), rngs[l], &used[l], growth_gen);
                 after[l] = measure(nets[l]);
             }
         };

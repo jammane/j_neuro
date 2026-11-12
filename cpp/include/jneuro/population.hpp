@@ -406,9 +406,10 @@ private:
         const Net<D>& parent = nets_.at(id);
         if (times < 1) throw std::invalid_argument("times must be >= 1");
         OpRng o = op_rng(profile.rng_mode(), recorded);
-        Net<D> child = ::jneuro::mutate(parent, profile, generation_, rng_of(o), &mutation_counts_);
+        const bool grow_gen = is_growth_generation(seed_, generation_, profile);
+        Net<D> child = ::jneuro::mutate(parent, profile, generation_, rng_of(o), &mutation_counts_, grow_gen);
         for (std::uint32_t t = 1; t < times; ++t)
-            child = ::jneuro::mutate(child, profile, generation_, rng_of(o), &mutation_counts_);
+            child = ::jneuro::mutate(child, profile, generation_, rng_of(o), &mutation_counts_, grow_gen);
         const std::uint64_t nid = store(std::move(child));
         ops_.push_back(nlohmann::json{{"op", "mutate"}, {"id", id}, {"times", times},
                                       {"profile", profile_index(profile)}, {"new_id", nid},

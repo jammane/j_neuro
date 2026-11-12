@@ -15,7 +15,8 @@ const std::map<std::string, double>& numeric_defaults() {
         {"removal_max_pct", 1.0},   {"depth_shift_max_pct", 5.0}, {"sigma_weight", 0.1},
         {"sign_flip_prob", 0.02},   {"sigma_k", 1.0}, {"sigma_slots", 1.0},
         {"rewire_prob", 0.05},       {"insert_inversion_prob", 0.05}, {"min_age_for_removal", 5.0},
-        {"slot_retarget_prob", 0.05}, {"width_peak", 0.5}, {"tap_peak", 0.25}, {"link_max_span", 0.25}};
+        {"slot_retarget_prob", 0.05}, {"width_peak", 0.5}, {"tap_peak", 0.25}, {"link_max_span", 0.25},
+        {"growth_gen_prob", 1.0}, {"growth_net_prob", 1.0}};
     return d;
 }
 const std::set<std::string>& overridable() {
@@ -31,7 +32,7 @@ const char* const kOverallOrder[] = {
     "depth_shift_mode", "sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots", "rewire_prob",
     "insert_inversion_prob", "min_age_for_removal", "add_method_weights", "slot_fill_type_weights",
     "rng_mode", "growth_budget", "constant_folding", "insert_depth", "slot_retarget_prob", "width_bias",
-    "width_peak", "tap_peak", "prune", "link_max_span"};
+    "width_peak", "tap_peak", "prune", "link_max_span", "growth_gen_prob", "growth_net_prob"};
 const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap",
                                 "m_clone",   "m_insert", "v_link",   "s_link"};
 constexpr std::array<double, 11> kMethodDefaults{0, 10, 5, 5, 10, 10, 5, 60, 20, 24, 24};
@@ -69,6 +70,8 @@ void Profile::set_overall(const std::string& f, double v) {
     if (!numeric_defaults().count(f)) throw ValidationError("unknown profile field " + f);
     if ((f == "width_peak" || f == "tap_peak") && !(v > 0.0 && v < 1.0)) throw ValidationError(f + " must be in (0, 1)");
     if (f == "link_max_span" && !(v > 0.0 && v <= 1.0)) throw ValidationError("link_max_span must be in (0, 1]");
+    if ((f == "growth_gen_prob" || f == "growth_net_prob") && !(v >= 0.0 && v <= 1.0))
+        throw ValidationError(f + " must be in [0, 1]");
     overall_[f] = v;
 }
 
@@ -81,6 +84,8 @@ void Profile::merge_overall(const json& body) {
                 throw ValidationError(k + " must be in (0, 1)");
             if (k == "link_max_span" && !(overall_[k] > 0.0 && overall_[k] <= 1.0))
                 throw ValidationError("link_max_span must be in (0, 1]");
+            if ((k == "growth_gen_prob" || k == "growth_net_prob") && !(overall_[k] >= 0.0 && overall_[k] <= 1.0))
+                throw ValidationError(k + " must be in [0, 1]");
         } else if (k == "depth_shift_mode") {
             if (v.is_null()) { mode_ = "uniform"; continue; }
             if (!v.is_string() || (v != "uniform" && v != "center"))

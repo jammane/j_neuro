@@ -45,6 +45,8 @@ DEFAULTS = {
     "tap_peak": 0.25,
     "prune": "static",
     "link_max_span": 0.25,
+    "growth_gen_prob": 1.0,
+    "growth_net_prob": 1.0,
 }
 CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared"),
            "growth_budget": ("up_to", "exact"), "constant_folding": ("off", "on"),
@@ -86,6 +88,8 @@ class Profile:
                 raise ValidationError(f"{k} must be in (0, 1)")
             if k == "link_max_span" and v is not None and not 0.0 < float(v) <= 1.0:
                 raise ValidationError("link_max_span must be in (0, 1]")
+            if k in ("growth_gen_prob", "growth_net_prob") and v is not None and not 0.0 <= float(v) <= 1.0:
+                raise ValidationError(f"{k} must be in [0, 1]")
             if v is None:
                 self.overall[k] = copy.deepcopy(DEFAULTS[k])
             elif k in CHOICES:
@@ -145,7 +149,8 @@ def _type_of(neuron) -> str:
 
 
 class _Mutation:
-    def __init__(self, parent: Net, profile: Profile, generation: int, rng: Rng):
+    def __init__(self, parent: Net, profile: Profile, generation: int, rng: Rng,
+                 growth_generation: bool = True):
         self.net = parent.copy()
         self.p = profile
         self.gen = generation
@@ -153,6 +158,7 @@ class _Mutation:
         self.removed = set()
         self.q = self.net.in_qty_max
         self.op = None                    # name of the operation being attempted (for counts)
+        self.growth_generation = growth_generation
         self.counts = {}                  # operation name -> successful uses (informative)
 
     # helpers
@@ -336,6 +342,13 @@ class _Mutation:
             n.input = old
             return None
         return t
+
+    def grows(self):
+        """Phase 3 runs only in a growth generation, and then with growth_net_prob (spec/06)."""
+        if not self.growth_generation:
+            return False
+        p = float(self.p.overall["growth_net_prob"])
+        return p >= 1.0 or self.rng.u() < p                # no draw when 1.0
 
     def span_floor(self, depth):
         """Shallowest source depth a link, rewire or retarget may reach from a node at `depth`
@@ -674,7 +687,8 @@ class _Mutation:
     def run(self) -> Net:
         self.run_phase("op_change_max_pct", self.op_change)
         self.run_phase("edit_max_pct", self.edit)
-        self.run_phase("growth_max_pct", self.growth)
+        if self.grows():
+            self.run_phase("growth_max_pct", self.growth)
         self.run_phase("removal_max_pct", self.removal)
         self.run_phase("depth_shift_max_pct", self.depth_shift)
         if self.p.overall["constant_folding"] == "on":
@@ -692,11 +706,22 @@ OPERATIONS = ("op_change", "v_weight", "s_k", "m_slots", "rewire", "m_retarget")
              ("bypass", "remove_silenced", "depth_shift", "fold_constant")
 
 
-def mutate(parent: Net, profile: Profile, generation: int, rng: Rng, counts: dict = None) -> Net:
+def is_growth_generation(seed: int, generation: int, profile: Profile) -> bool:
+    """Whether `generation` is a growth generation for a population seeded `seed` (spec/06):
+    a stateless draw, so it is the same on replay and after a save and load."""
+    p = float(profile.overall["growth_gen_prob"])
+    if p >= 1.0:
+        return True
+    return Rng((seed ^ (generation * 0x9E3779B97F4A7C15)) & 0xFFFFFFFFFFFFFFFF).u() < p
+
+
+def mutate(parent: Net, profile: Profile, generation: int, rng: Rng, counts: dict = None,
+           growth_generation: bool = True) -> Net:
     """Return a mutated offspring; the parent is not modified (spec/06).
 
-    If `counts` is given, the number of successful uses of each operation is added to it."""
-    m = _Mutation(parent, profile, generation, rng)
+    If `counts` is given, the number of successful uses of each operation is added to it.
+    `growth_generation` False skips phase 3 (see is_growth_generation)."""
+    m = _Mutation(parent, profile, generation, rng, growth_generation)
     child = m.run()
     if counts is not None:
         for k, v in m.counts.items():
