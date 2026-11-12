@@ -153,7 +153,7 @@ double play_deal(Net<D>& net, const Deal& deal, Observe&& observe) {
     while (!table.finished()) {
         const Hand& hand = table.hands[table.h];
         in[0] = input_value(deal.dealer[0]);
-        in[1] = input_value(deal.dealer[1]);
+        in[1] = 0.0;  // the dealer's second card is the hole card: face down, not visible to the player
         for (int i = 0; i < kCardsPerHand; ++i)
             in[2 + i] = static_cast<std::size_t>(i) < hand.revealed ? input_value(hand.cards[i]) : 0.0;
         const Action a = decode(net.step(in)[0]);

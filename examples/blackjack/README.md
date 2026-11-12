@@ -25,7 +25,8 @@ Options: `--deals N` (deals per generation, default 200), `--out DIR`, `--seed N
 - Each deal shuffles a fresh 5-deck shoe (260 cards) and draws every card up front, in a
   fixed order: 7 for the player, 7 for the dealer, then a block of 7 for each possible split.
   Split *k* always uses block *k*, so every net that splits sees the same cards.
-- **Net inputs (9):** the dealer's 2 cards, then 7 player slots: revealed cards by value
+- **Net inputs (9):** the dealer's face-up card, the hole card (always 0: it is face down), then 7
+  player slots: revealed cards by value
   (A = 11), unrevealed slots 0. Two player cards start revealed.
 - **Net output (1):** clamped to 0–3 and rounded up: 0 stand, 1 hit, 2 double down, 3 split.
 - **Hit:** reveal the next card and decide again; a bust or 7 revealed cards ends the hand.
