@@ -21,17 +21,31 @@ public:
 
     Population(std::uint32_t in_qty_max, std::uint32_t n_inputs, std::uint32_t n_outputs,
                Priority priority = Priority::Balanced, std::optional<std::uint64_t> seed = std::nullopt,
-               std::uint32_t path_mix = 2)
+               std::uint32_t path_mix = 2, std::uint32_t max_run = 3)
         : in_qty_max_(in_qty_max), n_inputs_(n_inputs), n_outputs_(n_outputs), path_mix_(path_mix),
-          priority_(priority), seed_(seed ? *seed : fresh_seed()), rng_(seed_) {
+          max_run_(max_run), priority_(priority), seed_(seed ? *seed : fresh_seed()), rng_(seed_) {
         detail::check_params(n_inputs, n_outputs, in_qty_max);
         detail::check_path_mix(path_mix);
+        detail::check_max_run(max_run);
     }
 
     // ---------------------------------------------------------------- inspection
     std::uint64_t generation() const { return generation_; }
     std::uint64_t seed() const { return seed_; }
     std::uint32_t path_mix() const { return path_mix_; }
+    std::uint32_t max_run() const { return max_run_; }
+
+    /// Successful uses of each mutation operation since creation or the last reset; every
+    /// operation of mutation_operations() is listed (0 if unused). Informative; not saved.
+    MutationCounts mutation_counts() const {
+        MutationCounts out;
+        for (const auto& op : mutation_operations()) {
+            auto it = mutation_counts_.find(op);
+            out[op] = it == mutation_counts_.end() ? 0 : it->second;
+        }
+        return out;
+    }
+    void reset_mutation_counts() { mutation_counts_.clear(); }
     std::size_t size() const { return nets_.size(); }
     std::vector<std::uint64_t> ids() const {
         std::vector<std::uint64_t> out;
@@ -50,7 +64,7 @@ public:
     /// Add a copy of an existing net with the population's parameters.
     std::uint64_t add(const Net<D>& net) {
         if (net.in_qty_max != in_qty_max_ || net.n_inputs != n_inputs_ || net.n_outputs != n_outputs_ ||
-            net.path_mix != path_mix_)
+            net.path_mix != path_mix_ || net.max_run != max_run_)
             throw ValidationError("net parameters differ from the population's");
         net.validate();
         const std::uint64_t id = store(net.copy_genome());
@@ -128,7 +142,7 @@ public:
         d["spec_version"] = kSpecVersion;
         d["population"] = nlohmann::json{{"depth_type", to_string(Net<D>::depth_type)},
                                           {"in_qty_max", in_qty_max_}, {"n_inputs", n_inputs_},
-                                          {"n_outputs", n_outputs_}, {"path_mix", path_mix_},
+                                          {"n_outputs", n_outputs_}, {"path_mix", path_mix_}, {"max_run", max_run_},
                                           {"priority", to_string(priority_)},
                                           {"seed", seed_}};
         d["resumed_from"] = resumed_from_ ? nlohmann::json(*resumed_from_) : nlohmann::json(nullptr);
@@ -151,6 +165,7 @@ public:
         w.u(n_inputs_, 4);
         w.u(n_outputs_, 4);
         w.u(path_mix_, 1);
+        w.u(max_run_, 1);
         w.u(seed_, 8);
         for (std::uint64_t s : rng_.get_state()) w.u(s, 8);
         w.u(generation_, 8);
@@ -189,11 +204,12 @@ public:
         const auto n_in = static_cast<std::uint32_t>(r.u(4));
         const auto n_out = static_cast<std::uint32_t>(r.u(4));
         const auto path_mix = static_cast<std::uint32_t>(r.u(1));
+        const auto max_run = static_cast<std::uint32_t>(r.u(1));
         const std::uint64_t seed = r.u(8);
         std::array<std::uint64_t, 4> state;
         for (auto& s : state) s = r.u(8);
         const std::uint64_t generation = r.u(8), next_id = r.u(8), count = r.u(8);
-        Population pop(q, n_in, n_out, priority, seed, path_mix);
+        Population pop(q, n_in, n_out, priority, seed, path_mix, max_run);
         pop.rng_.set_state(state);
         pop.generation_ = generation;
         pop.next_id_ = next_id;
@@ -215,7 +231,7 @@ public:
             AnyNet any = from_bytes(raw);
             auto* net = std::get_if<Net<D>>(&any);
             if (!net || net->in_qty_max != q || net->n_inputs != n_in || net->n_outputs != n_out ||
-                net->path_mix != path_mix)
+                net->path_mix != path_mix || net->max_run != max_run)
                 throw ValidationError("jpnet: " + rel + " does not match the population's parameters");
             pop.nets_.emplace(id, std::move(*net));
         }
@@ -262,7 +278,7 @@ public:
         Population pop = resumed ? Population(3, 1, 1) : Population(pp.at("in_qty_max").get<std::uint32_t>(),
                        pp.at("n_inputs").get<std::uint32_t>(), pp.at("n_outputs").get<std::uint32_t>(),
                        parse_priority(pp.at("priority").get<std::string>()), pp.at("seed").get<std::uint64_t>(),
-                       pp.at("path_mix").get<std::uint32_t>());
+                       pp.at("path_mix").get<std::uint32_t>(), pp.at("max_run").get<std::uint32_t>());
         if (resumed) {
             const std::string h = d.at("resumed_from").get<std::string>();
             if (!base || base->snapshot_hash_ != h)
@@ -316,7 +332,7 @@ public:
     }
 
 private:
-    std::uint32_t in_qty_max_, n_inputs_, n_outputs_, path_mix_;
+    std::uint32_t in_qty_max_, n_inputs_, n_outputs_, path_mix_, max_run_;
     Priority priority_;
     std::uint64_t seed_;
     Rng rng_;
@@ -328,10 +344,11 @@ private:
     nlohmann::json ops_ = nlohmann::json::array();
     std::optional<std::string> resumed_from_;   // hex SHA-256 of the .jpnet this run resumed from
     std::optional<std::string> snapshot_hash_;  // hex SHA-256 of the .jpnet this object was loaded from
+    MutationCounts mutation_counts_;            // informative; not saved
 
     /// Same nets, ids, generation and shared-stream state; an empty journal.
     Population copy_state() const {
-        Population p(in_qty_max_, n_inputs_, n_outputs_, priority_, seed_, path_mix_);
+        Population p(in_qty_max_, n_inputs_, n_outputs_, priority_, seed_, path_mix_, max_run_);
         p.rng_.set_state(rng_.get_state());
         p.nets_ = nets_;
         for (auto& [k, v] : p.nets_) v.reset();
@@ -379,7 +396,7 @@ private:
         OpRng o = op_rng(mode, recorded);
         std::vector<std::uint64_t> ids;
         for (std::uint64_t i = 0; i < count; ++i)
-            ids.push_back(store(Net<D>::create(n_inputs_, n_outputs_, in_qty_max_, priority_, rng_of(o), path_mix_)));
+            ids.push_back(store(Net<D>::create(n_inputs_, n_outputs_, in_qty_max_, priority_, rng_of(o), path_mix_, max_run_)));
         ops_.push_back(nlohmann::json{{"op", "create"}, {"count", count}, {"ids", ids}, {"seed", seed_json(o.seed)}});
         return ids;
     }
@@ -389,8 +406,9 @@ private:
         const Net<D>& parent = nets_.at(id);
         if (times < 1) throw std::invalid_argument("times must be >= 1");
         OpRng o = op_rng(profile.rng_mode(), recorded);
-        Net<D> child = ::jneuro::mutate(parent, profile, generation_, rng_of(o));
-        for (std::uint32_t t = 1; t < times; ++t) child = ::jneuro::mutate(child, profile, generation_, rng_of(o));
+        Net<D> child = ::jneuro::mutate(parent, profile, generation_, rng_of(o), &mutation_counts_);
+        for (std::uint32_t t = 1; t < times; ++t)
+            child = ::jneuro::mutate(child, profile, generation_, rng_of(o), &mutation_counts_);
         const std::uint64_t nid = store(std::move(child));
         ops_.push_back(nlohmann::json{{"op", "mutate"}, {"id", id}, {"times", times},
                                       {"profile", profile_index(profile)}, {"new_id", nid},

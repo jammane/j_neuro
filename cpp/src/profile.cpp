@@ -14,14 +14,15 @@ const std::map<std::string, double>& numeric_defaults() {
         {"op_change_max_pct", 1.0}, {"edit_max_pct", 5.0}, {"growth_max_pct", 1.5},
         {"removal_max_pct", 1.0},   {"depth_shift_max_pct", 5.0}, {"sigma_weight", 0.1},
         {"sign_flip_prob", 0.02},   {"sigma_k", 1.0}, {"sigma_slots", 1.0},
-        {"rewire_prob", 0.1},       {"insert_inversion_prob", 0.05}, {"min_age_for_removal", 5.0}};
+        {"rewire_prob", 0.1},       {"insert_inversion_prob", 0.05}, {"min_age_for_removal", 5.0},
+        {"slot_retarget_prob", 0.1}, {"width_peak", 0.5}, {"tap_peak", 0.25}};
     return d;
 }
 const std::set<std::string>& overridable() {
     static const std::set<std::string> s = {
         "op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pct",
         "depth_shift_max_pct", "sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
-        "rewire_prob", "insert_inversion_prob", "min_age_for_removal"};
+        "rewire_prob", "insert_inversion_prob", "min_age_for_removal", "slot_retarget_prob"};
     return s;
 }
 // Key order of the overall section as written by to_json (matches spec/09).
@@ -29,8 +30,11 @@ const char* const kOverallOrder[] = {
     "op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pct", "depth_shift_max_pct",
     "depth_shift_mode", "sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots", "rewire_prob",
     "insert_inversion_prob", "min_age_for_removal", "add_method_weights", "slot_fill_type_weights",
-    "rng_mode", "growth_budget", "constant_folding"};
-const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m"};
+    "rng_mode", "growth_budget", "constant_folding", "insert_depth", "slot_retarget_prob", "width_bias",
+    "width_peak", "tap_peak", "prune"};
+const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap",
+                                "m_clone",   "m_insert", "v_link",   "s_link"};
+constexpr std::array<double, 11> kMethodDefaults{40, 30, 20, 10, 20, 20, 20, 20, 20, 20, 20};
 const char* const kTypes[] = {"v", "s", "m"};
 
 double number(const json& v, const std::string& k) {
@@ -63,6 +67,7 @@ double Profile::override_value(const std::string& f, NeuronType t) const {
 
 void Profile::set_overall(const std::string& f, double v) {
     if (!numeric_defaults().count(f)) throw ValidationError("unknown profile field " + f);
+    if ((f == "width_peak" || f == "tap_peak") && !(v > 0.0 && v < 1.0)) throw ValidationError(f + " must be in (0, 1)");
     overall_[f] = v;
 }
 
@@ -71,6 +76,8 @@ void Profile::merge_overall(const json& body) {
     for (auto& [k, v] : body.items()) {
         if (numeric_defaults().count(k)) {
             overall_[k] = v.is_null() ? numeric_defaults().at(k) : number(v, k);
+            if ((k == "width_peak" || k == "tap_peak") && !(overall_[k] > 0.0 && overall_[k] < 1.0))
+                throw ValidationError(k + " must be in (0, 1)");
         } else if (k == "depth_shift_mode") {
             if (v.is_null()) { mode_ = "uniform"; continue; }
             if (!v.is_string() || (v != "uniform" && v != "center"))
@@ -91,19 +98,33 @@ void Profile::merge_overall(const json& body) {
             if (!v.is_string() || (v != "off" && v != "on"))
                 throw ValidationError("constant_folding must be off or on");
             constant_folding_ = v.get<std::string>();
+        } else if (k == "insert_depth") {
+            if (v.is_null()) { insert_depth_ = "midpoint"; continue; }
+            if (!v.is_string() || (v != "uniform" && v != "midpoint"))
+                throw ValidationError("insert_depth must be uniform or midpoint");
+            insert_depth_ = v.get<std::string>();
+        } else if (k == "prune") {
+            if (v.is_null()) { prune_ = "static"; continue; }
+            if (!v.is_string() || (v != "any" && v != "static")) throw ValidationError("prune must be any or static");
+            prune_ = v.get<std::string>();
+        } else if (k == "width_bias") {
+            if (v.is_null()) { width_bias_ = "deficit"; continue; }
+            if (!v.is_string() || (v != "none" && v != "center" && v != "deficit"))
+                throw ValidationError("width_bias must be none, center or deficit");
+            width_bias_ = v.get<std::string>();
         } else if (k == "add_method_weights" || k == "slot_fill_type_weights") {
             const bool am = k == "add_method_weights";
             if (v.is_null()) {
-                if (am) amw_ = {40, 30, 20, 10}; else sftw_ = {1, 1, 1};
+                if (am) amw_ = kMethodDefaults; else sftw_ = {1, 1, 1};
                 continue;
             }
             if (!v.is_object()) throw ValidationError(k + " must be an object");
             for (auto& [kk, vv] : v.items()) {
                 std::size_t idx = 99;
-                if (am) { for (std::size_t i = 0; i < 4; ++i) if (kk == kMethods[i]) idx = i; }
+                if (am) { for (std::size_t i = 0; i < 11; ++i) if (kk == kMethods[i]) idx = i; }
                 else    { for (std::size_t i = 0; i < 3; ++i) if (kk == kTypes[i]) idx = i; }
                 if (idx == 99) throw ValidationError("unknown key " + kk + " in " + k);
-                const double def = am ? std::array<double, 4>{40, 30, 20, 10}[idx] : 1.0;
+                const double def = am ? kMethodDefaults[idx] : 1.0;
                 double val = vv.is_null() ? def : number(vv, kk);
                 if (am) amw_[idx] = val; else sftw_[idx] = val;
             }
@@ -142,9 +163,12 @@ json Profile::to_json() const {
         else if (key == "rng_mode") overall[key] = rng_mode_;
         else if (key == "growth_budget") overall[key] = growth_budget_;
         else if (key == "constant_folding") overall[key] = constant_folding_;
+        else if (key == "insert_depth") overall[key] = insert_depth_;
+        else if (key == "width_bias") overall[key] = width_bias_;
+        else if (key == "prune") overall[key] = prune_;
         else if (key == "add_method_weights") {
             json w = json::object();
-            for (std::size_t i = 0; i < 4; ++i) w[kMethods[i]] = amw_[i];
+            for (std::size_t i = 0; i < 11; ++i) w[kMethods[i]] = amw_[i];
             overall[key] = w;
         } else if (key == "slot_fill_type_weights") {
             json w = json::object();

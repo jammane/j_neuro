@@ -118,7 +118,9 @@ def test_insert_inversion():
     net = make_net(1, 1, 3, [(D16, V(0, "mul", 2.0))])
     p = zero_profile()
     p.overall["growth_max_pct"] = 100.0
-    p.overall["add_method_weights"] = {"slot_fill": 0, "v_insert": 1, "s_insert": 0, "m_after_m": 0}
+    p.overall["add_method_weights"] = {"slot_fill": 0, "v_insert": 1, "s_insert": 0, "m_after_m": 0,
+                                       "v_tap": 0, "s_tap": 0, "m_tap": 0, "m_clone": 0, "m_insert": 0,
+                                       "v_link": 0, "s_link": 0}
     p.overall["insert_inversion_prob"] = 1.0
     for seed in range(40):
         child = mutate(net, p, 1, Rng(seed))

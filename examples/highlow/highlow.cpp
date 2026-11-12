@@ -14,7 +14,8 @@
 //
 // Usage: highlow_trainer [--out DIR] [--seed N] [--resume FILE.jpnet] [--shoes N]
 //                        [--path-mix N] [--in-qty-max N] [--edit PCT] [--op PCT] [--grow-gen PCT]
-//                        [--grow-net PCT] [--stop-at GENERATIONS] [--console-every SECONDS]
+//                        [--grow-net PCT] [--tap-weight W] [--stop-at GENERATIONS]
+//                        [--console-every SECONDS]
 //
 // --in-qty-max (odd, >= 3; default 3) is the m_neuron slot count and the longest s_neuron
 // history, so it also sets how far back a lag s_neuron can look. --stop-at N stops and saves
@@ -162,13 +163,15 @@ std::string timestamp() {
 }
 
 /// Edits and op changes "up to"; optional exactly-one growth attempt; constant folding.
-Profile make_profile(double edit_pct, double op_pct, bool grow) {
+/// Input taps (spec/06) join the four other addition methods with weight tap_weight each.
+Profile make_profile(double edit_pct, double op_pct, bool grow, double tap_weight) {
     Profile p = Profile::defaults();
     p.set_overall("edit_max_pct", edit_pct);
     p.set_overall("op_change_max_pct", op_pct);
     p.set_overall("growth_max_pct", grow ? 1e-9 : 0.0);  // exact: max(1, ~0) = 1 attempt
     p.set_overall("removal_max_pct", 0.0);
-    p.apply_patch(nlohmann::json{{"overall", {{"growth_budget", "exact"}, {"constant_folding", "on"}}}});
+    p.apply_patch(nlohmann::json{{"overall", {{"growth_budget", "exact"}, {"constant_folding", "on"},
+        {"add_method_weights", {{"v_tap", tap_weight}, {"s_tap", tap_weight}, {"m_tap", tap_weight}}}}}});
     return p;
 }
 
@@ -181,7 +184,7 @@ int main(int argc, char** argv) {
     int shoes = 4;
     std::uint32_t path_mix = 2, in_qty_max = 3;
     std::optional<std::uint64_t> stop_at;
-    double edit_pct = 20.0, op_pct = 1.0, grow_gen = 10.0, grow_net = 10.0, console_every = 2.0;
+    double edit_pct = 20.0, op_pct = 1.0, grow_gen = 10.0, grow_net = 10.0, tap_weight = 25.0, console_every = 2.0;
     for (int i = 1; i + 1 < argc; i += 2) {
         const std::string a = argv[i], v = argv[i + 1];
         if (a == "--out") out = v;
@@ -195,6 +198,7 @@ int main(int argc, char** argv) {
         else if (a == "--op") op_pct = std::stod(v);
         else if (a == "--grow-gen") grow_gen = std::stod(v);
         else if (a == "--grow-net") grow_net = std::stod(v);
+        else if (a == "--tap-weight") tap_weight = std::stod(v);
         else if (a == "--console-every") console_every = std::stod(v);
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
     }
@@ -205,7 +209,8 @@ int main(int argc, char** argv) {
 
     Pop pop = resume ? Pop::load(*resume) : Pop(in_qty_max, 2, 2, Priority::Speed, std::nullopt, path_mix);
     if (!resume) pop.create(kPopulation);
-    const Profile steady = make_profile(edit_pct, op_pct, false), grow_one = make_profile(edit_pct, op_pct, true);
+    const Profile steady = make_profile(edit_pct, op_pct, false, tap_weight),
+                  grow_one = make_profile(edit_pct, op_pct, true, tap_weight);
     const std::uint64_t deal_seed = seed ? *seed : fresh_seed();
     Rng deals(deal_seed);
     Rng growth_rng(deal_seed ^ 0x9E3779B97F4A7C15ull);
@@ -221,7 +226,7 @@ int main(int argc, char** argv) {
         std::ofstream info(out / "run_info.txt", std::ios::app);
         info << "start " << timestamp() << " deal_seed " << deal_seed << " population_seed " << pop.seed()
              << " shoes " << shoes << " path_mix " << pop.path_mix() << " edit_pct " << edit_pct << " op_pct "
-             << op_pct << " grow_gen_pct " << grow_gen << " grow_net_pct " << grow_net << " constant_folding on"
+             << op_pct << " grow_gen_pct " << grow_gen << " grow_net_pct " << grow_net << " tap_weight " << tap_weight << " constant_folding on"
              << " in_qty_max " << pop.get(pop.ids().front()).in_qty_max
              << (stop_at ? " stop_at " + std::to_string(*stop_at) : std::string()) << (resume ? " resumed_from " + resume->string() : std::string())
              << "\n";

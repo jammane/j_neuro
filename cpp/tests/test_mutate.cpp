@@ -25,7 +25,11 @@ static Profile growth_only(const std::string& method) {
     p.set_overall("growth_max_pct", 100.0);
     p.apply_patch(json{{"overall", {{"add_method_weights",
         {{"slot_fill", method == "slot_fill" ? 1.0 : 0.0}, {"v_insert", method == "v_insert" ? 1.0 : 0.0},
-         {"s_insert", method == "s_insert" ? 1.0 : 0.0}, {"m_after_m", method == "m_after_m" ? 1.0 : 0.0}}}}}});
+         {"s_insert", method == "s_insert" ? 1.0 : 0.0}, {"m_after_m", method == "m_after_m" ? 1.0 : 0.0},
+         {"v_tap", method == "v_tap" ? 1.0 : 0.0}, {"s_tap", method == "s_tap" ? 1.0 : 0.0},
+         {"m_tap", method == "m_tap" ? 1.0 : 0.0}, {"m_clone", method == "m_clone" ? 1.0 : 0.0},
+         {"m_insert", method == "m_insert" ? 1.0 : 0.0}, {"v_link", method == "v_link" ? 1.0 : 0.0},
+         {"s_link", method == "s_link" ? 1.0 : 0.0}}}}}});
     return p;
 }
 
@@ -47,14 +51,14 @@ static Net<D> first_changed(const Net<D>& net, const Profile& p, std::uint64_t g
 
 static N32 base_net(std::uint64_t seed = 3, std::uint32_t n_in = 4, std::uint32_t n_out = 2, std::uint32_t q = 5) {
     Rng r(seed);
-    return N32::create(n_in, n_out, q, Priority::Speed, r);
+    return N32::create(n_in, n_out, q, Priority::Speed, r, 2, 0);  // these tests predate the run rule
 }
 
 TEST_CASE("profile defaults") {
     auto p = Profile::defaults();
     CHECK(p.effective("edit_max_pct", NeuronType::V) == 5.0);
     CHECK(p.effective("growth_max_pct", NeuronType::M) == 1.5);
-    CHECK(p.add_method_weights() == std::array<double, 4>{40, 30, 20, 10});
+    CHECK(p.add_method_weights() == std::array<double, 11>{40, 30, 20, 10, 20, 20, 20, 20, 20, 20, 20});
     CHECK(p.effective("sigma_weight", NeuronType::V) == 0.1);
 }
 
@@ -270,7 +274,7 @@ TEST_CASE("create golden") {
                             parse_depth_type(c["depth_type"].get<std::string>()),
                             c["in_qty_max"].get<std::uint32_t>(),
                             parse_priority(c["priority"].get<std::string>()), r,
-                            c["path_mix"].get<std::uint32_t>());
+                            c["path_mix"].get<std::uint32_t>(), c["max_run"].get<std::uint32_t>());
         Bytes expected = hex_to_bytes(c["expected_jnet"].get<std::string>());
         CHECK(std::visit([](const auto& n) { return to_bytes(n); }, net) == expected);
     }
@@ -313,7 +317,9 @@ TEST_CASE("property: neutral chains preserve outputs") {
         p.set_overall("depth_shift_max_pct", 40.0);
         p.set_overall("min_age_for_removal", 0.0);
         p.apply_patch(json{{"overall", {{"add_method_weights",
-            {{"slot_fill", 1.0}, {"v_insert", 1.0}, {"s_insert", 0.0}, {"m_after_m", 0.0}}}}}});
+            {{"slot_fill", 1.0}, {"v_insert", 1.0}, {"s_insert", 0.0}, {"m_after_m", 0.0}, {"v_tap", 0.0},
+             {"s_tap", 0.0}, {"m_tap", 0.0}, {"m_clone", 0.0}, {"m_insert", 0.0},
+             {"v_link", 0.0}, {"s_link", 0.0}}}}}});
         for (std::uint64_t gen = 1; gen < 25; ++gen) {
             net = mutate(net, p, gen, r);
             net.validate();
@@ -394,7 +400,7 @@ TEST_CASE("mutation keeps mix rule") {
 
 TEST_CASE("exact growth budget adds exactly one") {
     Rng r0(1);
-    const N32 net = N32::create(3, 1, 3, Priority::Speed, r0);
+    const N32 net = N32::create(3, 1, 3, Priority::Speed, r0, 2, 0);
     std::set<std::size_t> grew[2];
     for (int exact = 0; exact < 2; ++exact) {
         Profile p = growth_only("v_insert");
@@ -435,4 +441,155 @@ TEST_CASE("constant folding") {
                                                         {200, S(2, AggOp::Mean, 1)}});
     Rng r3(0);
     CHECK(to_bytes(mutate(only, p, 1, r3)) == to_bytes(only));
+}
+
+// ---------------------------------------------------------------- input taps (spec/06)
+
+TEST_CASE("input taps") {
+    const std::uint32_t q = 5;
+    for (std::string method : {"v_tap", "s_tap", "m_tap"}) {
+        for (std::uint32_t mix : {0u, 2u}) {
+            INFO(method << " path_mix " << mix);
+            int grew = 0;
+            for (std::uint64_t seed = 0; seed < 40; ++seed) {
+                Rng r0(seed);
+                N32 net = N32::create(4, 2, q, Priority::Speed, r0, mix);
+                for (std::uint64_t gen = 1; gen < 4; ++gen) {  // grow m chains, so m_neurons read hidden nodes
+                    Profile g = growth_only("m_after_m");
+                    g.set_overall("growth_max_pct", 60.0);
+                    Rng rg(seed + gen);
+                    net = mutate(net, g, gen, rg);
+                }
+                Profile p = growth_only(method);
+                p.set_overall("growth_max_pct", 1e-9);
+                p.apply_patch(json{{"overall", {{"growth_budget", "exact"}}}});
+                Rng r(seed);
+                const N32 child = mutate(net, p, 9, r);
+                child.validate();
+                std::vector<NodeId> fresh;
+                for (NodeId i = 0; i < child.nodes.size(); ++i)
+                    if (child.nodes[i].birth >= net.next_birth) fresh.push_back(i);
+                REQUIRE(fresh.size() <= 1);
+                if (fresh.empty()) continue;
+                ++grew;
+                const NodeId x = fresh[0];
+                const Neuron& n = *child.nodes[x].neuron;
+                if (method == "m_tap") {
+                    const auto& m = std::get<MNeuron>(n);
+                    std::vector<NodeId> filled;
+                    for (auto& s : m.slots) if (s) filled.push_back(*s);
+                    CHECK(filled.size() == (q + 1) / 2);
+                    CHECK(filled[0] < child.n_inputs);
+                    CHECK(filled[1] < child.n_inputs);
+                } else {
+                    const auto in = method == "v_tap" ? std::get<VNeuron>(n).input : std::get<SNeuron>(n).input;
+                    CHECK(*in < child.n_inputs);
+                }
+                std::uint64_t deepest = 0;
+                for (auto& y : child.nodes)
+                    if (y.neuron)
+                        if (auto* m = std::get_if<MNeuron>(&*y.neuron);
+                            m && std::find(m->slots.begin(), m->slots.end(), std::optional<NodeId>(x)) != m->slots.end())
+                            for (auto& s : m->slots)
+                                if (s && *s != x) deepest = std::max<std::uint64_t>(deepest, child.nodes[*s].depth);
+                CHECK(child.nodes[x].depth <= deepest);
+            }
+            CHECK(grew >= 10);
+        }
+    }
+}
+
+TEST_CASE("m_clone and midpoint insert depth") {
+    int grew = 0;
+    for (std::uint64_t seed = 0; seed < 40; ++seed) {
+        Rng r0(seed);
+        const N32 net = N32::create(7, 2, 5, Priority::Speed, r0, 0, 0);  // merge tree: m reads m
+        Profile p = growth_only("m_clone");
+        p.set_overall("growth_max_pct", 1e-9);
+        p.apply_patch(json{{"overall", {{"growth_budget", "exact"}}}});
+        Rng r(seed);
+        const N32 child = mutate(net, p, 3, r);
+        child.validate();
+        if (child.nodes.size() == net.nodes.size()) continue;
+        ++grew;
+        const NodeId x = static_cast<NodeId>(child.nodes.size() - 1);
+        const auto& copy = std::get<MNeuron>(*child.nodes[x].neuron);
+        bool twin = false;
+        for (NodeId i = 0; i < x; ++i)
+            if (auto* m = std::get_if<MNeuron>(&*child.nodes[i].neuron))
+                twin |= m->op == copy.op && m->slots == copy.slots && child.nodes[i].depth == child.nodes[x].depth;
+        CHECK(twin);
+    }
+    CHECK(grew >= 20);
+    // midpoint: the same parent and method place the new node at the same depth whatever the seed
+    Rng r1(5);
+    const N32 base = N32::create(1, 1, 3, Priority::Speed, r1, 0, 0);
+    Profile mid = growth_only("v_insert");
+    mid.set_overall("growth_max_pct", 1e-9);
+    mid.apply_patch(json{{"overall", {{"growth_budget", "exact"}, {"insert_depth", "midpoint"}}}});
+    std::set<std::uint64_t> depths;
+    for (std::uint64_t s = 0; s < 20; ++s) {
+        Rng r(s);
+        const N32 c = mutate(base, mid, 1, r);
+        depths.insert(c.nodes.back().depth);
+    }
+    CHECK(depths.size() == 1);
+    CHECK(*depths.begin() == N32::d_max / 2);  // halfway between the input (0) and the output (D_MAX)
+}
+
+TEST_CASE("slot retarget") {
+    const auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, M(AggOp::Max, {3, 4, none})}, {100, V(0, VOp::Mul, 1.0)},
+                                                       {200, S(2, AggOp::Mean, 1)}, {200, S(2, AggOp::Mean, 1)}});
+    Profile p = zero_profile();
+    p.set_overall("edit_max_pct", 100.0);
+    p.set_overall("slot_retarget_prob", 1.0);
+    p.set_overall("rewire_prob", 0.0);
+    p.apply_patch(json{{"overall", {{"prune", "any"}}}});
+    int moved = 0;
+    for (std::uint64_t s = 0; s < 60; ++s) {
+        Rng r(s);
+        const auto child = mutate(net, p, 1, r);
+        child.validate();
+        const auto& slots = std::get<MNeuron>(*child.nodes[1].neuron).slots;
+        CHECK(!slots[2]);  // a retarget never fills an empty slot
+        if (slots != Slots{3, 4, none}) {
+            ++moved;
+            for (auto& x : slots) if (x) CHECK(child.nodes[*x].depth <= 200);
+        }
+    }
+    CHECK(moved >= 5);
+    const auto only = make_net<std::uint16_t>(1, 1, 3, {{D16, M(AggOp::Max, {2, none, none})}, {100, V(0, VOp::Mul, 1.0)}});
+    for (std::uint64_t s = 0; s < 20; ++s) {
+        Rng r(s);
+        CHECK(std::get<MNeuron>(*mutate(only, p, 1, r).nodes[1].neuron).slots == Slots{2, none, none});
+    }
+}
+
+// ---------------------------------------------------------------- run rule (spec/03)
+
+TEST_CASE("mutation keeps run rule") {
+    for (std::uint64_t seed = 0; seed < 10; ++seed) {
+        Rng r(3000 + seed);
+        const std::uint32_t n_in = 1 + static_cast<std::uint32_t>(r.below(8));
+        const std::uint32_t n_out = 1 + static_cast<std::uint32_t>(r.below(2));
+        const std::uint32_t q = 3 + 2 * static_cast<std::uint32_t>(r.below(3));
+        const std::uint32_t mix = static_cast<std::uint32_t>(r.below(3));
+        const std::uint32_t run = 1 + static_cast<std::uint32_t>(r.below(3));
+        N32 net = N32::create(n_in, n_out, q, Priority::Speed, r, mix, run);
+        Profile p = Profile::defaults();
+        for (auto f : PHASES) p.set_overall(f, 30.0);
+        p.set_overall("min_age_for_removal", 1.0);
+        p.apply_patch(json{{"overall", {{"constant_folding", "on"}}}});
+        for (std::uint64_t gen = 1; gen < 20; ++gen) {
+            net = mutate(net, p, gen, r);
+            net.validate();  // includes the run rule
+            CHECK(run_ok(net));
+        }
+    }
+    auto three = make_net<std::uint16_t>(1, 1, 3, {{D16, M(AggOp::Max, {4, none, none})}, {10, V(0, VOp::Mul, 1.0)},
+                                                   {20, V(2, VOp::Mul, 1.0)}, {30, V(3, VOp::Mul, 1.0)}});
+    for (auto [k, ok] : {std::pair{0u, true}, std::pair{2u, false}, std::pair{3u, true}}) {
+        three.max_run = k;
+        CHECK(run_ok(three) == ok);
+    }
 }

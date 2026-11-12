@@ -6,7 +6,7 @@
 //
 // Usage: blackjack_trainer [--out DIR] [--seed N] [--resume FILE.jpnet] [--rules new|old]
 //                          [--console-every SECONDS]
-//   new rules (default):   [--edit PCT] [--op PCT] [--grow-gen PCT] [--grow-net PCT]
+//   new rules (default):   [--edit PCT] [--op PCT] [--grow-gen PCT] [--grow-net PCT] [--tap-weight W]
 //   old rules:             [--alter PCT] [--grow PCT] [--big-alter PCT] [--big-grow PCT]
 //
 // New rules: every child gets parameter edits on up to --edit % of its neurons (default 20)
@@ -231,13 +231,14 @@ std::string timestamp() {
 }
 
 /// New rules: edits and op changes "up to", optional exactly-one growth attempt, folding.
-Profile make_new_profile(double edit_pct, double op_pct, bool grow) {
+Profile make_new_profile(double edit_pct, double op_pct, bool grow, double tap_weight) {
     Profile p = Profile::defaults();
     p.set_overall("edit_max_pct", edit_pct);
     p.set_overall("op_change_max_pct", op_pct);
     p.set_overall("growth_max_pct", grow ? 1e-9 : 0.0);  // exact: max(1, ~0) = 1 attempt
     p.set_overall("removal_max_pct", 0.0);
-    p.apply_patch(nlohmann::json{{"overall", {{"growth_budget", "exact"}, {"constant_folding", "on"}}}});
+    p.apply_patch(nlohmann::json{{"overall", {{"growth_budget", "exact"}, {"constant_folding", "on"},
+        {"add_method_weights", {{"v_tap", tap_weight}, {"s_tap", tap_weight}, {"m_tap", tap_weight}}}}}});
     return p;
 }
 
@@ -257,7 +258,7 @@ int main(int argc, char** argv) {
     std::optional<std::uint64_t> seed;
     std::optional<fs::path> resume;
     double alter = 22.0, grow = 12.0, big_alter = 5.0, big_grow = 1.5, console_every = 2.0;
-    double edit_pct = 20.0, op_pct = 1.0, grow_gen = 10.0, grow_net = 10.0;
+    double edit_pct = 20.0, op_pct = 1.0, grow_gen = 10.0, grow_net = 10.0, tap_weight = 25.0;
     std::string rules = "new";
     for (int i = 1; i + 1 < argc; i += 2) {
         const std::string a = argv[i], v = argv[i + 1];
@@ -274,6 +275,7 @@ int main(int argc, char** argv) {
         else if (a == "--op") op_pct = std::stod(v);
         else if (a == "--grow-gen") grow_gen = std::stod(v);
         else if (a == "--grow-net") grow_net = std::stod(v);
+        else if (a == "--tap-weight") tap_weight = std::stod(v);
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
     }
     if (rules != "new" && rules != "old") { std::cerr << "--rules must be new or old\n"; return 2; }
@@ -286,7 +288,8 @@ int main(int argc, char** argv) {
     if (!resume) pop.create(kPopulation);
     const Profile profile = make_profile(alter, grow);
     const Profile big_profile = make_profile(big_alter, big_grow);  // nets over kBigNet neurons
-    const Profile steady = make_new_profile(edit_pct, op_pct, false), grow_one = make_new_profile(edit_pct, op_pct, true);
+    const Profile steady = make_new_profile(edit_pct, op_pct, false, tap_weight),
+                  grow_one = make_new_profile(edit_pct, op_pct, true, tap_weight);
     const std::uint64_t deal_seed = seed ? *seed : fresh_seed();
     Rng deals(deal_seed);
     Rng growth_rng(deal_seed ^ 0x9E3779B97F4A7C15ull);  // growth-generation and growth-child draws
@@ -303,7 +306,7 @@ int main(int argc, char** argv) {
              << " rules " << rules;
         if (new_rules)
             info << " edit_pct " << edit_pct << " op_pct " << op_pct << " grow_gen_pct " << grow_gen
-                 << " grow_net_pct " << grow_net << " constant_folding on";
+                 << " grow_net_pct " << grow_net << " tap_weight " << tap_weight << " constant_folding on";
         else
             info << " alter_pct " << alter << " grow_pct " << grow << " big_alter_pct " << big_alter
                  << " big_grow_pct " << big_grow << " big_net_neurons " << kBigNet;

@@ -14,7 +14,7 @@ Options: `--out DIR`, `--seed N` (shoe stream), `--resume FILE.jpnet`, `--shoes 
 `--path-mix N` (default 2), `--in-qty-max N` (odd, ≥ 3, default 3: m_neuron slots and the
 longest s_neuron history, so how far back a `lag` s_neuron can look), `--stop-at N` (stop and
 save after N generations), `--edit PCT`, `--op PCT`, `--grow-gen PCT`, `--grow-net PCT`
-(defaults 20, 1, 10, 10, as in the blackjack trainer's new rules), `--console-every SECONDS`.
+(defaults 20, 1, 10, 10, as in the blackjack trainer's new rules), `--tap-weight W` (default 25), `--console-every SECONDS`.
 
 ## Game
 
@@ -37,7 +37,7 @@ save after N generations), `--edit PCT`, `--op PCT`, `--grow-gen PCT`, `--grow-n
 - 40 nets; every net plays the same `--shoes` shoes each generation; top 10 kept, each
   mutated 3 times; ties at the cut broken by sudden-death shoes, then at random after 10.
 - Mutation: the blackjack trainer's new rules (edits up to 20%, op changes up to 1%, rare
-  exactly-one growth, constant folding), `path_mix` 2.
+  exactly-one growth, constant folding, input taps with weight `--tap-weight`), `path_mix` 2.
 - **Baseline:** the best no-memory strategy: always the same suit, and for each current rank
   the relation guess with the highest expected points. Beating it means the net is using the
   cards already seen.

@@ -39,7 +39,7 @@ listed priority.
 
 ```json
 {"kind": "create", "seed": 1, "n_inputs": 7, "n_outputs": 2,
- "depth_type": "U16", "in_qty_max": 3, "priority": "MEMORY", "path_mix": 2,
+ "depth_type": "U16", "in_qty_max": 3, "priority": "MEMORY", "path_mix": 2, "max_run": 3,
  "expected_jnet": "4a4e4554…"}
 ```
 
@@ -98,7 +98,10 @@ The golden set SHOULD include at least:
   `path_mix` 0 and above.
 - Every mix-rule skip: rewire, slot connect, slot fill and bypass.
 - `growth_budget = exact`, and constant folding including the path-rule restore.
-- Every addition method, including skipped attempts (no gap, no eligible receiver, cap
+- Run-rule skips (path insertion, slot fill, taps), the run rule on load, and minimal nets with
+  `max_run` 0 and above, including identity-v tree levels and chain separators.
+- m_clone, m_insert, links, slot retarget, `insert_depth` both ways, every `width_bias`.
+- Every addition method (including the three input taps), including skipped attempts (no gap, no eligible receiver, cap
   reached).
 - Bypass, silenced removal with downstream cascade stopping at a `min` reader and at a
   nonzero constant, immunity skip, garbage collection and compaction.

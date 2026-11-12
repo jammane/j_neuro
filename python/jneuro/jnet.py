@@ -108,6 +108,7 @@ def net_to_bytes(net: Net) -> bytes:
     w.u(net.n_inputs, 4)
     w.u(net.n_outputs, 4)
     w.u(net.path_mix, 1)
+    w.u(net.max_run, 1)
     w.u(net.next_birth, 8)
     w.u(len(net.nodes), wd)
 
@@ -152,6 +153,7 @@ def net_from_bytes(data: bytes) -> Net:
     n_in = r.u(4)
     n_out = r.u(4)
     path_mix = r.u(1)
+    max_run = r.u(1)
     next_birth = r.u(8)
     count = r.u(wd)
     if count > depth_type.d_max:
@@ -187,7 +189,7 @@ def net_from_bytes(data: bytes) -> Net:
             raise ValidationError(f"jnet: neuron type byte {kind} out of range")
         nodes.append(Node(birth, born_gen, depth, neuron))
     r.done()
-    net = Net(priority, depth_type, q, n_in, n_out, nodes, next_birth, path_mix)
+    net = Net(priority, depth_type, q, n_in, n_out, nodes, next_birth, path_mix, max_run)
     net.validate()
     return net
 

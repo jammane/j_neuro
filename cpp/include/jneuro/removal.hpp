@@ -120,8 +120,9 @@ std::vector<std::optional<double>> constant_values(const Net<D>& net, const Remo
 }
 
 /// Replace constant hidden neurons by constant v_neurons (spec/07); no RNG, no quota.
+/// Returns the number of neurons folded.
 template <class D, class MinAge>
-void fold_constants(Net<D>& net, Removed& removed, std::uint64_t generation, MinAge min_age) {
+std::uint64_t fold_constants(Net<D>& net, Removed& removed, std::uint64_t generation, MinAge min_age) {
     detail::fit(net, removed);
     const auto c = constant_values(net, removed);
     std::vector<NodeId> cands;
@@ -132,11 +133,14 @@ void fold_constants(Net<D>& net, Removed& removed, std::uint64_t generation, Min
     }
     std::stable_sort(cands.begin(), cands.end(),
                      [&](NodeId a, NodeId b) { return net.nodes[a].depth > net.nodes[b].depth; });
+    std::uint64_t folded = 0;
     for (NodeId i : cands) {
         Neuron old = *net.nodes[i].neuron;
         net.nodes[i].neuron = VNeuron{std::nullopt, Inversion::None, VOp::Add, *c[i]};
         if (!path_rule_ok(net, &removed)) net.nodes[i].neuron = std::move(old);
+        else ++folded;
     }
+    return folded;
 }
 
 /// Mark every live hidden node that reaches no output as removed.

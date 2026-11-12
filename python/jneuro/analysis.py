@@ -106,6 +106,34 @@ def mix_ok(net: Net, removed: Optional[Set[int]] = None) -> bool:
     return True
 
 
+def run_ok(net: Net, removed: Optional[Set[int]] = None) -> bool:
+    """Run rule (spec/03): no input-to-output path has more than max_run 1:1 (v, s) or many:1 (m)
+    neurons in a row."""
+    k = net.max_run
+    if k == 0:
+        return True
+    alive = _live(net, removed)
+    reach = reaching_output(net, removed)
+    order = sorted((i for i in range(len(net.nodes)) if alive[i]), key=lambda i: net.nodes[i].depth)
+    run_1: List[Optional[int]] = [None] * len(net.nodes)    # longest run ending here, from an input
+    run_m: List[Optional[int]] = [None] * len(net.nodes)
+    for i in order:
+        neuron = net.nodes[i].neuron
+        if neuron is None:
+            run_1[i] = run_m[i] = 0
+            continue
+        preds = [c for c in connections(neuron) if alive[c] and run_1[c] is not None]
+        if not preds:
+            continue
+        if isinstance(neuron, MNeuron):
+            run_m[i], run_1[i] = 1 + max(run_m[c] for c in preds), 0
+        else:
+            run_1[i], run_m[i] = 1 + max(run_1[c] for c in preds), 0
+        if i in reach and (run_1[i] > k or run_m[i] > k):
+            return False
+    return True
+
+
 def is_immune(net: Net, node_id: int, removed: Optional[Set[int]] = None) -> bool:
     """True if removing node_id would break the path rule (spec/07)."""
     return not path_rule_ok(net, removed, cut=node_id)

@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Union
 from .io import RUNLOG_FORMAT, SPEC_VERSION, _check_version, _dumps
 from .jnet import Reader, Writer, net_from_bytes, net_to_bytes, sha256, write_header
 from .mutate import Profile, inject_diversity, mutate
-from .net import Net, _check_params, _check_path_mix
+from .net import Net, _check_max_run, _check_params, _check_path_mix
 from .rng import Rng
 from .types import DepthType, Priority, ValidationError
 
@@ -27,10 +27,12 @@ class Population:
 
     def __init__(self, depth_type: DepthType, in_qty_max: int, n_inputs: int, n_outputs: int,
                  priority: Priority = Priority.BALANCED, seed: Optional[int] = None,
-                 path_mix: int = 2):
+                 path_mix: int = 2, max_run: int = 3):
         _check_params(n_inputs, n_outputs, in_qty_max)
         _check_path_mix(path_mix)
+        _check_max_run(max_run)
         self.path_mix = path_mix
+        self.max_run = max_run
         self.depth_type = DepthType(depth_type)
         self.in_qty_max = in_qty_max
         self.n_inputs = n_inputs
@@ -46,6 +48,7 @@ class Population:
         self._ops: List[dict] = []
         self._resumed_from: Optional[str] = None   # hex SHA-256 of the .jpnet this run resumed from
         self._snapshot_hash: Optional[str] = None  # hex SHA-256 of the .jpnet this object was loaded from
+        self._mutation_counts: Dict[str, int] = {}  # operation -> successful uses (informative, not saved)
 
     # ------------------------------------------------------------ inspection
 
@@ -61,6 +64,15 @@ class Population:
 
     def get(self, net_id: int) -> Net:
         return self._nets[net_id]
+
+    def mutation_counts(self) -> Dict[str, int]:
+        """Successful uses of each mutation operation since creation or the last reset, every
+        operation in jneuro.mutate.OPERATIONS listed (0 if unused). Informative; not saved."""
+        from .mutate import OPERATIONS
+        return {op: self._mutation_counts.get(op, 0) for op in OPERATIONS}
+
+    def reset_mutation_counts(self):
+        self._mutation_counts = {}
 
     # ------------------------------------------------------------ helpers
 
@@ -92,15 +104,15 @@ class Population:
         """Add `count` minimal nets, all drawn from one operation RNG."""
         rng, seed = self._op_rng(rng_mode, _seed)
         ids = [self._store(Net.create(self.n_inputs, self.n_outputs, self.depth_type,
-                                      self.in_qty_max, self.priority, rng, self.path_mix))
+                                      self.in_qty_max, self.priority, rng, self.path_mix, self.max_run))
                for _ in range(count)]
         self._ops.append({"op": "create", "count": count, "ids": list(ids), "seed": seed})  # copy: caller may modify ids
         return ids
 
     def add(self, net: Net) -> int:
         """Add a copy of an existing net with the population's parameters."""
-        if (net.depth_type, net.in_qty_max, net.n_inputs, net.n_outputs, net.path_mix) != \
-                (self.depth_type, self.in_qty_max, self.n_inputs, self.n_outputs, self.path_mix):
+        if (net.depth_type, net.in_qty_max, net.n_inputs, net.n_outputs, net.path_mix, net.max_run) != \
+                (self.depth_type, self.in_qty_max, self.n_inputs, self.n_outputs, self.path_mix, self.max_run):
             raise ValidationError("net parameters differ from the population's")
         net.validate()
         nid = self._store(net.copy())
@@ -115,7 +127,7 @@ class Population:
         rng, seed = self._op_rng(profile.overall["rng_mode"], _seed)
         child = parent
         for _ in range(times):
-            child = mutate(child, profile, self._generation, rng)
+            child = mutate(child, profile, self._generation, rng, self._mutation_counts)
         nid = self._store(child)
         self._ops.append({"op": "mutate", "id": net_id, "times": times,
                           "profile": self._profile_index(profile), "new_id": nid, "seed": seed})
@@ -165,7 +177,8 @@ class Population:
             "format": RUNLOG_FORMAT, "spec_version": SPEC_VERSION,
             "population": {"depth_type": self.depth_type.name, "in_qty_max": self.in_qty_max,
                            "n_inputs": self.n_inputs, "n_outputs": self.n_outputs,
-                           "path_mix": self.path_mix, "priority": self.priority.name, "seed": self.seed},
+                           "path_mix": self.path_mix, "max_run": self.max_run,
+                           "priority": self.priority.name, "seed": self.seed},
             "resumed_from": self._resumed_from,
             "profiles": self._profiles, "ops": self._ops})
 
@@ -180,7 +193,8 @@ class Population:
         resumed = d.get("resumed_from")
         if resumed is None:
             pop = cls(DepthType[pp["depth_type"]], pp["in_qty_max"], pp["n_inputs"], pp["n_outputs"],
-                      Priority[pp["priority"]], seed=pp["seed"], path_mix=pp["path_mix"])
+                      Priority[pp["priority"]], seed=pp["seed"], path_mix=pp["path_mix"],
+                      max_run=pp["max_run"])
         else:
             if base is None or base._snapshot_hash != resumed:
                 raise ValidationError("run log resumes from a .jpnet: pass the population loaded "
@@ -226,7 +240,7 @@ class Population:
     def _copy_state(self) -> "Population":
         """Same nets, ids, generation and shared-stream state; an empty journal."""
         p = Population(self.depth_type, self.in_qty_max, self.n_inputs, self.n_outputs,
-                       self.priority, seed=self.seed, path_mix=self.path_mix)
+                       self.priority, seed=self.seed, path_mix=self.path_mix, max_run=self.max_run)
         p._rng.set_state(self._rng.get_state())
         p._nets = {k: v.copy() for k, v in self._nets.items()}
         p._next_id = self._next_id
@@ -248,6 +262,7 @@ class Population:
         w.u(self.n_inputs, 4)
         w.u(self.n_outputs, 4)
         w.u(self.path_mix, 1)
+        w.u(self.max_run, 1)
         w.u(self.seed, 8)
         for s in self._rng.get_state():
             w.u(s, 8)
@@ -282,10 +297,11 @@ class Population:
         depth_type = r.enum(DepthType, "depth_type")
         q, n_in, n_out = r.u(4), r.u(4), r.u(4)
         path_mix = r.u(1)
+        max_run = r.u(1)
         seed = r.u(8)
         state = [r.u(8) for _ in range(4)]
         generation, next_id, count = r.u(8), r.u(8), r.u(8)
-        pop = cls(depth_type, q, n_in, n_out, priority, seed=seed, path_mix=path_mix)
+        pop = cls(depth_type, q, n_in, n_out, priority, seed=seed, path_mix=path_mix, max_run=max_run)
         pop._rng.set_state(state)
         pop._generation = generation
         pop._next_id = next_id
@@ -304,8 +320,8 @@ class Population:
             if sha256(raw) != digest:
                 raise ValidationError(f"jpnet: hash mismatch for {rel}")
             net = net_from_bytes(raw)
-            if (net.depth_type, net.in_qty_max, net.n_inputs, net.n_outputs, net.path_mix) != \
-                    (depth_type, q, n_in, n_out, path_mix):
+            if (net.depth_type, net.in_qty_max, net.n_inputs, net.n_outputs, net.path_mix, net.max_run) != \
+                    (depth_type, q, n_in, n_out, path_mix, max_run):
                 raise ValidationError(f"jpnet: {rel} does not match the population's parameters")
             pop._nets[nid] = net
         flag = r.u(1)

@@ -15,8 +15,8 @@ build/blackjack_trainer --resume runs/blackjack-…/population.jpnet --out runs/
 Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules new|old`
 (default new), `--alter PCT`
 (default 22), `--grow PCT` (default 12), `--big-alter PCT` (default 5), `--big-grow PCT`
-(default 1.5) for `--rules old`; `--edit`, `--op`, `--grow-gen`, `--grow-net` (defaults 20, 1,
-10, 10) for `--rules new`; `--console-every SECONDS` (default 2).
+(default 1.5) for `--rules old`; `--edit`, `--op`, `--grow-gen`, `--grow-net`, `--tap-weight`
+(defaults 20, 1, 10, 10, 25) for `--rules new`; `--console-every SECONDS` (default 2).
 
 ## Game
 
@@ -55,7 +55,10 @@ Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules 
   20% of its neurons (`--edit`) and operation changes on up to 1% (`--op`, i.e. 5% of the
   20%). Growth is rare: each generation has a 10% chance (`--grow-gen`) of being a growth
   generation, and then each child has a 10% chance (`--grow-net`) of exactly one addition
-  attempt (`growth_budget = exact`). There is no quota-based removal; neurons that can only
+  attempt (`growth_budget = exact`). Besides the four usual addition methods, the three input
+  taps (spec/06: a new v, s or m neuron reading the inputs, feeding an empty m slot) can be
+  chosen, each with weight `--tap-weight` (default 25) against slot fill 40, v_insert 30,
+  s_insert 20, m_after_m 10. There is no quota-based removal; neurons that can only
   output a constant are replaced by constants and whatever fed them is deleted
   (`constant_folding = on`, after the usual 5-generation grace period).
 - **Mutation, old rules (`--rules old`):** up to 22% of neurons altered (edits and operation

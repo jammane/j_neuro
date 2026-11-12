@@ -12,7 +12,7 @@ static const char* PHASES[] = {"op_change_max_pct", "edit_max_pct", "growth_max_
 
 /// path_mix 0, so hand-built nets can be added.
 static Pop pop(std::optional<std::uint64_t> seed = 11, Priority prio = Priority::Balanced) {
-    return Pop(5, 3, 2, prio, seed, 0);
+    return Pop(5, 3, 2, prio, seed, 0, 0);
 }
 
 static Profile heavy(const std::string& mode = "fresh") {
@@ -52,7 +52,7 @@ TEST_CASE("pop: add rejects mismatch and copies") {
     CHECK_THROWS_AS(p.add(N32::create(2, 2, 5, Priority::Speed, r)), ValidationError);
     CHECK_THROWS_AS(p.add(N32::create(3, 2, 3, Priority::Speed, r)), ValidationError);
     CHECK_THROWS_AS(p.add(N32::create(3, 2, 5, Priority::Speed, r)), ValidationError);  // path_mix 2 vs 0
-    auto net = N32::create(3, 2, 5, Priority::Speed, r, 0);
+    auto net = N32::create(3, 2, 5, Priority::Speed, r, 0, 0);
     auto i = p.add(net);
     auto& m = std::get<MNeuron>(*net.nodes[3].neuron);
     m.op = static_cast<AggOp>((static_cast<int>(m.op) + 1) % 4);
@@ -174,7 +174,7 @@ TEST_CASE("pop: generation used for new neurons") {
 }
 
 static Pop session_with_everything() {
-    Pop p(5, 3, 2, Priority::Speed, std::nullopt, 0);  // adds a hand-built net
+    Pop p(5, 3, 2, Priority::Speed, std::nullopt, 0, 0);  // adds a hand-built net
     auto ids = p.create(3);
     p.create(2, "shared");
     auto a = p.mutate(ids[0], heavy("fresh"), 2);
@@ -276,7 +276,7 @@ struct TempDir {
 };
 
 Pop seeded_session(std::uint64_t seed) {
-    Pop p(5, 3, 2, Priority::Speed, seed, 0);  // adds a hand-built net
+    Pop p(5, 3, 2, Priority::Speed, seed, 0, 0);  // adds a hand-built net
     auto ids = p.create(3);
     auto a = p.mutate(ids[0], heavy("fresh"), 2);
     p.next_generation();
@@ -374,4 +374,29 @@ TEST_CASE("pop: default path_mix is two") {
     auto child = p.mutate(0, heavy("fresh"), 5);
     p.get(child).validate();  // mix rule preserved
     CHECK(Population<std::uint32_t>::replay(p.run_log()).path_mix() == 2);
+}
+
+TEST_CASE("pop: mutation counts cover every operation") {
+    Population<std::uint32_t> p(5, 4, 2, Priority::Speed, 3);
+    auto ids = p.create(6);
+    Profile prof = heavy("fresh");
+    prof.set_overall("min_age_for_removal", 1.0);
+    prof.set_overall("slot_retarget_prob", 0.5);
+    prof.apply_patch(json{{"overall", {{"constant_folding", "on"},
+        {"add_method_weights", {{"v_tap", 40}, {"s_tap", 40}, {"m_tap", 40}, {"m_clone", 40}}}}}});
+    auto all_used = [&] {
+        for (auto& [op, n] : p.mutation_counts()) if (n == 0) return false;
+        return true;
+    };
+    for (int gen = 0; gen < 60 && !all_used(); ++gen) {
+        for (auto& i : ids) i = p.mutate(i, prof);
+        p.next_generation();
+    }
+    for (auto& [op, n] : p.mutation_counts()) {
+        INFO(op);
+        CHECK(n > 0);
+    }
+    CHECK(p.mutation_counts().size() == mutation_operations().size());
+    p.reset_mutation_counts();
+    for (auto& [op, n] : p.mutation_counts()) CHECK(n == 0);
 }

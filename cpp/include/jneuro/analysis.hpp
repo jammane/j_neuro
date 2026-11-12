@@ -120,6 +120,37 @@ bool mix_ok(const Net<D>& net, const Removed* removed = nullptr) {
     return true;
 }
 
+/// Run rule (spec/03): no input-to-output path has more than max_run 1:1 (v, s) or many:1 (m)
+/// neurons in a row.
+template <class D>
+bool run_ok(const Net<D>& net, const Removed* removed = nullptr) {
+    const std::uint64_t k = net.max_run;
+    if (k == 0) return true;
+    const std::size_t n = net.nodes.size();
+    const auto reach = reaching_output(net, removed);
+    std::vector<NodeId> order;
+    for (NodeId i = 0; i < n; ++i)
+        if (detail::alive(removed, i)) order.push_back(i);
+    std::stable_sort(order.begin(), order.end(),
+                     [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
+    std::vector<std::optional<std::uint64_t>> run_1(n), run_m(n);  // longest run ending here, from an input
+    for (NodeId i : order) {
+        const auto& neuron = net.nodes[i].neuron;
+        if (!neuron) { run_1[i] = run_m[i] = 0; continue; }
+        std::optional<std::uint64_t> best_1, best_m;
+        for (NodeId c : connections(*neuron)) {
+            if (!detail::alive(removed, c) || !run_1[c]) continue;
+            best_1 = std::max(best_1.value_or(0), *run_1[c]);
+            best_m = std::max(best_m.value_or(0), *run_m[c]);
+        }
+        if (!best_1) continue;
+        if (std::holds_alternative<MNeuron>(*neuron)) { run_m[i] = *best_m + 1; run_1[i] = 0; }
+        else { run_1[i] = *best_1 + 1; run_m[i] = 0; }
+        if (reach[i] && (*run_1[i] > k || *run_m[i] > k)) return false;
+    }
+    return true;
+}
+
 /// True if removing `id` would break the path rule (spec/07).
 template <class D>
 bool is_immune(const Net<D>& net, NodeId id, const Removed* removed = nullptr) {

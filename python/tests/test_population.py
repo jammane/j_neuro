@@ -17,7 +17,7 @@ PHASES = ["op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pc
 
 def pop(seed=11, prio=Priority.BALANCED):
     """path_mix 0, so the hand-built nets below can be added."""
-    return Population(DepthType.U32, 5, 3, 2, prio, seed=seed, path_mix=0)
+    return Population(DepthType.U32, 5, 3, 2, prio, seed=seed, path_mix=0, max_run=0)
 
 
 def heavy(mode="fresh"):
@@ -62,7 +62,7 @@ def test_add_rejects_mismatch_and_copies():
         p.add(Net.create(3, 2, DepthType.U32, 3))
     with pytest.raises(ValidationError):
         p.add(Net.create(3, 2, DepthType.U32, 5))              # path_mix 2, population has 0
-    net = Net.create(3, 2, DepthType.U32, 5, path_mix=0)
+    net = Net.create(3, 2, DepthType.U32, 5, path_mix=0, max_run=0)
     i = p.add(net)
     net.nodes[3].neuron.op = AggOp((net.nodes[3].neuron.op + 1) % 4)
     assert net_to_bytes(p.get(i)) != net_to_bytes(net)
@@ -167,7 +167,7 @@ def test_generation_used_for_new_neurons():
 
 
 def session_with_everything(seed=None):
-    p = Population(DepthType.U32, 5, 3, 2, Priority.SPEED, seed=seed, path_mix=0)  # adds a hand-built net
+    p = Population(DepthType.U32, 5, 3, 2, Priority.SPEED, seed=seed, path_mix=0, max_run=0)  # adds a hand-built net
     ids = p.create(3)
     p.create(2, rng_mode="shared")
     a = p.mutate(ids[0], heavy("fresh"), times=2)
@@ -314,3 +314,22 @@ def test_default_path_mix_is_two():
     child = p.mutate(0, heavy("fresh"), times=5)
     p.get(child).validate()                                    # mix rule preserved
     assert Population.replay(p.run_log()).path_mix == 2
+
+
+def test_mutation_counts_cover_every_operation():
+    from jneuro.mutate import OPERATIONS
+    p = Population(DepthType.U32, 5, 4, 2, Priority.SPEED, seed=3)
+    ids = p.create(6)
+    prof = heavy("fresh")
+    prof.overall["constant_folding"] = "on"
+    prof.overall["add_method_weights"].update({"v_tap": 40, "s_tap": 40, "m_tap": 40, "m_clone": 40})
+    prof.overall["slot_retarget_prob"] = 0.5
+    for gen in range(18):
+        ids = [p.mutate(i, prof) for i in ids]
+        p.next_generation()
+    counts = p.mutation_counts()
+    assert set(counts) == set(OPERATIONS)
+    unused = [op for op, n in counts.items() if n == 0]
+    assert not unused, unused
+    p.reset_mutation_counts()
+    assert sum(p.mutation_counts().values()) == 0

@@ -4,15 +4,16 @@ from __future__ import annotations
 import copy
 import math
 
-from .analysis import connections, is_immune, legal_depth_range, mix_ok, path_rule_ok, readers
+from .analysis import connections, is_immune, legal_depth_range, mix_ok, path_rule_ok, readers, run_ok
 from .net import MNeuron, Net, Node, SNeuron, VNeuron
-from .removal import (bypass, compact, fold_constants, garbage_collect, has_min_reader,
-                      is_identity, is_silenced, remove_silenced)
+from .removal import (bypass, compact, constant_values, fold_constants, garbage_collect,
+                      has_min_reader, is_identity, is_silenced, remove_silenced)
 from .rng import Rng, round_half_away
 from .types import IDENTITY_WEIGHT, M_OPS, S_OPS, AggOp, Inversion, ValidationError, VOp
 
 TYPES = ("v", "s", "m")
-METHODS = ("slot_fill", "v_insert", "s_insert", "m_after_m")
+METHODS = ("slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap", "m_clone", "m_insert",
+           "v_link", "s_link")
 PHASE_FIELDS = ("op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pct",
                 "depth_shift_max_pct")
 
@@ -30,16 +31,27 @@ DEFAULTS = {
     "rewire_prob": 0.1,
     "insert_inversion_prob": 0.05,
     "min_age_for_removal": 5,
-    "add_method_weights": {"slot_fill": 40, "v_insert": 30, "s_insert": 20, "m_after_m": 10},
+    "add_method_weights": {"slot_fill": 40, "v_insert": 30, "s_insert": 20, "m_after_m": 10,
+                           "v_tap": 20, "s_tap": 20, "m_tap": 20, "m_clone": 20, "m_insert": 20,
+                           "v_link": 20, "s_link": 20},
     "slot_fill_type_weights": {"v": 1, "s": 1, "m": 1},
     "rng_mode": "fresh",
     "growth_budget": "up_to",
     "constant_folding": "off",
+    "insert_depth": "midpoint",
+    "slot_retarget_prob": 0.1,
+    "width_bias": "deficit",
+    "width_peak": 0.5,
+    "tap_peak": 0.25,
+    "prune": "static",
 }
 CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared"),
-           "growth_budget": ("up_to", "exact"), "constant_folding": ("off", "on")}
+           "growth_budget": ("up_to", "exact"), "constant_folding": ("off", "on"),
+           "insert_depth": ("uniform", "midpoint"), "width_bias": ("none", "center", "deficit"),
+           "prune": ("any", "static")}
 OVERRIDABLE = set(PHASE_FIELDS) | {"sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
-                                   "rewire_prob", "insert_inversion_prob", "min_age_for_removal"}
+                                   "rewire_prob", "insert_inversion_prob", "min_age_for_removal",
+                                   "slot_retarget_prob"}
 
 
 def _tkey(t) -> str:
@@ -69,6 +81,8 @@ class Profile:
         for k, v in d.items():
             if k not in DEFAULTS:
                 raise ValidationError(f"unknown profile field {k!r}")
+            if k in ("width_peak", "tap_peak") and v is not None and not 0.0 < float(v) < 1.0:
+                raise ValidationError(f"{k} must be in (0, 1)")
             if v is None:
                 self.overall[k] = copy.deepcopy(DEFAULTS[k])
             elif k in CHOICES:
@@ -135,6 +149,8 @@ class _Mutation:
         self.rng = rng
         self.removed = set()
         self.q = self.net.in_qty_max
+        self.op = None                    # name of the operation being attempted (for counts)
+        self.counts = {}                  # operation name -> successful uses (informative)
 
     # helpers
     def live_neurons(self):
@@ -166,9 +182,11 @@ class _Mutation:
     def run_phase(self, field, attempt):
         b, caps, used = self.budget(field)
         for _ in range(b):
+            self.op = None
             t = attempt(caps, used)
             if t is not None:
                 used[t] += 1
+                self.counts[self.op] = self.counts.get(self.op, 0) + 1
 
     def pick_neuron(self, caps, used):
         lst = self.live_neurons()
@@ -182,6 +200,7 @@ class _Mutation:
 
     # phase 1
     def op_change(self, caps, used):
+        self.op = "op_change"
         nid, t = self.pick_neuron(caps, used)
         if nid is None:
             return None
@@ -212,7 +231,9 @@ class _Mutation:
         n = self.net.nodes[nid].neuron
         rng, p = self.rng, self.p
         if t in ("v", "s") and rng.u() < p.effective("rewire_prob", t):
+            self.op = "rewire"
             return self.rewire(nid, n, t)
+        self.op = {"v": "v_weight", "s": "s_k", "m": "m_slots"}[t]
         if t == "v":
             z = rng.normal()
             sw = p.effective("sigma_weight", "v")
@@ -238,6 +259,10 @@ class _Mutation:
                 return None
             n.k = k2
             return t
+        pr = p.effective("slot_retarget_prob", "m")
+        if pr > 0 and rng.u() < pr:                       # no draw when off (spec/06)
+            self.op = "m_retarget"
+            return self.retarget(nid, n)
         z = rng.normal()
         c = min(self.q, 1 + math.floor(abs(p.effective("sigma_slots", "m") * z)))
         my_depth = self.net.nodes[nid].depth
@@ -250,18 +275,47 @@ class _Mutation:
                 if not cands:
                     continue
                 n.slots[i] = cands[rng.below(len(cands))]
-                if not mix_ok(self.net, self.removed):
+                if not self.rules_ok():
                     n.slots[i] = None
                     continue
                 changed = True
             else:
                 old = n.slots[i]
+                if self.p.overall["prune"] == "static":   # only static (constant) sources may be cut
+                    if constant_values(self.net, self.removed)[old] is None:
+                        continue
                 n.slots[i] = None
                 if not path_rule_ok(self.net, self.removed):
                     n.slots[i] = old
                     continue
                 changed = True
         return t if changed else None
+
+    def retarget(self, nid, n):
+        """Move one non-critical m slot to another node no deeper than the one it reads (spec/06)."""
+        net, rng = self.net, self.rng
+        conn = [i for i, s in enumerate(n.slots) if s is not None]
+        if not conn:
+            return None
+        i = conn[rng.below(len(conn))]
+        old = n.slots[i]
+        if self.p.overall["prune"] == "static" and n.slots.count(old) == 1 and \
+                readers(net, self.removed)[old] == [nid]:
+            return None                                   # would strand old's branch
+        n.slots[i] = None
+        if not path_rule_ok(net, self.removed):           # critical: the only path for some input
+            n.slots[i] = old
+            return None
+        cands = [j for j in self.live_nodes()
+                 if net.nodes[j].depth <= net.nodes[old].depth and j != old and j not in n.slots]
+        if not cands:
+            n.slots[i] = old
+            return None
+        n.slots[i] = cands[rng.below(len(cands))]
+        if not self.rules_ok():
+            n.slots[i] = old
+            return None
+        return "m"
 
     def rewire(self, nid, n, t):
         net, rng = self.net, self.rng
@@ -273,10 +327,53 @@ class _Mutation:
         if not cands:
             return None
         n.input = cands[rng.below(len(cands))]
-        if not path_rule_ok(net, self.removed) or not mix_ok(net, self.removed):
+        if not path_rule_ok(net, self.removed) or not self.rules_ok():
             n.input = old
             return None
         return t
+
+    def rules_ok(self):
+        """The structural rules a mutation may not break besides the path rule (spec/03)."""
+        return mix_ok(self.net, self.removed) and run_ok(self.net, self.removed)
+
+    def pick_receiver(self, recv, peak_field="width_peak", by_empty=False):
+        """An m_neuron to receive new width: uniform, or weighted toward the field's peak depth
+        (spec/06 width_bias; taps use tap_peak, the others width_peak). Links (by_empty) also
+        weight each receiver by its number of empty slots."""
+        bias = self.p.overall["width_bias"]
+        if by_empty and bias == "none":
+            w = [float(net_empty) for net_empty in (self.net.nodes[i].neuron.slots.count(None) for i in recv)]
+            return recv[self.rng.weighted(w)]
+        if bias in ("center", "deficit"):
+            net = self.net
+            peak = float(self.p.overall[peak_field])
+            d_max = float(net.d_max)
+            edges = []                                    # (depth of source, depth of reader), live only
+            if bias == "deficit":
+                for i in range(len(net.nodes)):
+                    if i not in self.removed:
+                        for c in connections(net.nodes[i].neuron):
+                            edges.append((net.nodes[c].depth, net.nodes[i].depth))
+            w = []
+            for i in recv:
+                d = net.nodes[i].depth
+                x = float(d) / d_max
+                tri = x / peak if x < peak else (1.0 - x) / (1.0 - peak)
+                if bias == "deficit":                     # bell target over current width at R's depth
+                    width = sum(1 for a, b in edges if a < d <= b)
+                    tri = tri / float(max(width, 1))
+                weight = tri + 1e-6                       # > 0, so an output-only net still has a pick
+                if by_empty:
+                    weight *= float(net.nodes[i].neuron.slots.count(None))
+                w.append(weight)
+            return recv[self.rng.weighted(w)]
+        return recv[self.rng.below(len(recv))]
+
+    def place(self, lo, hi):
+        """Depth for a new node in [lo, hi]: uniform draw, or the midpoint (spec/06 insert_depth)."""
+        if self.p.overall["insert_depth"] == "midpoint":
+            return lo + (hi - lo) // 2
+        return lo + self.rng.below(hi - lo + 1)
 
     def new_inversion(self):
         if self.rng.u() < self.p.effective("insert_inversion_prob", "v"):
@@ -287,16 +384,135 @@ class _Mutation:
     def growth(self, caps, used):
         rng = self.rng
         w = self.p.overall["add_method_weights"]
-        method = METHODS[rng.weighted([float(w[m]) for m in METHODS])]
+        dflt = DEFAULTS["add_method_weights"]
+        method = METHODS[rng.weighted([float(w.get(m, dflt[m])) for m in METHODS])]  # missing = default
+        self.op = method
         needed = 2 if method == "slot_fill" else 1
         if len(self.live_nodes()) + needed > self.net.d_max:
             return None                                   # node cap (spec/03)
         if method == "slot_fill":
             return self.slot_fill(caps, used)
-        t = {"v_insert": "v", "s_insert": "s", "m_after_m": "m"}[method]
+        t = {"v_insert": "v", "s_insert": "s", "m_after_m": "m", "v_tap": "v", "s_tap": "s", "m_tap": "m",
+             "m_clone": "m", "m_insert": "m", "v_link": "v", "s_link": "s"}[method]
         if caps[t] is not None and used[t] >= caps[t]:
             return None
+        if method == "m_clone":
+            return self.m_clone()
+        if method.endswith("_link"):
+            return self.link(t)
+        if method.endswith("_tap"):
+            return self.input_tap(t)
         return self.path_insert(method, t)
+
+    def m_clone(self):
+        """Copy an m_neuron U read by an m_neuron R into an empty slot of R (spec/06)."""
+        net, rng = self.net, self.rng
+
+        def m_reads(i):
+            return sorted({s for s in net.nodes[i].neuron.slots
+                           if s is not None and isinstance(net.nodes[s].neuron, MNeuron)})
+
+        recv = [i for i in self.live_neurons()
+                if isinstance(net.nodes[i].neuron, MNeuron) and None in net.nodes[i].neuron.slots and m_reads(i)]
+        if not recv:
+            return None
+        r = self.pick_receiver(recv)
+        ups = m_reads(r)
+        u = ups[rng.below(len(ups))]
+        rn = net.nodes[r].neuron
+        empties = [s for s, x in enumerate(rn.slots) if x is None]
+        slot = empties[rng.below(len(empties))]
+        un = net.nodes[u].neuron
+        x = len(net.nodes)
+        net.nodes.append(Node(net.next_birth, self.gen, net.nodes[u].depth, MNeuron(un.op, list(un.slots))))
+        net.next_birth += 1
+        rn.slots[slot] = x
+        if not self.rules_ok():                 # cannot happen (paths mirror U's); kept as a guard
+            rn.slots[slot] = None
+            del net.nodes[x:]
+            net.next_birth -= 1
+            return None
+        return "m"
+
+    def link(self, t):
+        """A new 1:1 neuron from an existing node into an empty m slot (spec/06 v_link, s_link)."""
+        net, rng = self.net, self.rng
+        recv = [i for i in self.live_neurons()
+                if isinstance(net.nodes[i].neuron, MNeuron) and None in net.nodes[i].neuron.slots
+                and any(s is not None for s in net.nodes[i].neuron.slots)]
+        if not recv:
+            return None
+        r = self.pick_receiver(recv, by_empty=True)
+        rn = net.nodes[r].neuron
+        empties = [s for s, x in enumerate(rn.slots) if x is None]
+        slot = empties[rng.below(len(empties))]
+        hi_src = max(net.nodes[s].depth for s in rn.slots if s is not None)   # no deeper than R's reads
+        cands = [j for j in self.live_nodes() if net.nodes[j].depth <= hi_src and j not in rn.slots]
+        if not cands:
+            return None
+        src = cands[rng.below(len(cands))]
+        lo, hi = net.nodes[src].depth + 1, net.nodes[r].depth - 1
+        if lo > hi:
+            return None
+        d = self.place(lo, hi)
+        if t == "v":
+            op = VOp(rng.choice(4))
+            neuron = VNeuron(src, self.new_inversion(), op, IDENTITY_WEIGHT[op])
+        else:
+            neuron = SNeuron(src, AggOp(rng.choice(S_OPS)), 1)
+        x = len(net.nodes)
+        net.nodes.append(Node(net.next_birth, self.gen, d, neuron))
+        net.next_birth += 1
+        rn.slots[slot] = x
+        if not self.rules_ok():
+            rn.slots[slot] = None
+            del net.nodes[x:]
+            net.next_birth -= 1
+            return None
+        return t
+
+    def input_tap(self, t):
+        """A new neuron reading network inputs, feeding an empty slot of an m_neuron (spec/06)."""
+        net, rng = self.net, self.rng
+        recv = [i for i in self.live_neurons()
+                if isinstance(net.nodes[i].neuron, MNeuron) and None in net.nodes[i].neuron.slots
+                and any(s is not None for s in net.nodes[i].neuron.slots)]
+        if not recv:
+            return None
+        r = self.pick_receiver(recv, "tap_peak")
+        rn = net.nodes[r].neuron
+        empties = [s for s, x in enumerate(rn.slots) if x is None]
+        slot = empties[rng.below(len(empties))]
+        hi = max(net.nodes[s].depth for s in rn.slots if s is not None)  # deepest node R reads
+        if hi < 1:
+            return None                                   # R reads only inputs: no room
+        d = self.place(1, hi)
+        n_in = net.n_inputs
+        if t == "v":
+            op = VOp(rng.choice(4))
+            neuron = VNeuron(rng.below(n_in), self.new_inversion(), op, IDENTITY_WEIGHT[op])
+        elif t == "s":
+            inp = rng.below(n_in)
+            neuron = SNeuron(inp, AggOp(rng.choice(S_OPS)), 1)
+        else:
+            filled = (self.q + 1) // 2                    # half the slots, rounded up
+            from_inputs = min((filled + 1) // 2, n_in)    # half of those from inputs, rounded up
+            ins = list(range(n_in))
+            chosen = [ins.pop(rng.below(len(ins))) for _ in range(from_inputs)]
+            cands = [j for j in self.live_nodes() if net.nodes[j].depth < d and j not in chosen]
+            for _ in range(min(filled - from_inputs, len(cands))):
+                chosen.append(cands.pop(rng.below(len(cands))))
+            neuron = MNeuron(AggOp(rng.choice(M_OPS)), chosen + [None] * (self.q - len(chosen)))
+        x = len(net.nodes)
+        net.nodes.append(Node(net.next_birth, self.gen, d, neuron))
+        net.next_birth += 1
+        rn.slots[slot] = x
+        if not self.rules_ok():                 # undo: the new paths break the mix rule
+            rn.slots[slot] = None
+            del net.nodes[x:]
+            net.next_birth -= 1
+            return None
+        return t
 
     def path_insert(self, method, t):
         net, rng = self.net, self.rng
@@ -308,6 +524,7 @@ class _Mutation:
             return None
         a = cands[rng.below(len(cands))]
         node_a = net.nodes[a]
+        old_depth = node_a.depth
         conns = [c for c in connections(node_a.neuron) if c not in self.removed]
         lo = max(net.nodes[c].depth for c in conns) + 1 if conns else 1
         hi = node_a.depth - 1
@@ -320,7 +537,7 @@ class _Mutation:
                 return None
             node_a.depth = ub
             hi = ub - 1
-        d_b = lo + rng.below(hi - lo + 1)
+        d_b = self.place(lo, hi)
         b = len(net.nodes)
         net.nodes.append(Node(node_a.birth, node_a.born_gen, d_b, node_a.neuron))
         if method == "v_insert":
@@ -328,12 +545,20 @@ class _Mutation:
             x = VNeuron(b, self.new_inversion(), op, IDENTITY_WEIGHT[op])
         elif method == "s_insert":
             x = SNeuron(b, AggOp(rng.choice(S_OPS)), 1)
+        elif method == "m_insert":
+            x = MNeuron(AggOp.MIN, [b] + [None] * (self.q - 1))   # min of one slot: exactly neutral
         else:
             x = MNeuron(AggOp.MAX, [b] + [None] * (self.q - 1))
+        saved = (node_a.neuron, node_a.birth, node_a.born_gen, old_depth)
         node_a.neuron = x
         node_a.birth = net.next_birth
         node_a.born_gen = self.gen
         net.next_birth += 1
+        if not self.rules_ok():                           # undo: a run would become too long
+            node_a.neuron, node_a.birth, node_a.born_gen, node_a.depth = saved
+            del net.nodes[b:]
+            net.next_birth -= 1
+            return None
         return t
 
     def slot_fill(self, caps, used):
@@ -343,7 +568,7 @@ class _Mutation:
                 and None in net.nodes[i].neuron.slots]
         if not recv:
             return None
-        r = recv[rng.below(len(recv))]
+        r = self.pick_receiver(recv)
         rn = net.nodes[r].neuron
         empties = [s for s, x in enumerate(rn.slots) if x is None]
         slot = empties[rng.below(len(empties))]
@@ -354,8 +579,8 @@ class _Mutation:
         d_r = net.nodes[r].depth
         if d_r < 3:
             return None
-        d_w = 2 + rng.below(d_r - 2)
-        d_q = 1 + rng.below(d_w - 1)
+        d_w = self.place(2, d_r - 1)
+        d_q = self.place(1, d_w - 1)
         cands = [j for j in self.live_nodes() if net.nodes[j].depth < d_q]
         if t == "v":
             inp = cands[rng.below(len(cands))]
@@ -375,7 +600,7 @@ class _Mutation:
         net.nodes.append(Node(net.next_birth + 1, self.gen, d_w, VNeuron(q_id, Inversion.NONE, VOp.MUL, 0.0)))
         net.next_birth += 2
         rn.slots[slot] = w_id
-        if not mix_ok(net, self.removed):                 # undo: the new paths break the mix rule
+        if not self.rules_ok():                 # undo: the new paths break the mix rule
             rn.slots[slot] = None
             del net.nodes[q_id:]
             net.next_birth -= 2
@@ -393,9 +618,10 @@ class _Mutation:
         if self.gen - net.nodes[nid].born_gen < self.p.effective("min_age_for_removal", t):
             return None
         if is_identity(net, nid):
+            self.op = "bypass"
             saved = [(r, copy.deepcopy(net.nodes[r].neuron)) for r in readers(net, self.removed)[nid]]
             bypass(net, nid, self.removed)
-            if not mix_ok(net, self.removed):             # undo: paths through it would lose a v
+            if not self.rules_ok():             # undo: paths through it would lose a v
                 for r, neuron in saved:
                     net.nodes[r].neuron = neuron
                 self.removed.discard(nid)
@@ -405,11 +631,13 @@ class _Mutation:
             return None
         if has_min_reader(net, nid, self.removed) or is_immune(net, nid, self.removed):
             return None
+        self.op = "remove_silenced"
         remove_silenced(net, nid, self.removed)
         return t
 
     # phase 5
     def depth_shift(self, caps, used):
+        self.op = "depth_shift"
         net, rng = self.net, self.rng
         hidden = [i for i in range(net.n_inputs + net.n_outputs, len(net.nodes)) if i not in self.removed]
         if not hidden:
@@ -437,16 +665,30 @@ class _Mutation:
         self.run_phase("removal_max_pct", self.removal)
         self.run_phase("depth_shift_max_pct", self.depth_shift)
         if self.p.overall["constant_folding"] == "on":
-            fold_constants(self.net, self.removed, self.gen,
-                           lambda t: self.p.effective("min_age_for_removal", t))
+            folded = fold_constants(self.net, self.removed, self.gen,
+                                    lambda t: self.p.effective("min_age_for_removal", t))
+            if folded:
+                self.counts["fold_constant"] = self.counts.get("fold_constant", 0) + folded
         garbage_collect(self.net, self.removed)
         compact(self.net, self.removed)
         return self.net
 
 
-def mutate(parent: Net, profile: Profile, generation: int, rng: Rng) -> Net:
-    """Return a mutated offspring; the parent is not modified (spec/06)."""
-    return _Mutation(parent, profile, generation, rng).run()
+# Every operation name that mutation counts (informative; not part of the spec's results).
+OPERATIONS = ("op_change", "v_weight", "s_k", "m_slots", "rewire", "m_retarget") + METHODS + \
+             ("bypass", "remove_silenced", "depth_shift", "fold_constant")
+
+
+def mutate(parent: Net, profile: Profile, generation: int, rng: Rng, counts: dict = None) -> Net:
+    """Return a mutated offspring; the parent is not modified (spec/06).
+
+    If `counts` is given, the number of successful uses of each operation is added to it."""
+    m = _Mutation(parent, profile, generation, rng)
+    child = m.run()
+    if counts is not None:
+        for k, v in m.counts.items():
+            counts[k] = counts.get(k, 0) + v
+    return child
 
 
 def inject_diversity(parent: Net, pct: float, rng: Rng, sigma_reset: float = 1.0) -> Net:

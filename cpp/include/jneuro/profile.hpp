@@ -29,8 +29,14 @@ public:
     const std::string& growth_budget() const { return growth_budget_; }
     /// "off" or "on" (spec/07): fold constant neurons before garbage collection.
     const std::string& constant_folding() const { return constant_folding_; }
-    /// Order: slot_fill, v_insert, s_insert, m_after_m.
-    const std::array<double, 4>& add_method_weights() const { return amw_; }
+    /// Order: slot_fill, v_insert, s_insert, m_after_m, v_tap, s_tap, m_tap, m_clone, m_insert, v_link, s_link.
+    const std::array<double, 11>& add_method_weights() const { return amw_; }
+    /// "uniform" or "midpoint" (spec/06): where new nodes are placed within their depth range.
+    const std::string& insert_depth() const { return insert_depth_; }
+    /// "none" or "center" (spec/06): whether width-adding growth favors mid-depth receivers.
+    const std::string& width_bias() const { return width_bias_; }
+    /// "any" or "static" (spec/06): whether edits may cut only static (constant) branches.
+    const std::string& prune() const { return prune_; }
     /// Order: v, s, m.
     const std::array<double, 3>& slot_fill_type_weights() const { return sftw_; }
 
@@ -49,7 +55,10 @@ private:
     std::string rng_mode_ = "fresh";
     std::string growth_budget_ = "up_to";
     std::string constant_folding_ = "off";
-    std::array<double, 4> amw_{40, 30, 20, 10};
+    std::array<double, 11> amw_{40, 30, 20, 10, 20, 20, 20, 20, 20, 20, 20};
+    std::string insert_depth_ = "midpoint";
+    std::string width_bias_ = "deficit";
+    std::string prune_ = "static";
     std::array<double, 3> sftw_{1, 1, 1};
     std::array<std::map<std::string, double>, 3> per_type_;
 };

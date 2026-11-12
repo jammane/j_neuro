@@ -68,6 +68,7 @@ public:
     std::uint32_t n_inputs = 0;
     std::uint32_t n_outputs = 0;
     std::uint32_t path_mix = 0;  ///< min v, s and m neurons on every path (spec/03 mix rule), 0..255
+    std::uint32_t max_run = 0;   ///< max 1:1 or many:1 neurons in a row on a path (spec/03 run rule); 0 off
     std::uint64_t next_birth = 0;
     std::vector<Node<D>> nodes;
 
@@ -77,7 +78,7 @@ public:
 
     /// Minimal net satisfying the path and mix rules (spec/03).
     static Net create(std::uint32_t n_inputs, std::uint32_t n_outputs, std::uint32_t in_qty_max,
-                      Priority priority, Rng& rng, std::uint32_t path_mix = 2);
+                      Priority priority, Rng& rng, std::uint32_t path_mix = 2, std::uint32_t max_run = 3);
 
     /// Throws ValidationError unless every invariant of spec/03 and spec/09 holds.
     void validate() const;

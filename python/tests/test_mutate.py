@@ -4,7 +4,7 @@ import pytest
 from helpers import M, S, V, load_golden, make_net, outputs_for, sample_inputs
 
 from jneuro import AggOp, DepthType, MNeuron, Net, Priority, SNeuron, VNeuron
-from jneuro.analysis import connections, path_rule_ok
+from jneuro.analysis import connections, path_rule_ok, run_ok
 from jneuro.io import profile_from_json
 from jneuro.jnet import net_from_bytes, net_to_bytes
 from jneuro.mutate import Profile, mutate
@@ -26,11 +26,14 @@ def profile(**overall):
 
 
 def only_method(name):
-    return {k: (1.0 if k == name else 0.0) for k in ("slot_fill", "v_insert", "s_insert", "m_after_m")}
+    return {k: (1.0 if k == name else 0.0) for k in ("slot_fill", "v_insert", "s_insert", "m_after_m",
+                                                     "v_tap", "s_tap", "m_tap", "m_clone", "m_insert",
+                                                     "v_link", "s_link")}
 
 
 def base_net(seed=3, n_in=4, n_out=2, q=5, dt=DepthType.U32):
-    return Net.create(n_in, n_out, dt, q, Priority.SPEED, Rng(seed))
+    """A minimal net without the run rule (these tests predate it; the rule has its own tests)."""
+    return Net.create(n_in, n_out, dt, q, Priority.SPEED, Rng(seed), max_run=0)
 
 
 def n_neurons(net):
@@ -54,7 +57,9 @@ def test_profile_defaults():
     assert p.overall["edit_max_pct"] == 5.0
     assert p.overall["growth_max_pct"] == 1.5
     assert p.overall["add_method_weights"] == {"slot_fill": 40, "v_insert": 30, "s_insert": 20,
-                                               "m_after_m": 10}
+                                               "m_after_m": 10, "v_tap": 20, "s_tap": 20, "m_tap": 20,
+                                               "m_clone": 20, "m_insert": 20,
+                                               "v_link": 20, "s_link": 20}
     assert p.effective("sigma_weight", "v") == 0.1
 
 
@@ -249,7 +254,8 @@ CREATE = load_golden("create")
 @pytest.mark.parametrize("name,case", CREATE, ids=[c[0] for c in CREATE])
 def test_create_golden(name, case):
     net = Net.create(case["n_inputs"], case["n_outputs"], DepthType[case["depth_type"]],
-                     case["in_qty_max"], Priority[case["priority"]], Rng(case["seed"]), case["path_mix"])
+                     case["in_qty_max"], Priority[case["priority"]], Rng(case["seed"]), case["path_mix"],
+                     case["max_run"])
     assert net_to_bytes(net) == bytes.fromhex(case["expected_jnet"])
 
 
@@ -279,7 +285,7 @@ def test_property_neutral_chains_preserve_outputs(seed):
     rows = sample_inputs(net.n_inputs)
     ref = outputs_for(net, rows)
     p = profile(growth_max_pct=40.0, removal_max_pct=40.0, depth_shift_max_pct=40.0,
-                add_method_weights={"slot_fill": 1.0, "v_insert": 1.0, "s_insert": 0.0, "m_after_m": 0.0})
+                add_method_weights={**only_method("slot_fill"), "v_insert": 1.0})
     p.overall["min_age_for_removal"] = 0
     for gen in range(1, 25):
         net = mutate(net, p, gen, r)
@@ -308,7 +314,7 @@ def _mix_net(path_mix):
     ("rewire", dict(edit_max_pct=100.0, rewire_prob=1.0)),
     ("slot_connect", dict(edit_max_pct=100.0, rewire_prob=0.0, sigma_slots=3.0)),
     ("slot_fill", dict(growth_max_pct=100.0,
-                       add_method_weights={"slot_fill": 1, "v_insert": 0, "s_insert": 0, "m_after_m": 0})),
+                       add_method_weights=only_method("slot_fill"))),
 ])
 def test_mutation_keeps_mix_rule(name, prof):
     """Each change that could leave a path short of a type is skipped (or undone) instead."""
@@ -333,8 +339,8 @@ def structure(net):
 # ---------------------------------------------------------------- growth_budget, constant_folding
 
 def test_exact_growth_budget_adds_exactly_one():
-    net = Net.create(3, 1, DepthType.U32, 3, Priority.SPEED, Rng(1))
-    only_v = {"slot_fill": 0, "v_insert": 1, "s_insert": 0, "m_after_m": 0}
+    net = Net.create(3, 1, DepthType.U32, 3, Priority.SPEED, Rng(1), max_run=0)
+    only_v = only_method("v_insert")
     sizes = {}
     for mode in ("up_to", "exact"):
         p = profile(growth_max_pct=1e-9, add_method_weights=only_v, growth_budget=mode)
@@ -375,3 +381,209 @@ def test_constant_folding_keeps_path_rule_and_s_zero():
     net = make_net(1, 1, 3, [(D16, M("max", [0, 3, None])), (100, V(0, "mul", 0.0)), (200, S(2, "mean", 1))])
     child = mutate(net, p, 1, Rng(0))
     assert len(child.nodes) == 3 and child.nodes[2].neuron == V(None, "add", 0.0)
+
+
+# ---------------------------------------------------------------- input taps (spec/06)
+
+@pytest.mark.parametrize("method", ["v_tap", "s_tap", "m_tap"])
+@pytest.mark.parametrize("mix", [0, 2])
+def test_input_taps(method, mix):
+    q = 5
+    grew = 0
+    for seed in range(40):
+        net = Net.create(4, 2, DepthType.U32, q, Priority.SPEED, Rng(seed), path_mix=mix)
+        for gen in range(1, 4):                                # grow m chains, so m_neurons read hidden nodes
+            net = mutate(net, profile(growth_max_pct=60.0, add_method_weights=only_method("m_after_m")), gen,
+                         Rng(seed + gen))
+        p = profile(growth_max_pct=1e-9, growth_budget="exact", add_method_weights=only_method(method))
+        child = mutate(net, p, 9, Rng(seed))
+        child.validate()
+        new = [i for i, x in enumerate(child.nodes) if x.birth >= net.next_birth]
+        assert len(new) <= 1
+        if not new:
+            continue
+        grew += 1
+        x = new[0]
+        n = child.nodes[x].neuron
+        kind = {"v_tap": VNeuron, "s_tap": SNeuron, "m_tap": MNeuron}[method]
+        assert isinstance(n, kind)
+        if kind is MNeuron:
+            filled = [s for s in n.slots if s is not None]
+            assert len(filled) == (q + 1) // 2                 # half the slots, rounded up
+            assert all(s < child.n_inputs for s in filled[:2])  # half of those (rounded up) are inputs
+            assert all(child.nodes[s].depth < child.nodes[x].depth for s in filled)
+        else:
+            assert n.input < child.n_inputs
+        readers_of_x = [i for i, y in enumerate(child.nodes) if isinstance(y.neuron, MNeuron) and x in y.neuron.slots]
+        assert len(readers_of_x) == 1
+        r = child.nodes[readers_of_x[0]].neuron
+        others = [s for s in r.slots if s is not None and s != x]
+        assert child.nodes[x].depth <= max(child.nodes[s].depth for s in others)
+    assert grew >= 10
+
+
+def test_input_tap_needs_a_deeper_reader():
+    # the only m_neuron reads inputs only (depth 0): nowhere to put the tap
+    net = make_net(2, 1, 3, [(D16, M("max", [0, 1, None]))])
+    p = profile(growth_max_pct=100.0, add_method_weights=only_method("v_tap"))
+    assert all(net_to_bytes(mutate(net, p, 1, Rng(s))) == net_to_bytes(net) for s in range(10))
+
+
+# ---------------------------------------------------------------- insert_depth, m_clone (spec/06)
+
+def test_midpoint_insert_depth():
+    """With insert_depth = midpoint, a path insertion's new node B sits halfway in its gap."""
+    checked = 0
+    for seed in range(30):
+        net = base_net(seed)
+        p = profile(growth_max_pct=1e-9, growth_budget="exact", add_method_weights=only_method("v_insert"),
+                    insert_depth="midpoint")                   # exactly one insertion
+        child = mutate(net, p, 1, Rng(seed))
+        child.validate()
+        for b, node in enumerate(child.nodes):
+            if node.birth >= net.next_birth:
+                continue                                       # B keeps N's birth; X is the new birth
+            readers_b = [i for i, y in enumerate(child.nodes) if b in connections(y.neuron)]
+            if len(readers_b) != 1 or child.nodes[readers_b[0]].birth < net.next_birth:
+                continue
+            x = readers_b[0]                                   # X: the inserted neuron, writes A
+            conns = connections(node.neuron)
+            lo = max(child.nodes[c].depth for c in conns) + 1 if conns else 1
+            hi = child.nodes[x].depth - 1
+            assert node.depth == lo + (hi - lo) // 2
+            checked += 1
+    assert checked >= 20
+
+
+def test_m_clone():
+    grew = 0
+    for seed in range(40):
+        net = Net.create(7, 2, DepthType.U32, 5, Priority.SPEED, Rng(seed), path_mix=0)   # merge tree: m reads m
+        rows = sample_inputs(7)
+        p = profile(growth_max_pct=1e-9, growth_budget="exact", add_method_weights=only_method("m_clone"))
+        child = mutate(net, p, 3, Rng(seed))
+        child.validate()
+        new = [i for i, x in enumerate(child.nodes) if x.birth >= net.next_birth]
+        if not new:
+            continue
+        grew += 1
+        x = child.nodes[new[0]]
+        twins = [i for i, y in enumerate(child.nodes[:new[0]])
+                 if isinstance(y.neuron, MNeuron) and y.neuron == x.neuron and y.depth == x.depth]
+        assert twins                                           # an exact copy of an existing m, same depth
+        r = [i for i, y in enumerate(child.nodes) if isinstance(y.neuron, MNeuron) and new[0] in y.neuron.slots]
+        assert len(r) == 1 and twins[0] in child.nodes[r[0]].neuron.slots   # attached beside its original
+    assert grew >= 20
+
+
+def test_slot_retarget():
+    # output m max [3, 4]; 3 and 4 are s_neurons of v 2 (depth 200); slot 0 or 1 alone is not critical
+    net = make_net(1, 1, 3, [(D16, M("max", [3, 4, None])), (100, V(0, "mul", 1.0)),
+                             (200, S(2, "mean", 1)), (200, S(2, "mean", 1))])
+    p = profile(edit_max_pct=100.0, slot_retarget_prob=1.0, rewire_prob=0.0, prune="any")
+    moved = 0
+    for s in range(60):
+        child = mutate(net, p, 1, Rng(s))
+        child.validate()
+        slots = [x for x in child.nodes[1].neuron.slots if x is not None]
+        assert child.nodes[1].neuron.slots[2] is None          # a retarget never fills an empty slot
+        if slots != [3, 4]:
+            moved += 1
+            assert all(child.nodes[x].depth <= 200 for x in slots)
+    assert moved >= 5
+    # a slot on the only path is critical: never retargeted
+    only = make_net(1, 1, 3, [(D16, M("max", [2, None, None])), (100, V(0, "mul", 1.0))])
+    assert all(mutate(only, p, 1, Rng(s)).nodes[1].neuron.slots == [2, None, None] for s in range(20))
+
+
+def test_m_insert_is_neutral():
+    for seed in range(15):
+        net = Net.create(5, 2, DepthType.U32, 3, Priority.SPEED, Rng(seed))
+        rows = sample_inputs(5)
+        ref = outputs_for(net, rows)
+        p = profile(growth_max_pct=60.0, add_method_weights=only_method("m_insert"))
+        for gen in range(1, 6):
+            child = mutate(net, p, gen, Rng(100 * seed + gen))
+            child.validate()
+            assert outputs_for(child, rows) == ref               # min over one slot passes its input
+            net = child
+        assert sum(isinstance(n.neuron, MNeuron) and n.neuron.op == AggOp.MIN for n in net.nodes) > 2
+
+
+
+# ---------------------------------------------------------------- run rule (spec/03)
+
+@pytest.mark.parametrize("seed", range(10))
+def test_mutation_keeps_run_rule(seed):
+    """Heavy growth of every kind never leaves a path with more than max_run of a kind in a row."""
+    r = Rng(3000 + seed)
+    net = Net.create(1 + r.below(8), 1 + r.below(2), DepthType.U32, 3 + 2 * r.below(3), Priority.SPEED, r,
+                     path_mix=r.below(3), max_run=1 + r.below(3))
+    p = Profile.default()
+    for f in PHASE_FIELDS:
+        p.overall[f] = 30.0
+    p.overall["min_age_for_removal"] = 1
+    p.overall["constant_folding"] = "on"
+    for gen in range(1, 20):
+        net = mutate(net, p, gen, r)
+        net.validate()                                         # includes the run rule
+        assert run_ok(net)
+
+
+def test_run_ok_counts_consecutive_kinds():
+    # 0 -> v -> v -> v -> output m: three 1:1 in a row
+    net = make_net(1, 1, 3, [(D16, M("max", [4, None, None])), (10, V(0, "mul", 1.0)), (20, V(2, "mul", 1.0)),
+                             (30, V(3, "mul", 1.0))])
+    for k, ok in ((0, True), (2, False), (3, True)):
+        net.max_run = k
+        assert run_ok(net) == ok
+
+
+@pytest.mark.parametrize("method", ["v_link", "s_link"])
+def test_links_fill_open_m_slots(method):
+    """After m_inserts, links connect existing nodes into the open slots (spec/06)."""
+    linked = 0
+    for seed in range(30):
+        net = Net.create(4, 2, DepthType.U32, 5, Priority.SPEED, Rng(seed))
+        for gen in range(1, 4):
+            net = mutate(net, profile(growth_max_pct=60.0, add_method_weights=only_method("m_insert")), gen,
+                         Rng(seed + 50 * gen))
+        p = profile(growth_max_pct=1e-9, growth_budget="exact", add_method_weights=only_method(method))
+        child = mutate(net, p, 9, Rng(seed))
+        child.validate()
+        new = [i for i, x in enumerate(child.nodes) if x.birth >= net.next_birth]
+        if not new:
+            continue
+        linked += 1
+        x = new[0]
+        n = child.nodes[x].neuron
+        assert isinstance(n, VNeuron if method == "v_link" else SNeuron)
+        r = [i for i, y in enumerate(child.nodes) if isinstance(y.neuron, MNeuron) and x in y.neuron.slots]
+        assert len(r) == 1
+        others = [s for s in child.nodes[r[0]].neuron.slots if s is not None and s != x]
+        assert child.nodes[n.input].depth <= max(child.nodes[s].depth for s in others)
+        assert child.nodes[n.input].depth < child.nodes[x].depth < child.nodes[r[0]].depth
+    assert linked >= 10
+
+
+
+def test_prune_static_keeps_live_branches():
+    """With prune = static, slot edits never cut a slot whose source is still live (non-constant)."""
+    from jneuro.removal import constant_values
+    for seed in range(20):
+        net = Net.create(4, 2, DepthType.U32, 5, Priority.SPEED, Rng(seed))
+        for gen in range(1, 6):
+            net = mutate(net, profile(growth_max_pct=60.0, add_method_weights={**only_method("m_insert"),
+                                                                               "v_link": 1.0}), gen, Rng(seed + gen))
+        before = {(i, s) for i, x in enumerate(net.nodes) if isinstance(x.neuron, MNeuron)
+                  for s in x.neuron.slots if s is not None}
+        const = constant_values(net, set())
+        p = profile(edit_max_pct=100.0, slot_retarget_prob=0.0, sigma_slots=3.0)
+        child = mutate(net, p, 9, Rng(seed))
+        child.validate()
+        assert len(child.nodes) >= len(net.nodes)              # nothing stranded and collected
+        for i, x in enumerate(child.nodes[:len(net.nodes)]):
+            if isinstance(x.neuron, MNeuron):
+                for s in net.nodes[i].neuron.slots:
+                    if s is not None and const[s] is None:
+                        assert s in x.neuron.slots             # live sources are never cut

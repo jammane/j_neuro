@@ -108,11 +108,15 @@ def fold_constants(net: Net, removed: Set[int], generation: int, min_age):
              and connections(net.nodes[i].neuron)
              and generation - net.nodes[i].born_gen >= min_age(_type(net.nodes[i].neuron))]
     cands.sort(key=lambda i: (-net.nodes[i].depth, i))
+    folded = 0
     for i in cands:
         old = net.nodes[i].neuron
         net.nodes[i].neuron = VNeuron(None, Inversion.NONE, VOp.ADD, const[i])
         if not path_rule_ok(net, removed):
             net.nodes[i].neuron = old
+        else:
+            folded += 1
+    return folded
 
 
 def _type(neuron) -> str:

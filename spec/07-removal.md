@@ -40,7 +40,7 @@ if cap reached for type(X): skip
 if X is not a candidate: skip
 if X is an identity neuron:
     bypass(X)
-    if the mix rule is now broken: undo the bypass; skip
+    if a structural rule (mix or run) is now broken: undo the bypass; skip
 else:                                        # silenced
     if any reader of X is an m_neuron with op min: skip
     if X is immune: skip
@@ -55,7 +55,8 @@ Let `A` be X's node and `I` its input node. Every connection to `A` (m slots and
 is redirected to `I`, then `A` is marked removed. Readers of `A` are deeper than `A`, which is
 deeper than `I`, so depth rules hold. Paths are only shortened, so the path rule holds.
 Outputs are unchanged because X returned its input exactly. Every path through `A` loses one
-v_neuron, which can break the mix rule ([03](03-net-structure.md#mix-rule)); the attempt is
+v_neuron, which can break the mix rule ([03](03-net-structure.md#mix-rule)) or join two runs into
+one too long for the run rule ([03](03-net-structure.md#run-rule)); the attempt is
 then undone and skipped.
 
 ### Removing a silenced neuron (downstream cascade)

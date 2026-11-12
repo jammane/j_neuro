@@ -8,11 +8,11 @@ the trainer the outputs of every net, keyed by id, and operations to apply to ne
 
 ```
 Population(depth_type, in_qty_max, n_inputs, n_outputs, priority = BALANCED, seed = none,
-           path_mix = 2)
+           path_mix = 2, max_run = 3)
 ```
 
-- Every net in the population has exactly these five parameters (`depth_type`, `in_qty_max`,
-  `n_inputs`, `n_outputs`, `path_mix`); mixed nets are rejected.
+- Every net in the population has exactly these six parameters (`depth_type`, `in_qty_max`,
+  `n_inputs`, `n_outputs`, `path_mix`, `max_run`); mixed nets are rejected.
 - `priority` is the population's speed/memory choice for `evaluate` (below). Each net keeps
   its own priority for its own evaluation.
 - `seed` seeds the population's **shared RNG stream**. If omitted, a seed is taken from the
@@ -42,7 +42,7 @@ is exactly replayable from its run log (below).
 
 | Operation | Effect |
 |---|---|
-| `create(count, rng_mode)` → ids | Adds `count` minimal nets with the population's `path_mix` ([03](03-net-structure.md#minimal-net)), all drawn from one operation RNG, in id order. |
+| `create(count, rng_mode)` → ids | Adds `count` minimal nets with the population's `path_mix` and `max_run` ([03](03-net-structure.md#minimal-net)), all drawn from one operation RNG, in id order. |
 | `add(net)` → id | Adds a copy of an existing net. Rejected if its parameters differ from the population's. |
 | `get(id)` | The net itself (for direct inspection or stepping). |
 | `ids()`, `size()`, `generation` | Inspection. |
@@ -53,6 +53,7 @@ is exactly replayable from its run log (below).
 | `remove(id)` | Culls the net. Its id is never reused. |
 | `next_generation()` | `generation += 1`. Neurons created by later mutations record the new generation. |
 | `save(path, include_log = false)` | Writes the `.jpnet` and its `.jnet` files ([09](09-serialization.md#jpnet)). Not journaled. |
+| `mutation_counts()`, `reset_mutation_counts()` | Informative: successful uses of each mutation operation (op changes, each kind of edit, each growth method, bypass, silenced removal, depth shift, constant folding) since creation or the last reset, offspring later removed included. Not saved, not journaled, not part of conformance. |
 | `Population.load(path)` | Loads a `.jpnet`, verifying every `.jnet` hash; continues exactly where the saved population stopped. |
 
 An unknown id is an error. Operations never change other nets.

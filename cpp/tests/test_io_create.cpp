@@ -35,7 +35,7 @@ TEST_CASE("exact layout") {
     auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(0, VOp::Add, 0.5)}});
     Bytes b = {'J', 'N', 'E', 'T'};
     put(b, 1, 2); put(b, 0, 2); put(b, 5, 2); put(b, 0, 2);
-    put(b, 0, 1); put(b, 0, 1); put(b, 3, 4); put(b, 1, 4); put(b, 1, 4); put(b, 0, 1); put(b, 2, 8);
+    put(b, 0, 1); put(b, 0, 1); put(b, 3, 4); put(b, 1, 4); put(b, 1, 4); put(b, 0, 1); put(b, 0, 1); put(b, 2, 8);
     put(b, 2, 2);
     put(b, 0, 8); put(b, 0, 8); put(b, 0, 2); put(b, 0, 1);
     put(b, 1, 8); put(b, 0, 8); put(b, 0xFFFF, 2); put(b, 1, 1);
@@ -51,7 +51,7 @@ TEST_CASE("none sentinel and widths") {
         auto net = make_net<D>(2, 1, 3, {{std::numeric_limits<D>::max(), M(AggOp::Max, {0, 1, none})}});
         Bytes b = to_bytes(net);
         for (std::size_t i = 0; i < w; ++i) CHECK(b[b.size() - 32 - w + i] == 0xFF);
-        CHECK(b.size() == 35 + w + 3 * (16 + w + 1) + (1 + 3 * w) + 32);
+        CHECK(b.size() == 36 + w + 3 * (16 + w + 1) + (1 + 3 * w) + 32);
     };
     check(std::uint16_t{}, 2);
     check(std::uint32_t{}, 4);
@@ -107,7 +107,7 @@ TEST_CASE("damage detected") {
 template <class D>
 static void check_create(std::uint32_t n_in, std::uint32_t n_out, std::uint32_t q) {
     Rng r(11);
-    auto net = Net<D>::create(n_in, n_out, q, Priority::Memory, r, 0);
+    auto net = Net<D>::create(n_in, n_out, q, Priority::Memory, r, 0, 0);
     net.validate();
     CHECK(path_rule_ok(net));
     CHECK(net.next_birth == net.nodes.size());
@@ -139,7 +139,7 @@ TEST_CASE("create minimal") {
 
 TEST_CASE("create tree shape") {
     Rng r(1);
-    auto net = Net<std::uint16_t>::create(7, 2, 3, Priority::Speed, r, 0);
+    auto net = Net<std::uint16_t>::create(7, 2, 3, Priority::Speed, r, 0, 0);
     REQUIRE(net.nodes.size() == 12);
     CHECK(std::get<MNeuron>(*net.nodes[9].neuron).slots == Slots{0, 1, 2});
     CHECK(std::get<MNeuron>(*net.nodes[10].neuron).slots == Slots{3, 4, 5});
@@ -217,8 +217,12 @@ TEST_CASE("create default path_mix chain") {
     CHECK(net.path_mix == 2);
     std::string kinds;
     for (std::size_t i = 9; i < net.nodes.size(); ++i) kinds += "VSM"[net.nodes[i].neuron->index()];
-    CHECK(kinds == "VMMMMSSV");  // output v, 3 tree m, merge m, s, s, v
-    for (auto& k : path_counts(net)) CHECK(k == std::array<int, 3>{2, 2, 2});
+    CHECK(kinds.substr(1, 4) == "MMMM");  // 3 tree m, then the merge m
+    std::string rest = kinds.substr(0, 1) + kinds.substr(5);
+    CHECK(std::count(rest.begin(), rest.end(), 'S') == 2);  // s, s, v, v in a random order, plus
+    for (auto& k : path_counts(net)) CHECK(std::min({k[0], k[1], k[2]}) >= 2);  // separators
+    CHECK(net.max_run == 3);
+    CHECK(run_ok(net));
 }
 
 TEST_CASE("mix rule rejects") {

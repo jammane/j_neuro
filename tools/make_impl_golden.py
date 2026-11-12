@@ -34,13 +34,13 @@ def make_create():
     params = [(1, 1, "U16", 3), (1, 4, "U32", 5), (3, 2, "U64", 3), (5, 3, "U32", 5),
               (7, 2, "U16", 3), (30, 3, "U32", 3), (40, 1, "U64", 5), (6, 6, "U16", 7)]
     for i, (n_in, n_out, dt, q) in enumerate(params):
-        for seed, mix in ((0, 2), (77, 0 if i % 2 == 0 else 3)):
+        for seed, mix, run in ((0, 2, 3), (77, 0 if i % 2 == 0 else 3, 0 if i % 2 == 0 else 2), (5, 2, 1)):
             prio = list(Priority)[(i + seed) % 3].name
-            net = Net.create(n_in, n_out, DepthType[dt], q, Priority[prio], Rng(seed), mix)
-            write("create", f"create_{n_in}x{n_out}_{dt}_q{q}_s{seed}_p{mix}",
+            net = Net.create(n_in, n_out, DepthType[dt], q, Priority[prio], Rng(seed), mix, run)
+            write("create", f"create_{n_in}x{n_out}_{dt}_q{q}_s{seed}_p{mix}_r{run}",
                   {"kind": "create", "seed": seed, "n_inputs": n_in, "n_outputs": n_out,
                    "depth_type": dt, "in_qty_max": q, "priority": prio, "path_mix": mix,
-                   "expected_jnet": net_to_bytes(net).hex()})
+                   "max_run": run, "expected_jnet": net_to_bytes(net).hex()})
 
 
 def profile_variants():
@@ -58,6 +58,19 @@ def profile_variants():
     exact.overall["growth_budget"] = "exact"
     exact.overall["growth_max_pct"] = 6.0
     out["exact_growth"] = exact
+    taps = Profile.default()
+    taps.overall["growth_max_pct"] = 30.0
+    taps.overall["add_method_weights"].update({"v_tap": 30, "s_tap": 30, "m_tap": 30})
+    out["taps"] = taps
+    clone = Profile.default()
+    clone.overall["growth_max_pct"] = 30.0
+    clone.overall["add_method_weights"].update({"m_clone": 60})
+    out["clone"] = clone
+    mid = Profile.default()
+    mid.overall["growth_max_pct"] = 30.0
+    mid.overall["insert_depth"] = "midpoint"
+    mid.overall["add_method_weights"].update({"v_tap": 20, "s_tap": 20, "m_tap": 20, "m_clone": 20})
+    out["midpoint"] = mid
     heavy = Profile.default()
     for f in PHASES:
         heavy.overall[f] = 40.0
@@ -94,7 +107,7 @@ def make_mutate():
     for i, (n_in, n_out, dt, q) in enumerate([(3, 2, "U16", 3), (6, 1, "U32", 5), (1, 2, "U64", 3),
                                               (9, 2, "U32", 3)]):
         r = Rng(500 + i)
-        net = Net.create(n_in, n_out, DepthType[dt], q, Priority.SPEED, r, [2, 0, 3, 2][i])  # path_mix
+        net = Net.create(n_in, n_out, DepthType[dt], q, Priority.SPEED, r, [2, 0, 3, 2][i], [3, 0, 2, 3][i])
         for gen in range(1, 13):
             net = mutate(net, grow, gen, r)
         parents.append(net)
@@ -116,7 +129,7 @@ def make_mutate_mix():
     nodes = [Node(0, 0, 0), Node(1, 0, d, MNeuron(AggOp.MAX, [3, 4, None])),
              Node(2, 0, 100, VNeuron(0, Inversion.NONE, VOp.MUL, 1.0)),
              Node(3, 0, 200, SNeuron(2, AggOp.MEAN, 1)), Node(4, 0, 200, SNeuron(2, AggOp.MEAN, 1))]
-    net = Net(Priority.SPEED, DepthType.U16, 3, 1, 1, nodes, 5, 1)
+    net = Net(Priority.SPEED, DepthType.U16, 3, 1, 1, nodes, 5, 1, 0)
     net.validate()
     fill = {"slot_fill": 1, "v_insert": 0, "s_insert": 0, "m_after_m": 0}
     for name, over in [("bypass", {"removal_max_pct": 100.0, "min_age_for_removal": 0}),

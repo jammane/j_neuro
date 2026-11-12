@@ -42,6 +42,7 @@ equal content, so a file exported from one language imports unchanged into the o
 | n_inputs | `u32` | |
 | n_outputs | `u32` | |
 | path_mix | `u8` | |
+| max_run | `u8` | |
 | next_birth | `u64` | |
 | node_count | `W` | |
 | nodes | node_count × node | in id order |
@@ -75,7 +76,7 @@ A reader MUST reject a `.jnet` unless all of these hold:
 - Exactly the non-input nodes have a neuron; `k` within range and odd for `median`; weights
   finite.
 - Every connection refers to an existing node of strictly smaller depth.
-- The path rule and the mix rule hold; no node fails to reach an output.
+- The path, mix and run rules hold; no node fails to reach an output.
 - `birth` values unique and all `< next_birth`.
 
 ## `.jpnet`
@@ -94,6 +95,7 @@ are separate `.jnet` files, each verified by its SHA-256 hash.
 | n_inputs | `u32` | |
 | n_outputs | `u32` | |
 | path_mix | `u8` | |
+| max_run | `u8` | |
 | seed | `u64` | shared-stream seed |
 | rng state | 4 × `u64` | shared-stream xoshiro256** state, so training resumes exactly |
 | generation | `u64` | |
@@ -128,7 +130,8 @@ the table, not the directory contents, defines the population.
 
 A reader MUST reject a `.jpnet` unless the magic, versions, length and checksum are valid and
 **every** listed `.jnet` file exists, has exactly the listed hash, loads as a valid net, and
-has the population's `depth_type`, `in_qty_max`, `n_inputs`, `n_outputs` and `path_mix`.
+has the population's `depth_type`, `in_qty_max`, `n_inputs`, `n_outputs`, `path_mix` and
+`max_run`.
 
 After loading, the population continues exactly: same ids, nets, generation, `next_id` and
 shared-stream state. If a run log was embedded it becomes the population's journal and keeps
@@ -177,7 +180,7 @@ The journal of a population ([11](11-population.md#run-log)).
   "format": "j_neuro.runlog",
   "spec_version": "0.5.0",
   "population": {"depth_type": "U32", "in_qty_max": 5, "n_inputs": 4, "n_outputs": 2,
-                 "path_mix": 2, "priority": "BALANCED", "seed": 12345},
+                 "path_mix": 2, "max_run": 3, "priority": "BALANCED", "seed": 12345},
   "resumed_from": null,
   "profiles": [ { "...": "profile object" } ],
   "ops": [

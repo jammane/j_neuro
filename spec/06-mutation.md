@@ -18,10 +18,12 @@ using the procedures of [08](08-rng.md), in exactly the order this document list
    the next attempt.
 4. **Path rule.** No mutation may leave an input without a path to an output
    ([03](03-net-structure.md#path-rule)).
-5. **Mix rule.** No mutation may leave a path with fewer than `path_mix` neurons of any type
-   ([03](03-net-structure.md#mix-rule)). Operation changes, edits of parameters, path
-   insertions, emptying slots, silenced removals, depth shifts and garbage collection can
-   never break it; rewiring, connecting a slot, slot fill and bypass are checked below.
+5. **Mix and run rules.** No mutation may leave a path with fewer than `path_mix` neurons of
+   any type ([03](03-net-structure.md#mix-rule)), or with more than `max_run` 1:1 or many:1
+   neurons in a row ([03](03-net-structure.md#run-rule)). Together they are the **structural
+   rules**. Every operation that adds or moves a connection, or removes a neuron from a path,
+   checks them right after it changes the net and is undone (and skipped) if one is broken:
+   rewiring, connecting a slot, retargeting a slot, every growth method, and bypass.
 
 ## Mutation profile
 
@@ -43,11 +45,17 @@ A per-type value overrides the overall value for neurons of that type.
 | `rewire_prob` | 0.1 | yes (v, s) | Probability a v/s edit rewires the input instead of editing a parameter |
 | `insert_inversion_prob` | 0.05 | yes (v) | Probability a newly added v_neuron starts with an inversion |
 | `min_age_for_removal` | 5 | yes | Generations a neuron must exist before it can trigger a removal |
-| `add_method_weights` | `slot_fill 40, v_insert 30, s_insert 20, m_after_m 10` | no | Odds of each addition method |
+| `add_method_weights` | `slot_fill 40, v_insert 30, s_insert 20, m_after_m 10, v_tap 20, s_tap 20, m_tap 20, m_clone 20, m_insert 20, v_link 20, s_link 20` | no | Odds of each addition method; a weight left out counts as its default |
 | `slot_fill_type_weights` | `v 1, s 1, m 1` | no | Odds of each neuron type created by slot fill |
 | `rng_mode` | `fresh` | no | Where a population's `mutate` draws random numbers: `fresh` or `shared` ([11](11-population.md#rng-modes)). Ignored by the standalone `mutate` function, which takes its RNG directly. |
 | `growth_budget` | `up_to` | no | `up_to` or `exact`: whether the growth budget is a random fraction of its cap or the whole cap ([budgets](#budgets)). |
 | `constant_folding` | `off` | no | `off` or `on`: replace constant neurons by constants before garbage collection ([07](07-removal.md#constant-folding)). |
+| `insert_depth` | `midpoint` | no | `uniform` or `midpoint`: where a new node goes within its allowed depth range ([growth](#phase-3--growth)) |
+| `slot_retarget_prob` | 0.1 | yes (m) | Probability an m edit retargets one slot instead of the usual slot changes |
+| `width_bias` | `deficit` | no | `none`, `center` or `deficit`: how growth chooses the m_neuron that receives a new branch ([receivers](#choosing-a-receiver)) |
+| `width_peak` | 0.5 | no | Depth fraction in (0, 1) where receivers are favored most (slot fill, m_clone, links) |
+| `tap_peak` | 0.25 | no | The same, for input taps |
+| `prune` | `static` | no | `any` or `static`: with `static`, edits never cut a live branch — an m slot is emptied only if its source is constant ([07](07-removal.md#constant-folding)), and a retarget never leaves its old source without readers |
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
 changed between generations; every change is recorded in the run log
@@ -127,7 +135,7 @@ rewire:
     C = live nodes with depth < depth(this node), ≠ old, ascending id
     if C is empty: skip
     input = C[below(len(C))]
-    if the path rule or the mix rule is now broken: restore old; skip
+    if the path rule or a structural rule is now broken: restore old; skip
 ```
 
 **v — weight.**
@@ -158,6 +166,23 @@ if k2 == k: skip
 k = k2
 ```
 
+**m — slot retarget.** If `slot_retarget_prob` (effective for m) is greater than 0, the attempt
+first draws `x = u()`; if `x < slot_retarget_prob` it retargets one slot and does nothing else.
+(With `slot_retarget_prob = 0` nothing is drawn.)
+
+```
+retarget:
+    S = connected slots of this neuron, ascending index; if empty: skip
+    i = S[below(len(S))]; old = slot i
+    if prune == static and slot i is the only connection to old: skip   # would strand old
+    if emptying slot i would break the path rule: skip        # slot i is on a critical path
+    C = live nodes with depth <= depth(old), ≠ old, not connected to any slot of this neuron,
+        ascending id
+    if C is empty: skip
+    slot i = C[below(len(C))]
+    if a structural rule is now broken: slot i = old; skip
+```
+
 **m — slots.**
 
 ```
@@ -170,8 +195,9 @@ repeat c times:
             neuron, ascending id
         if C is empty: continue
         slot i = C[below(len(C))]
-        if the mix rule is now broken: slot i = empty; continue
+        if a structural rule is now broken: slot i = empty; continue
     else:
+        if prune == static and old's constant value is unknown: continue   # live source
         if emptying slot i would break the path rule: continue
         slot i = empty
 ```
@@ -183,13 +209,45 @@ The attempt counts as successful if at least one slot changed.
 Each attempt:
 
 ```
-method = weighted(add_method_weights)   # order: slot_fill, v_insert, s_insert, m_after_m
+method = weighted(add_method_weights)   # order: slot_fill, v_insert, s_insert, m_after_m,
+                                        #        v_tap, s_tap, m_tap, m_clone, m_insert,
+                                        #        v_link, s_link
 ```
 
 then performs that method. Immediately after the method is drawn, the attempt is skipped
 (with no further draws) if it would exceed the node cap ([03](03-net-structure.md#per-net-parameters)):
-slot fill adds 2 nodes, path insertion 1. It is also skipped if the method's new neuron type
-has reached its cap, or the method is unavailable.
+slot fill adds 2 nodes, every other method 1. It is also skipped if the method's new neuron type
+has reached its cap (m for m_clone and m_insert, v for v_link, s for s_link), or the method is
+unavailable. Every method ends by checking the structural rules; if one is broken, the attempt
+is undone completely (new nodes removed, connections and depths restored, `next_birth`
+restored) and skipped. The draws already made stay drawn.
+
+**New node depth.** Where a method below places a new node "in `[lo, hi]`":
+
+```
+place(lo, hi) = lo + (hi − lo) / 2        if insert_depth == midpoint   (integer division; no draw)
+                lo + below(hi − lo + 1)   if insert_depth == uniform
+```
+
+### Choosing a receiver
+
+Slot fill, the input taps, m_clone and the links each add a branch that ends in an empty slot of
+an existing m_neuron **R**, chosen from a candidate list (ascending id) as follows. `peak` is
+`tap_peak` for input taps and `width_peak` otherwise; links also multiply each weight by `e(R)`,
+the number of R's empty slots.
+
+```
+none:     R = list[below(len)]                         (links: weighted(e(R)))
+center:   x = depth(R) / D_MAX                          (binary64)
+          tri = x / peak if x < peak else (1 − x) / (1 − peak)
+          w(R) = tri + 1e-6                             (links: × e(R))
+deficit:  as center, but tri = tri / max(1, width(depth(R))), where width(d) is the number of
+          connections c → i between live nodes with depth(c) < d <= depth(i)
+R = list[weighted(w)]
+```
+
+`center` favors receivers near `peak`; `deficit` also favors depths where the net is still
+narrow, so new branches spread toward a bell-shaped width profile.
 
 New neurons receive a new `birth` id (`next_birth++`) and `born_gen = generation`.
 
@@ -204,20 +262,20 @@ else:                           inversion = none
 The weight stays the op's identity weight. With an inversion the insertion is no longer
 neutral (except behind the slot-fill wrapper), which the low default probability reflects.
 
-### Path insertion (v_insert, s_insert, m_after_m)
+### Path insertion (v_insert, s_insert, m_after_m, m_insert)
 
 Inserts a new neuron **X** between an existing neuron **N** and the node **A** it writes:
 after insertion N writes a new node **B**, and X reads B and writes A. Readers of A are
 unchanged.
 
-1. **Choose A.** `v_insert`, `s_insert`: any live non-input node. `m_after_m`: any live node
-   written by an m_neuron. Pick `A = list[below(len)]` (ascending id). None → skip.
+1. **Choose A.** `v_insert`, `s_insert`, `m_insert`: any live non-input node. `m_after_m`: any
+   live node written by an m_neuron. Pick `A = list[below(len)]` (ascending id). None → skip.
 2. **Find the gap.** `lo` = (largest depth among N's connections) + 1, or 1 if N has none.
    `hi = depth(A) − 1`.
    If `lo > hi` and A is hidden: let `ub` = (smallest depth among A's readers) − 1, or
    `D_MAX − 1` if A has no readers. If `lo ≤ ub − 1`, set `depth(A) = ub` and
    `hi = ub − 1`; otherwise skip (A is not moved).
-3. **Place B.** `depth(B) = lo + below(hi − lo + 1)`. B is appended as a new node. N, with its
+3. **Place B.** `depth(B) = place(lo, hi)`. B is appended as a new node. N, with its
    `birth` and `born_gen`, moves to B.
 4. **Create X** at A:
    - `v_insert`: v_neuron, input B, `op = choice(4)`, identity weight, inversion as above.
@@ -227,8 +285,14 @@ unchanged.
    - `m_after_m`: m_neuron, slot 0 = B, other slots empty, op `max`. Exactly neutral when B
      is never negative (e.g. N is a `max` m_neuron with an empty slot); otherwise clamps
      negative values to 0. Later slot fills into it are exactly neutral.
+   - `m_insert`: m_neuron, slot 0 = B, other slots empty, op `min`. **Exactly neutral** (a `min`
+     over one connected slot returns it). Its empty slots are where links, taps and clones can
+     attach new branches.
+5. **Structural rules.** If a run would now be too long, undo (A's neuron, `birth`, `born_gen`
+   and depth restored, B removed, `next_birth` restored) and skip.
 
-RNG order: method, A, depth(B), op (if drawn), inversion draws (v only).
+RNG order: method, A, depth(B) (if drawn), op (if drawn), inversion draws (v only). m_after_m
+and m_insert draw no op.
 
 ### Slot fill
 
@@ -236,11 +300,11 @@ Adds a new neuron **Q** with random inputs into an empty slot of an m_neuron **R
 silencing v_neuron **W** (`mul`, weight `0.0`) so the net's outputs are unchanged.
 
 1. **Choose R.** Live m_neurons with op ≠ `min` and at least one empty slot, ascending id.
-   None → skip. `R = list[below(len)]`.
+   None → skip. R is chosen as in [choosing a receiver](#choosing-a-receiver).
 2. **Choose slot.** `s = empty_slots(R)[below(count)]` (ascending slot index).
 3. **Choose type.** `T = weighted(slot_fill_type_weights)` (order v, s, m). Cap reached → skip.
 4. **Depths.** If `depth(R) < 3` → skip.
-   `depth(W) = 2 + below(depth(R) − 2)`; `depth(Q) = 1 + below(depth(W) − 1)`.
+   `depth(W) = place(2, depth(R) − 1)`; `depth(Q) = place(1, depth(W) − 1)`.
 5. **Build Q.** `C` = live nodes with depth < depth(Q), ascending id (never empty: inputs
    qualify).
    - v: `input = C[below(len(C))]`, `op = choice(4)`, inversion as above, identity weight.
@@ -249,11 +313,79 @@ silencing v_neuron **W** (`mul`, weight `0.0`) so the net's outputs are unchange
      pick a node from `C` not yet chosen (`below` over the remaining list, ascending id);
      `op = choice(4)`.
 6. **Connect.** Append Q, then W (input Q). Set `R.slots[s] = W`.
-7. **Mix check.** If the mix rule is now broken, undo the attempt (remove Q and W, empty the
-   slot again, restore `next_birth`) and skip. The draws already made stay drawn.
+7. **Structural rules.** If one is now broken, undo the attempt (remove Q and W, empty the slot
+   again, restore `next_birth`) and skip. The draws already made stay drawn.
 
 Why not into `min` receivers: `min` skips empty slots but not a real 0, so a silenced filler
 would change its output.
+
+### Input taps (v_tap, s_tap, m_tap)
+
+Adds a new neuron **X** that reads the net's **input nodes** directly and feeds an empty slot
+of an existing m_neuron **R**. Unlike slot fill, X is not silenced: R's output changes at once.
+
+1. **Choose R.** Live m_neurons with at least one empty slot and at least one connected slot,
+   ascending id. None → skip. R is chosen as in [choosing a receiver](#choosing-a-receiver),
+   with `tap_peak`.
+2. **Choose slot.** `s = empty_slots(R)[below(count)]` (ascending slot index).
+3. **Depth.** `hi` = largest depth among the nodes R reads. If `hi < 1` (R reads only inputs)
+   → skip. `depth(X) = place(1, hi)`, so X is never deeper than what R already reads.
+4. **Build X.**
+   - `v_tap`: v_neuron, `op = choice(4)`, `input = below(n_inputs)`, inversion as for new
+     v_neurons, identity weight.
+   - `s_tap`: s_neuron, `input = below(n_inputs)`, `op = choice(5)` (s ops), `k = 1`.
+   - `m_tap`: m_neuron. `filled = (in_qty_max + 1) / 2` slots (half, rounded up);
+     `from_inputs = min((filled + 1) / 2, n_inputs)` of them (half again, rounded up) are
+     distinct input nodes, each `I[below(len(I))]` from the remaining inputs in ascending
+     order; the rest, up to `filled`, are distinct nodes from
+     `C` = live nodes with depth < depth(X) not yet chosen, ascending id, each
+     `C[below(len(C))]` (fewer if `C` runs out). They fill slots `0…` in that order; the rest
+     stay empty. Then `op = choice(4)`.
+5. **Connect.** Append X (new `birth`, `born_gen = generation`) and set `R.slots[s] = X`.
+6. **Structural rules.** If one is now broken, undo the attempt (remove X, empty the slot again,
+   restore `next_birth`) and skip.
+
+RNG order: method, R, slot, depth (if drawn), then for `v_tap` op, input, inversion draws; for
+`s_tap` input, op; for `m_tap` the inputs, the other nodes, op.
+
+### m_clone
+
+Copies an m_neuron **U** that feeds an m_neuron **R** and attaches the copy to an empty slot of R,
+so the branch through U is doubled.
+
+1. **Choose R.** Live m_neurons with at least one empty slot that read at least one node written
+   by an m_neuron, ascending id. None → skip. R is chosen as in
+   [choosing a receiver](#choosing-a-receiver).
+2. **Choose U.** The distinct m-written nodes R reads, ascending id: `U = list[below(len)]`.
+3. **Choose slot.** `s = empty_slots(R)[below(count)]`.
+4. **Copy.** Append a node at `depth(U)` with a copy of U's m_neuron (same op, same slots), a new
+   `birth`, `born_gen = generation`; set `R.slots[s]` to it.
+
+Every new path mirrors a path through U, so the path, mix and run rules always hold. The copy
+changes R's output unless R's op is `min` or `max`.
+
+### Links (v_link, s_link)
+
+A new 1:1 neuron **X** connects an existing node to an empty slot of an m_neuron **R**; the open
+slots m_insert leaves are the main targets.
+
+1. **Choose R.** Live m_neurons with at least one empty slot and at least one connected slot,
+   ascending id. None → skip. R is chosen as in [choosing a receiver](#choosing-a-receiver),
+   each weight multiplied by R's number of empty slots.
+2. **Choose slot.** `s = empty_slots(R)[below(count)]`.
+3. **Choose the source.** `hi` = largest depth among the nodes R reads.
+   `C` = live nodes with depth ≤ `hi` not connected to any slot of R, ascending id (inputs
+   included). None → skip. `src = C[below(len(C))]`.
+4. **Depth.** `lo = depth(src) + 1`, `hi2 = depth(R) − 1`; if `lo > hi2` → skip.
+   `depth(X) = place(lo, hi2)`.
+5. **Build X.** `v_link`: v_neuron, input `src`, `op = choice(4)`, inversion as for new v_neurons,
+   identity weight. `s_link`: s_neuron, input `src`, `op = choice(5)`, `k = 1`.
+6. **Connect** and check the structural rules as for input taps.
+
+RNG order: method, R, slot, source, depth (if drawn), op, inversion draws (v only).
+
+Informative: under `path_mix ≥ 1`, a tap's new paths skip every neuron between the inputs and
+R, so taps into m_neurons close to the inputs are often undone by the mix check.
 
 ## Phase 4 — Removal
 

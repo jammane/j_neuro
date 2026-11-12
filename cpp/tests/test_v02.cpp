@@ -119,7 +119,9 @@ TEST_CASE("v02: insert inversion") {
     auto p = zero_profile();
     p.set_overall("growth_max_pct", 100.0);
     p.set_overall("insert_inversion_prob", 1.0);
-    p.apply_patch(json{{"overall", {{"add_method_weights", {{"slot_fill", 0}, {"v_insert", 1}, {"s_insert", 0}, {"m_after_m", 0}}}}}});
+    p.apply_patch(json{{"overall", {{"add_method_weights", {{"slot_fill", 0}, {"v_insert", 1}, {"s_insert", 0}, {"m_after_m", 0},
+        {"v_tap", 0}, {"s_tap", 0}, {"m_tap", 0}, {"m_clone", 0},
+        {"m_insert", 0}, {"v_link", 0}, {"s_link", 0}}}}}});
     for (std::uint64_t seed = 0; seed < 40; ++seed) {
         Rng r(seed);
         auto child = mutate(net, p, 1, r);

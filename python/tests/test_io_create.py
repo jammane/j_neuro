@@ -6,7 +6,7 @@ import pytest
 from helpers import M, S, V, load_golden, make_net
 
 from jneuro import AggOp, DepthType, MNeuron, Net, Priority, SNeuron, ValidationError, VNeuron
-from jneuro.analysis import connections, mix_ok, path_rule_ok
+from jneuro.analysis import connections, mix_ok, path_rule_ok, run_ok
 from jneuro.jnet import load_net, net_from_bytes, net_to_bytes, save_net
 from jneuro.rng import Rng
 
@@ -28,7 +28,7 @@ def test_exact_layout():
     """Bytes built by hand from spec/09, independent of the library's writer."""
     net = make_net(1, 1, 3, [(D16, V(0, "add", 0.5))])
     body = b"JNET" + struct.pack("<HHHH", 1, 0, 5, 0)
-    body += struct.pack("<BBIIIBQ", 0, 0, 3, 1, 1, 0, 2)      # SPEED, U16, q, n_in, n_out, path_mix, next_birth
+    body += struct.pack("<BBIIIBBQ", 0, 0, 3, 1, 1, 0, 0, 2)  # SPEED, U16, q, n_in, n_out, path_mix, max_run, next_birth
     body += struct.pack("<H", 2)                               # node_count (W = 2)
     body += struct.pack("<QQHB", 0, 0, 0, 0)                   # input node
     body += struct.pack("<QQHB", 1, 0, 0xFFFF, 1)              # output node, v neuron
@@ -42,7 +42,7 @@ def test_none_sentinel_and_widths():
         net = make_net(2, 1, 3, [(dmax, M("max", [0, 1, None])), ], depth_type=dt)
         b = net_to_bytes(net)
         assert b[-32 - w:-32] == none                          # last slot of the m neuron is empty
-        header = 4 + 8 + 2 + 12 + 1 + 8
+        header = 4 + 8 + 2 + 12 + 1 + 1 + 8
         nodes = 3 * (16 + w + 1) + (1 + 3 * w)
         assert len(b) == header + w + nodes + 32
 
@@ -97,7 +97,7 @@ def test_damage_detected():
 @pytest.mark.parametrize("n_in,n_out,q", [(1, 3, 3), (3, 2, 3), (2, 1, 5), (7, 2, 3), (30, 2, 3), (5, 1, 3)])
 def test_create_minimal(n_in, n_out, q):
     for dt in DepthType:
-        net = Net.create(n_in, n_out, dt, q, Priority.MEMORY, Rng(11), path_mix=0)
+        net = Net.create(n_in, n_out, dt, q, Priority.MEMORY, Rng(11), path_mix=0, max_run=0)
         net.validate()
         assert path_rule_ok(net)
         assert net.next_birth == len(net.nodes)
@@ -116,7 +116,7 @@ def test_create_minimal(n_in, n_out, q):
 
 
 def test_create_tree_shape():
-    net = Net.create(7, 2, DepthType.U16, 3, Priority.SPEED, Rng(1), path_mix=0)
+    net = Net.create(7, 2, DepthType.U16, 3, Priority.SPEED, Rng(1), path_mix=0, max_run=0)
     hidden = net.nodes[9:]
     assert len(hidden) == 3
     assert [h.neuron.slots for h in hidden] == [[0, 1, 2], [3, 4, 5], [6, None, None]]
@@ -186,8 +186,13 @@ def test_create_default_path_mix_chain():
     net = Net.create(9, 1, DepthType.U32, 3, Priority.SPEED, Rng(2))   # the blackjack shape
     assert net.path_mix == 2
     kinds = [type(n.neuron).__name__[0] for n in net.nodes[9:]]
-    assert kinds == ["V", "M", "M", "M", "M", "S", "S", "V"]  # output v, 3 tree m, merge m, s, s, v
-    assert set(_path_counts(net)) == {(2, 2, 2)}
+    assert kinds[1:5] == ["M", "M", "M", "M"]                 # 3 tree m, then the merge m
+    assert sorted(kinds[:1] + kinds[5:]).count("S") == 2      # s, s, v, v in a random order, plus
+    assert all(min(c) >= 2 for c in _path_counts(net))        # separators where a run would pass 3
+    assert net.max_run == 3 and run_ok(net)
+    orders = {tuple(type(n.neuron).__name__[0] for n in Net.create(9, 1, DepthType.U32, 3, Priority.SPEED,
+                                                                    Rng(s)).nodes[9:]) for s in range(20)}
+    assert len(orders) > 3                                      # chains differ from net to net
     net.reset()
     assert net.step([float(i) for i in range(9)]) is not None
 
