@@ -15,7 +15,7 @@ constexpr std::array<const char*, 3> kPriority{"SPEED", "MEMORY", "BALANCED"};
 constexpr std::array<const char*, 3> kDepth{"U16", "U32", "U64"};
 constexpr std::array<const char*, 3> kInv{"none", "bitnot", "recip"};
 constexpr std::array<const char*, 4> kVOp{"mul", "div", "add", "sub"};
-constexpr std::array<const char*, 4> kAgg{"mean", "median", "min", "max"};
+constexpr std::array<const char*, 5> kAgg{"mean", "median", "min", "max", "lag"};
 constexpr std::array<const char*, 3> kType{"v", "s", "m"};
 }  // namespace
 

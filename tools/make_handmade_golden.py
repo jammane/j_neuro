@@ -64,7 +64,7 @@ PRI = {"SPEED": 0, "MEMORY": 1, "BALANCED": 2}
 DT = {"U16": 0, "U32": 1, "U64": 2}
 INV = {"none": 0, "bitnot": 1, "recip": 2}
 VOPS = {"mul": 0, "div": 1, "add": 2, "sub": 3}
-AGG = {"mean": 0, "median": 1, "min": 2, "max": 3}
+AGG = {"mean": 0, "median": 1, "min": 2, "max": 3, "lag": 4}
 
 
 def encode(g, magic=b"JNET", fmt=1, ver=(0, 5, 0), dt_byte=None, pri_byte=None,
@@ -173,6 +173,12 @@ cases["eval_chain_u32"] = eval_case(chain, [
     ([-3.0, -5.0], [-0.5]),                  # max(-6, -4, 0) = 0
 ])
 
+# 6b. s lag: the raw input from k steps ago, +0.0 until k steps have passed
+g = genome(1, 3, 3, [(D16, s(0, "lag", 1)), (D16, s(0, "lag", 3)), (D16, s(0, "lag", 2))])
+xs = [1.0, 2.0, -3.0, 4.5, 5.0]
+cases["eval_s_lag"] = eval_case(g, [([xs[i]], [xs[i - 1] if i >= 1 else 0.0, xs[i - 3] if i >= 3 else 0.0,
+                                               xs[i - 2] if i >= 2 else 0.0]) for i in range(len(xs))])
+
 # 7. U64 depth above 2^53
 g = genome(1, 1, 3, [(D64, v(2, "add", 1.0)), (2**53 + 1, v(0, "mul", 3.0))], "U64")
 cases["eval_u64_depth"] = eval_case(g, [([2.0], [7.0])])
@@ -220,6 +226,7 @@ bad("inversion_byte", "enum range", lambda g: g["nodes"][3]["neuron"].__setitem_
 bad("median_even_k", "median k",
     lambda g: g["nodes"][4].__setitem__("neuron", s(1, "median", 2)))
 bad("k_too_large", "k range", lambda g: g["nodes"][4].__setitem__("neuron", s(1, "mean", 5)))
+bad("m_lag_op", "lag is an s_neuron op", lambda g: g["nodes"][5]["neuron"].__setitem__("op", "lag"))
 bad("bad_op", "op", lambda g: g["nodes"][3]["neuron"].__setitem__("op", "pow"))
 bad("dangling_reference", "reference", lambda g: g["nodes"][3]["neuron"].__setitem__("input", 9))
 bad("dead_node", "dead node", lambda g: (

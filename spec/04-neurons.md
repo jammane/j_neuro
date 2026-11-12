@@ -79,7 +79,7 @@ exactly.
 | Field | Values |
 |---|---|
 | `input` | node id, or missing |
-| `op` | aggregation op |
+| `op` | `[mean, median, min, max, lag]` (enumeration order): the four aggregation ops plus `lag`, which only s_neurons have |
 | `k` | integer, `1 ≤ k ≤ in_qty_max`; **odd if `op == median`** |
 | state: `history` | ring of `k` values, initially all `+0.0` |
 | state: `filled` | number of entries written since reset, capped at `k` |
@@ -90,12 +90,15 @@ The history holds the **previous** `k` input values; it never includes the curre
 x = value(input)  or  +0.0 if missing
 h = history, oldest to newest (k values; unfilled entries are +0.0)
 present[i] = i is among the `filled` most recent entries
-output = canon(x - aggregate(op, h, present))
+output = canon(h[0])                            if op == lag   # the input from k steps ago
+         canon(x - aggregate(op, h, present))   otherwise
 push x into history (dropping the oldest), filled = min(filled + 1, k)
 ```
 
 On the first step after a reset all entries are unfilled, so `aggregate` returns 0 and the
-output equals `x`.
+output equals `x`. A `lag` s_neuron outputs the raw input from `k` steps ago, and `+0.0` for
+the first `k` steps after a reset (its oldest entry is still unfilled); `k` is its position
+in the history.
 
 ## m_neuron
 

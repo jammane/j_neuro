@@ -27,6 +27,7 @@ inline void check_neuron(const Neuron& n, std::uint32_t q, NodeId i) {
         if (s->k < 1 || s->k > q) throw ValidationError(at + "k range");
         if (s->op == AggOp::Median && s->k % 2 == 0) throw ValidationError(at + "median k must be odd");
     } else {
+        if (std::get<MNeuron>(n).op == AggOp::Lag) throw ValidationError(at + "lag is an s_neuron op");
         if (std::get<MNeuron>(n).slots.size() != q)
             throw ValidationError(at + "slot count must equal in_qty_max");
     }

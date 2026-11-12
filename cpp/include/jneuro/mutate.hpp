@@ -117,17 +117,17 @@ private:
             v->weight = identity_weight(v->op);
             return NeuronType::V;
         }
-        auto change = [&](AggOp& op) {
-            std::uint64_t j = rng_.below(3);
+        auto change = [&](AggOp& op, std::uint64_t n_ops) {  // a different op, uniformly
+            std::uint64_t j = rng_.below(n_ops - 1);
             if (j >= static_cast<std::uint64_t>(op)) ++j;
             op = static_cast<AggOp>(j);
         };
         if (auto* s = std::get_if<SNeuron>(&n)) {
-            change(s->op);
+            change(s->op, kSOps);  // s: also lag (spec/04)
             if (s->op == AggOp::Median && s->k % 2 == 0) --s->k;
             return NeuronType::S;
         }
-        change(std::get<MNeuron>(n).op);
+        change(std::get<MNeuron>(n).op, kMOps);
         return NeuronType::M;
     }
 
@@ -275,7 +275,7 @@ private:
             const Inversion inv = new_inversion();
             x = VNeuron{b, inv, op, identity_weight(op)};
         } else if (method == 2) {
-            x = SNeuron{b, static_cast<AggOp>(rng_.choice(4)), 1};
+            x = SNeuron{b, static_cast<AggOp>(rng_.choice(kSOps)), 1};
         } else {
             std::vector<std::optional<NodeId>> slots(q_, std::nullopt);
             slots[0] = b;
@@ -320,7 +320,7 @@ private:
             qn = VNeuron{in, inv, op, identity_weight(op)};
         } else if (t == NeuronType::S) {
             const NodeId in = pick(cands);
-            qn = SNeuron{in, static_cast<AggOp>(rng_.choice(4)), 1};
+            qn = SNeuron{in, static_cast<AggOp>(rng_.choice(kSOps)), 1};
         } else {
             const std::uint64_t count = 1 + rng_.below(std::min<std::uint64_t>(q_, cands.size()));
             std::vector<NodeId> rem = cands;

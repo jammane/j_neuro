@@ -33,10 +33,16 @@ class VOp(IntEnum):
 
 
 class AggOp(IntEnum):
+    """Aggregation ops; LAG is an s_neuron-only op (spec/04)."""
     MEAN = 0
     MEDIAN = 1
     MIN = 2
     MAX = 3
+    LAG = 4
+
+
+M_OPS = 4   # m_neurons use the first four
+S_OPS = 5   # s_neurons use all five
 
 
 class NeuronType(IntEnum):

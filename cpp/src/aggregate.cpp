@@ -24,6 +24,8 @@ double aggregate(AggOp op, const std::vector<double>& values, const std::vector<
             }
             return any ? m : 0.0;
         }
+        case AggOp::Lag:  // s_neurons only: the oldest history value (spec/04)
+            return values[0];
         case AggOp::Max: {
             double m = values[0];
             for (std::size_t i = 1; i < values.size(); ++i)

@@ -26,7 +26,8 @@ equal content, so a file exported from one language imports unchanged into the o
 - Enumerations are `u8` indices in the enumeration orders of [04](04-neurons.md) and
   [03](03-net-structure.md): priority `SPEED 0, MEMORY 1, BALANCED 2`; depth type
   `U16 0, U32 1, U64 2`; inversion `none 0, bitnot 1, recip 2`; v op `mul 0, div 1, add 2,
-  sub 3`; aggregation op `mean 0, median 1, min 2, max 3`.
+  sub 3`; aggregation op `mean 0, median 1, min 2, max 3`, plus `lag 4` for s_neurons only (an
+  m_neuron op byte of 4 is out of range).
 
 ## `.jnet`
 

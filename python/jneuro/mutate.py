@@ -9,7 +9,7 @@ from .net import MNeuron, Net, Node, SNeuron, VNeuron
 from .removal import (bypass, compact, fold_constants, garbage_collect, has_min_reader,
                       is_identity, is_silenced, remove_silenced)
 from .rng import Rng, round_half_away
-from .types import IDENTITY_WEIGHT, AggOp, Inversion, ValidationError, VOp
+from .types import IDENTITY_WEIGHT, M_OPS, S_OPS, AggOp, Inversion, ValidationError, VOp
 
 TYPES = ("v", "s", "m")
 METHODS = ("slot_fill", "v_insert", "s_insert", "m_after_m")
@@ -195,7 +195,8 @@ class _Mutation:
             n.inversion, n.op = Inversion(j // 4), VOp(j % 4)
             n.weight = IDENTITY_WEIGHT[n.op]
         else:
-            j = rng.below(3)
+            n_ops = S_OPS if t == "s" else M_OPS          # s: also lag (spec/04)
+            j = rng.below(n_ops - 1)
             if j >= int(n.op):
                 j += 1
             n.op = AggOp(j)
@@ -326,7 +327,7 @@ class _Mutation:
             op = VOp(rng.choice(4))
             x = VNeuron(b, self.new_inversion(), op, IDENTITY_WEIGHT[op])
         elif method == "s_insert":
-            x = SNeuron(b, AggOp(rng.choice(4)), 1)
+            x = SNeuron(b, AggOp(rng.choice(S_OPS)), 1)
         else:
             x = MNeuron(AggOp.MAX, [b] + [None] * (self.q - 1))
         node_a.neuron = x
@@ -362,7 +363,7 @@ class _Mutation:
             qn = VNeuron(inp, self.new_inversion(), op, IDENTITY_WEIGHT[op])
         elif t == "s":
             inp = cands[rng.below(len(cands))]
-            qn = SNeuron(inp, AggOp(rng.choice(4)), 1)
+            qn = SNeuron(inp, AggOp(rng.choice(S_OPS)), 1)
         else:
             count = 1 + rng.below(min(self.q, len(cands)))
             rem = list(cands)

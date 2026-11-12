@@ -91,8 +91,8 @@ out-of-range enumeration bytes.
 The golden set SHOULD include at least:
 
 - Every v inversion × op, including division by zero, `bitnot(0)`, ±inf inputs and NaN inputs.
-- Every aggregation op for m_neurons with empty slots, and for s_neurons during warm-up
-  (`min` skipping unfilled entries).
+- Every aggregation op for m_neurons with empty slots, and every s op (including `lag`) for
+  s_neurons during warm-up (`min` skipping unfilled entries).
 - Compensated mean cases where naive summation would round differently, and overflow cases.
 - Minimal-net creation for `n_inputs` = 1, ≤ `in_qty_max`, and > `in_qty_max`, with
   `path_mix` 0 and above.

@@ -131,7 +131,10 @@ class Net:
             x = inp(neuron.input)
             h = [buf[(head + i) % k] for i in range(k)]
             present = [i >= k - filled for i in range(k)]
-            out = canon(x - aggregate(neuron.op, h, present))
+            if neuron.op == AggOp.LAG:
+                out = canon(h[0])                       # the input from k steps ago (+0.0 if unfilled)
+            else:
+                out = canon(x - aggregate(neuron.op, h, present))
             buf[head] = x
             ring[1] = (head + 1) % k
             ring[2] = min(filled + 1, k)
@@ -340,7 +343,7 @@ def _check_neuron(neuron, q, i):
         if neuron.op == AggOp.MEDIAN and neuron.k % 2 == 0:
             raise ValidationError(f"node {i}: median k must be odd")
     elif isinstance(neuron, MNeuron):
-        if not isinstance(neuron.op, AggOp):
+        if not isinstance(neuron.op, AggOp) or neuron.op == AggOp.LAG:
             raise ValidationError(f"node {i}: bad m_neuron op")
         if len(neuron.slots) != q:
             raise ValidationError(f"node {i}: slot count must equal in_qty_max")

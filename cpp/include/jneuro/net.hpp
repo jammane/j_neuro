@@ -171,7 +171,8 @@ double Net<D>::eval_node(NodeId id, const Neuron& neuron, auto&& value_of) {
             h[i] = ring.buf[(ring.head + i) % s->k];
             present[i] = i >= s->k - ring.filled;
         }
-        const double out = canon(x - aggregate(s->op, h, present));
+        // lag: the input from k steps ago (+0.0 if unfilled); otherwise x minus the aggregate
+        const double out = s->op == AggOp::Lag ? canon(h[0]) : canon(x - aggregate(s->op, h, present));
         ring.buf[ring.head] = x;
         ring.head = (ring.head + 1) % s->k;
         ring.filled = std::min(ring.filled + 1, s->k);

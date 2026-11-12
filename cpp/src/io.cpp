@@ -143,12 +143,12 @@ Net<D> parse_net(detail::Reader& r, Priority priority) {
         } else if (kind == 2) {
             SNeuron s;
             s.input = ref();
-            s.op = static_cast<AggOp>(r.enum_byte(4, "op"));
+            s.op = static_cast<AggOp>(r.enum_byte(kSOps, "op"));
             s.k = static_cast<std::uint32_t>(r.u(4));
             node.neuron = s;
         } else if (kind == 3) {
             MNeuron m;
-            m.op = static_cast<AggOp>(r.enum_byte(4, "op"));
+            m.op = static_cast<AggOp>(r.enum_byte(kMOps, "op"));  // lag is s-only
             for (std::uint32_t k = 0; k < net.in_qty_max; ++k) m.slots.push_back(ref());
             node.neuron = m;
         }

@@ -180,6 +180,8 @@ def net_from_bytes(data: bytes) -> Net:
             neuron = SNeuron(inp, op, r.u(4))
         elif kind == 3:
             op = r.enum(AggOp, "op")
+            if op == AggOp.LAG:
+                raise ValidationError("jnet: lag is an s_neuron op, not an m_neuron op")
             neuron = MNeuron(op, [ref() for _ in range(q)])
         else:
             raise ValidationError(f"jnet: neuron type byte {kind} out of range")

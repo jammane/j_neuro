@@ -107,9 +107,10 @@ Each attempt picks a neuron and changes its operation to a different one, unifor
 - **v:** the operation is the pair (inversion, op), indexed `inversion * 4 + op` (12 pairs).
   Draw `j = below(11)`; if `j >= current index`, `j += 1`. Set the pair and reset the weight
   to the new op's identity weight ([04](04-neurons.md#v_neuron)).
-- **s:** draw `j = below(3)` over the other three aggregation ops (same skip-current rule).
+- **s:** draw `j = below(4)` over the other four s ops `[mean, median, min, max, lag]` (same
+  skip-current rule).
   If the new op is `median` and `k` is even, set `k = k − 1`.
-- **m:** draw `j = below(3)` over the other three aggregation ops.
+- **m:** draw `j = below(3)` over the other three aggregation ops (m_neurons have no `lag`).
 
 ## Phase 2 — Parameter edits
 
@@ -221,7 +222,8 @@ unchanged.
 4. **Create X** at A:
    - `v_insert`: v_neuron, input B, `op = choice(4)`, identity weight, inversion as above.
      **Exactly neutral** when no inversion is drawn.
-   - `s_insert`: s_neuron, input B, `op = choice(4)`, `k = 1`. Disruptive by nature.
+   - `s_insert`: s_neuron, input B, `op = choice(5)` (s ops, including `lag`), `k = 1`.
+     Disruptive by nature.
    - `m_after_m`: m_neuron, slot 0 = B, other slots empty, op `max`. Exactly neutral when B
      is never negative (e.g. N is a `max` m_neuron with an empty slot); otherwise clamps
      negative values to 0. Later slot fills into it are exactly neutral.
@@ -242,7 +244,7 @@ silencing v_neuron **W** (`mul`, weight `0.0`) so the net's outputs are unchange
 5. **Build Q.** `C` = live nodes with depth < depth(Q), ascending id (never empty: inputs
    qualify).
    - v: `input = C[below(len(C))]`, `op = choice(4)`, inversion as above, identity weight.
-   - s: `input = C[below(len(C))]`, `op = choice(4)`, `k = 1`.
+   - s: `input = C[below(len(C))]`, `op = choice(5)` (s ops), `k = 1`.
    - m: `count = 1 + below(min(in_qty_max, len(C)))`; for each of `count` slots in order,
      pick a node from `C` not yet chosen (`below` over the remaining list, ascending id);
      `op = choice(4)`.

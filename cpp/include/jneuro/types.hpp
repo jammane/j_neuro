@@ -12,7 +12,10 @@ enum class Priority : std::uint8_t { Speed, Memory, Balanced };
 enum class DepthType : std::uint8_t { U16, U32, U64 };
 enum class Inversion : std::uint8_t { None, Bitnot, Recip };
 enum class VOp : std::uint8_t { Mul, Div, Add, Sub };
-enum class AggOp : std::uint8_t { Mean, Median, Min, Max };
+/// Aggregation ops; Lag is an s_neuron-only op (spec/04).
+enum class AggOp : std::uint8_t { Mean, Median, Min, Max, Lag };
+inline constexpr std::uint64_t kMOps = 4;  ///< m_neurons use the first four
+inline constexpr std::uint64_t kSOps = 5;  ///< s_neurons use all five
 enum class NeuronType : std::uint8_t { V, S, M };
 
 using NodeId = std::uint32_t;

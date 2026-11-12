@@ -81,7 +81,7 @@ Build and test instructions: [cpp/README.md](cpp/README.md), [python/README.md](
 | **Node** | Holds one value. Has a **depth**. Inputs are at depth 0, outputs at the maximum depth. |
 | **Neuron** | Writes exactly one node. Every node it reads must be strictly shallower than the node it writes, so nets are always acyclic. |
 | `v_neuron` | 1 in → 1 out: optional inversion (bitwise `~` or `1/x`), then `* / + −` by a weight. |
-| `s_neuron` | 1 in → 1 out, stateful: `x − agg(previous k inputs)`. |
+| `s_neuron` | 1 in → 1 out, stateful: `x − agg(previous k inputs)`, or with `lag` the raw input from k steps ago. |
 | `m_neuron` | `IN_QTY_MAX` slots in → 1 out: `mean`, `median`, `min` or `max`. Empty slots read 0. |
 | `DEPTH` | Per-net integer type of depth values: `U16`, `U32` or `U64`. Bounds how finely structure can be layered. |
 | `IN_QTY_MAX` | Per-net odd number: m_neuron slot count and maximum s_neuron history. |
