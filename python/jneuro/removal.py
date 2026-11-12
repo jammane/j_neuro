@@ -6,8 +6,12 @@ from __future__ import annotations
 
 from typing import Set
 
-from .analysis import connections, reaching_output, readers
+import math
+
+from .aggregate import aggregate
+from .analysis import connections, path_rule_ok, reaching_output, readers
 from .net import MNeuron, Net, SNeuron, VNeuron, eval_v
+from .numerics import canon
 from .types import IDENTITY_WEIGHT, AggOp, Inversion, VOp
 
 
@@ -65,6 +69,54 @@ def remove_silenced(net: Net, nid: int, removed: Set[int]):
             if (net.is_hidden(r) and not connections(net.nodes[r].neuron) and is_silenced(net, r)
                     and not has_min_reader(net, r, removed)):
                 queue.append(r)
+
+
+def constant_values(net: Net, removed: Set[int]):
+    """For each live node: its output if provably the same at every step from reset, else None."""
+    order = sorted((i for i in range(len(net.nodes)) if i not in removed), key=lambda i: net.nodes[i].depth)
+    const = [None] * len(net.nodes)
+    for i in order:
+        n = net.nodes[i].neuron
+        if n is None:
+            continue
+        if isinstance(n, VNeuron):
+            if n.input is None:
+                const[i] = eval_v(n, 0.0)
+            elif const[n.input] is not None:
+                const[i] = eval_v(n, const[n.input])
+            elif n.op == VOp.MUL and n.weight == 0.0:
+                const[i] = 0.0
+        elif isinstance(n, SNeuron):
+            if n.input is None or _is_pos_zero(const[n.input]):
+                const[i] = 0.0
+        else:
+            if all(s is None or const[s] is not None for s in n.slots):
+                vals = [0.0 if s is None else const[s] for s in n.slots]
+                const[i] = canon(aggregate(n.op, vals, [s is not None for s in n.slots]))
+    return const
+
+
+def _is_pos_zero(x) -> bool:
+    return x is not None and x == 0.0 and math.copysign(1.0, x) > 0
+
+
+def fold_constants(net: Net, removed: Set[int], generation: int, min_age):
+    """Replace constant hidden neurons by constant v_neurons (spec/07); no RNG, no quota."""
+    const = constant_values(net, removed)
+    cands = [i for i in range(len(net.nodes))
+             if i not in removed and net.is_hidden(i) and const[i] is not None
+             and connections(net.nodes[i].neuron)
+             and generation - net.nodes[i].born_gen >= min_age(_type(net.nodes[i].neuron))]
+    cands.sort(key=lambda i: (-net.nodes[i].depth, i))
+    for i in cands:
+        old = net.nodes[i].neuron
+        net.nodes[i].neuron = VNeuron(None, Inversion.NONE, VOp.ADD, const[i])
+        if not path_rule_ok(net, removed):
+            net.nodes[i].neuron = old
+
+
+def _type(neuron) -> str:
+    return "v" if isinstance(neuron, VNeuron) else "s" if isinstance(neuron, SNeuron) else "m"
 
 
 def garbage_collect(net: Net, removed: Set[int]):

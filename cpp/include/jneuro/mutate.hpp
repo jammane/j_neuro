@@ -33,6 +33,9 @@ public:
         run_phase("growth_max_pct", &Mutation::growth);
         run_phase("removal_max_pct", &Mutation::removal);
         run_phase("depth_shift_max_pct", &Mutation::depth_shift);
+        if (p_.constant_folding() == "on")
+            fold_constants(net_, removed_, gen_,
+                           [this](NeuronType t) { return p_.effective("min_age_for_removal", t); });
         garbage_collect(net_, removed_);
         compact(net_, removed_);
         return std::move(net_);
@@ -77,10 +80,13 @@ private:
     void run_phase(const std::string& field, Attempt attempt) {
         const double n = static_cast<double>(live_neurons().size());
         auto limit = [n](double pct) { return pct == 0 ? 0.0 : std::max(1.0, pct * n / 100.0); };  // spec/06
-        const std::int64_t b = rng_.prob_round(rng_.u() * limit(p_.overall(field)));
+        const bool exact = field == "growth_max_pct" && p_.growth_budget() == "exact";
+        // "up to" draws a fraction of the cap; exact uses the whole cap
+        auto draw = [&](double pct) { return rng_.prob_round(exact ? limit(pct) : rng_.u() * limit(pct)); };
+        const std::int64_t b = draw(p_.overall(field));
         for (NeuronType t : kTypes) {
             if (p_.has_override(field, t))
-                caps_[ti(t)] = rng_.prob_round(rng_.u() * limit(p_.override_value(field, t)));
+                caps_[ti(t)] = draw(p_.override_value(field, t));
             else
                 caps_[ti(t)] = std::nullopt;
             used_[ti(t)] = 0;

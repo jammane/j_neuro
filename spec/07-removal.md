@@ -102,6 +102,40 @@ some output from some input.
 Informative: over generations a net can reroute a required path — grow an alternative route,
 which lifts the old route's immunity, then remove the old route once it is silenced.
 
+## Constant folding (phase 6)
+
+Runs only when the profile's `constant_folding` is `on`, before garbage collection. It draws
+no random numbers and has no budget or cap.
+
+**Constant values.** Visit live nodes in ascending depth. A node's constant value `c` is known
+when its output is provably the same at every step from the reset state:
+
+| Neuron | `c` is known when | `c` |
+|---|---|---|
+| v_neuron | input missing | `eval_v(+0.0)` |
+| | input's `c` known | `eval_v(c(input))` |
+| | otherwise, op `mul` and weight `0.0` | `+0.0` |
+| s_neuron | input missing, or input's `c` is `+0.0` | `+0.0` |
+| m_neuron | every connected slot's `c` is known (also when all slots are empty) | `canon(aggregate(op, values, present))`, empty slots `+0.0` and not present |
+
+Input nodes have no constant value. (An s_neuron of any other constant is not constant: it
+outputs the constant on the first step and then the constant minus its history.)
+
+**Folding.** Candidates are live **hidden** nodes with a known `c`, at least one connection,
+and `generation − born_gen ≥ min_age_for_removal` (effective for the neuron's type). Visit
+them by descending depth, ties by ascending id. Replace the neuron by a constant v_neuron
+(input missing, inversion `none`, op `add`, weight `c`); if the path rule is now broken,
+restore it. `birth` and `born_gen` are kept.
+
+The replacement outputs `canon(+0.0 + c) = c` at every step, so outputs are unchanged and
+`min` readers are unaffected (the slot stays connected). Nodes upstream that no longer reach
+an output are removed by garbage collection. Folding only removes connections, so the mix
+rule still holds.
+
+Informative: the silencing wrapper W of a slot fill is a constant (`mul 0`); once it is
+`min_age_for_removal` generations old it is folded and its filler removed, unless an operation
+change has made it non-constant.
+
 ## Garbage collection (phase 6)
 
 1. Mark every live node from which some output node is reachable through connections

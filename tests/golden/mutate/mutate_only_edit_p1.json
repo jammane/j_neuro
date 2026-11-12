@@ -31,7 +31,9 @@
     "s": 1,
     "m": 1
    },
-   "rng_mode": "fresh"
+   "rng_mode": "fresh",
+   "growth_budget": "up_to",
+   "constant_folding": "off"
   },
   "v": {},
   "s": {},

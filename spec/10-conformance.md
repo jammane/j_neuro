@@ -97,6 +97,7 @@ The golden set SHOULD include at least:
 - Minimal-net creation for `n_inputs` = 1, ≤ `in_qty_max`, and > `in_qty_max`, with
   `path_mix` 0 and above.
 - Every mix-rule skip: rewire, slot connect, slot fill and bypass.
+- `growth_budget = exact`, and constant folding including the path-rule restore.
 - Every addition method, including skipped attempts (no gap, no eligible receiver, cap
   reached).
 - Bypass, silenced removal with downstream cascade stopping at a `min` reader and at a

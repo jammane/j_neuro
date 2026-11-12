@@ -46,6 +46,8 @@ A per-type value overrides the overall value for neurons of that type.
 | `add_method_weights` | `slot_fill 40, v_insert 30, s_insert 20, m_after_m 10` | no | Odds of each addition method |
 | `slot_fill_type_weights` | `v 1, s 1, m 1` | no | Odds of each neuron type created by slot fill |
 | `rng_mode` | `fresh` | no | Where a population's `mutate` draws random numbers: `fresh` or `shared` ([11](11-population.md#rng-modes)). Ignored by the standalone `mutate` function, which takes its RNG directly. |
+| `growth_budget` | `up_to` | no | `up_to` or `exact`: whether the growth budget is a random fraction of its cap or the whole cap ([budgets](#budgets)). |
+| `constant_folding` | `off` | no | `off` or `on`: replace constant neurons by constants before garbage collection ([07](07-removal.md#constant-folding)). |
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
 changed between generations; every change is recorded in the run log
@@ -60,7 +62,8 @@ Mutation runs these phases in this order:
 3. Growth (additions)
 4. Removal ([07](07-removal.md))
 5. Depth shifts
-6. Garbage collection and compaction ([07](07-removal.md))
+6. Constant folding if `constant_folding` is `on`, then garbage collection and compaction
+   ([07](07-removal.md))
 
 Removed nodes are only **marked** (tombstoned) until phase 6; ids do not change before then.
 A **live** node is one not marked removed. The **live neuron list** is all live non-input
@@ -74,15 +77,20 @@ At the start of each of phases 1–5:
 N = number of live neurons
 limit(pct) = 0.0                      if pct == 0
              max(1.0, pct * N / 100.0) otherwise              # a nonzero cap is at least 1
-B = prob_round(u() * limit(overall.max_pct))                  # attempts this phase
+draw(pct) = prob_round(limit(pct))          if exact
+            prob_round(u() * limit(pct))    otherwise
+B = draw(overall.max_pct)                                     # attempts this phase
 for T in [v, s, m]:
     if section T overrides max_pct:
-        cap[T] = prob_round(u() * limit(T.max_pct))
+        cap[T] = draw(T.max_pct)
     else:
         cap[T] = unlimited
     used[T] = 0
 ```
 
+`exact` is true only in phase 3 when `growth_budget` is `exact`; it then draws no `u()`.
+For example, a tiny `growth_max_pct` with `growth_budget = exact` makes exactly one growth
+attempt (attempts can still be skipped).
 `max_pct` is the phase's field (`op_change_max_pct`, …). `N` is converted to binary64 and
 `pct * N / 100.0` is evaluated left to right. Because a nonzero cap is never below 1, small
 nets can always mutate: a 1-neuron net with a 1% cap still gets up to 1 change.

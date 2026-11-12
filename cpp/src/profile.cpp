@@ -29,7 +29,7 @@ const char* const kOverallOrder[] = {
     "op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pct", "depth_shift_max_pct",
     "depth_shift_mode", "sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots", "rewire_prob",
     "insert_inversion_prob", "min_age_for_removal", "add_method_weights", "slot_fill_type_weights",
-    "rng_mode"};
+    "rng_mode", "growth_budget", "constant_folding"};
 const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m"};
 const char* const kTypes[] = {"v", "s", "m"};
 
@@ -81,6 +81,16 @@ void Profile::merge_overall(const json& body) {
             if (!v.is_string() || (v != "fresh" && v != "shared"))
                 throw ValidationError("rng_mode must be fresh or shared");
             rng_mode_ = v.get<std::string>();
+        } else if (k == "growth_budget") {
+            if (v.is_null()) { growth_budget_ = "up_to"; continue; }
+            if (!v.is_string() || (v != "up_to" && v != "exact"))
+                throw ValidationError("growth_budget must be up_to or exact");
+            growth_budget_ = v.get<std::string>();
+        } else if (k == "constant_folding") {
+            if (v.is_null()) { constant_folding_ = "off"; continue; }
+            if (!v.is_string() || (v != "off" && v != "on"))
+                throw ValidationError("constant_folding must be off or on");
+            constant_folding_ = v.get<std::string>();
         } else if (k == "add_method_weights" || k == "slot_fill_type_weights") {
             const bool am = k == "add_method_weights";
             if (v.is_null()) {
@@ -130,6 +140,8 @@ json Profile::to_json() const {
         std::string key = k;
         if (key == "depth_shift_mode") overall[key] = mode_;
         else if (key == "rng_mode") overall[key] = rng_mode_;
+        else if (key == "growth_budget") overall[key] = growth_budget_;
+        else if (key == "constant_folding") overall[key] = constant_folding_;
         else if (key == "add_method_weights") {
             json w = json::object();
             for (std::size_t i = 0; i < 4; ++i) w[kMethods[i]] = amw_[i];

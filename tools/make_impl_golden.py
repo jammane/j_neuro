@@ -51,6 +51,13 @@ def profile_variants():
         return p
 
     out = {"default": Profile.default()}
+    fold = Profile.default()
+    fold.overall["constant_folding"] = "on"
+    out["fold"] = fold
+    exact = Profile.default()
+    exact.overall["growth_budget"] = "exact"
+    exact.overall["growth_max_pct"] = 6.0
+    out["exact_growth"] = exact
     heavy = Profile.default()
     for f in PHASES:
         heavy.overall[f] = 40.0

@@ -6,8 +6,8 @@ import math
 
 from .analysis import connections, is_immune, legal_depth_range, mix_ok, path_rule_ok, readers
 from .net import MNeuron, Net, Node, SNeuron, VNeuron
-from .removal import (bypass, compact, garbage_collect, has_min_reader, is_identity,
-                      is_silenced, remove_silenced)
+from .removal import (bypass, compact, fold_constants, garbage_collect, has_min_reader,
+                      is_identity, is_silenced, remove_silenced)
 from .rng import Rng, round_half_away
 from .types import IDENTITY_WEIGHT, AggOp, Inversion, ValidationError, VOp
 
@@ -33,8 +33,11 @@ DEFAULTS = {
     "add_method_weights": {"slot_fill": 40, "v_insert": 30, "s_insert": 20, "m_after_m": 10},
     "slot_fill_type_weights": {"v": 1, "s": 1, "m": 1},
     "rng_mode": "fresh",
+    "growth_budget": "up_to",
+    "constant_folding": "off",
 }
-CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared")}
+CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared"),
+           "growth_budget": ("up_to", "exact"), "constant_folding": ("off", "on")}
 OVERRIDABLE = set(PHASE_FIELDS) | {"sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
                                    "rewire_prob", "insert_inversion_prob", "min_age_for_removal"}
 
@@ -143,15 +146,19 @@ class _Mutation:
     def budget(self, field):
         rng = self.rng
         n = float(len(self.live_neurons()))
+        exact = field == "growth_max_pct" and self.p.overall["growth_budget"] == "exact"
 
         def limit(pct):                       # a nonzero cap is at least 1 (spec/06)
             return 0.0 if pct == 0 else max(1.0, pct * n / 100.0)
 
-        b = rng.prob_round(rng.u() * limit(self.p.overall[field]))
+        def draw(pct):                        # "up to" draws a fraction; exact uses the whole cap
+            return rng.prob_round(limit(pct) if exact else rng.u() * limit(pct))
+
+        b = draw(self.p.overall[field])
         caps = {}
         for t in TYPES:
             if self.p.has_override(field, t):
-                caps[t] = rng.prob_round(rng.u() * limit(self.p.per_type[t][field]))
+                caps[t] = draw(self.p.per_type[t][field])
             else:
                 caps[t] = None
         return b, caps, {t: 0 for t in TYPES}
@@ -428,6 +435,9 @@ class _Mutation:
         self.run_phase("growth_max_pct", self.growth)
         self.run_phase("removal_max_pct", self.removal)
         self.run_phase("depth_shift_max_pct", self.depth_shift)
+        if self.p.overall["constant_folding"] == "on":
+            fold_constants(self.net, self.removed, self.gen,
+                           lambda t: self.p.effective("min_age_for_removal", t))
         garbage_collect(self.net, self.removed)
         compact(self.net, self.removed)
         return self.net

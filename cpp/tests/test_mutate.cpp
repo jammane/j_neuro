@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <functional>
+#include <set>
 
 using namespace th;
 using N16 = Net<std::uint16_t>;
@@ -387,4 +388,51 @@ TEST_CASE("mutation keeps mix rule") {
         }
         CHECK(changed[0] > changed[1]);  // the rule blocked something
     }
+}
+
+// ---------------------------------------------------------------- growth_budget, constant_folding
+
+TEST_CASE("exact growth budget adds exactly one") {
+    Rng r0(1);
+    const N32 net = N32::create(3, 1, 3, Priority::Speed, r0);
+    std::set<std::size_t> grew[2];
+    for (int exact = 0; exact < 2; ++exact) {
+        Profile p = growth_only("v_insert");
+        p.set_overall("growth_max_pct", 1e-9);
+        p.apply_patch(json{{"overall", {{"growth_budget", exact ? "exact" : "up_to"}}}});
+        for (std::uint64_t s = 0; s < 40; ++s) {
+            Rng r(s);
+            grew[exact].insert(mutate(net, p, 1, r).nodes.size() - net.nodes.size());
+        }
+    }
+    CHECK(grew[1] == std::set<std::size_t>{1});
+    CHECK(grew[0] == std::set<std::size_t>{0, 1});
+}
+
+TEST_CASE("constant folding") {
+    // output m max [2, 3]; 2 = identity of input 0; 3 = (4 + 2) where 4 = input * 0 (constant)
+    const auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, M(AggOp::Max, {2, 3, none})}, {200, V(0, VOp::Mul, 1.0)},
+                                                       {200, V(4, VOp::Add, 2.0)}, {100, V(0, VOp::Mul, 0.0)}});
+    net.validate();
+    auto rows = sample_inputs(1);
+    auto copy = net;
+    const auto ref = outputs_for(copy, rows);
+    Profile p = zero_profile();
+    p.set_overall("min_age_for_removal", 0.0);
+    p.apply_patch(json{{"overall", {{"constant_folding", "on"}}}});
+    Rng r(0);
+    auto child = mutate(net, p, 1, r);
+    REQUIRE(child.nodes.size() == 4);
+    const auto& v = std::get<VNeuron>(*child.nodes[3].neuron);
+    CHECK((!v.input && v.op == VOp::Add && v.weight == 2.0 && v.inversion == Inversion::None));
+    CHECK(outputs_for(child, rows) == ref);
+    Profile off = zero_profile();
+    off.set_overall("min_age_for_removal", 0.0);
+    Rng r2(0);
+    CHECK(to_bytes(mutate(net, off, 1, r2)) == to_bytes(net));
+    // the only path: folding would cut it, so nothing changes
+    const auto only = make_net<std::uint16_t>(1, 1, 3, {{D16, V(3, VOp::Add, 0.0)}, {100, V(0, VOp::Mul, 0.0)},
+                                                        {200, S(2, AggOp::Mean, 1)}});
+    Rng r3(0);
+    CHECK(to_bytes(mutate(only, p, 1, r3)) == to_bytes(only));
 }

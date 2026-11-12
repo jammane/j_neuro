@@ -25,6 +25,10 @@ public:
     const std::string& depth_shift_mode() const { return mode_; }
     /// "fresh" or "shared" (spec/11); used by Population::mutate.
     const std::string& rng_mode() const { return rng_mode_; }
+    /// "up_to" or "exact" (spec/06): whether the growth budget draws a fraction of its cap.
+    const std::string& growth_budget() const { return growth_budget_; }
+    /// "off" or "on" (spec/07): fold constant neurons before garbage collection.
+    const std::string& constant_folding() const { return constant_folding_; }
     /// Order: slot_fill, v_insert, s_insert, m_after_m.
     const std::array<double, 4>& add_method_weights() const { return amw_; }
     /// Order: v, s, m.
@@ -43,6 +47,8 @@ private:
     std::map<std::string, double> overall_;
     std::string mode_ = "uniform";
     std::string rng_mode_ = "fresh";
+    std::string growth_budget_ = "up_to";
+    std::string constant_folding_ = "off";
     std::array<double, 4> amw_{40, 30, 20, 10};
     std::array<double, 3> sftw_{1, 1, 1};
     std::array<std::map<std::string, double>, 3> per_type_;

@@ -4,7 +4,12 @@
 
 #include <jneuro/analysis.hpp>
 
+#include <jneuro/aggregate.hpp>
+#include <jneuro/numerics.hpp>
+
+#include <algorithm>
 #include <deque>
+#include <optional>
 
 namespace jneuro {
 
@@ -77,6 +82,60 @@ void remove_silenced(Net<D>& net, NodeId id, Removed& removed) {
             if (net.is_hidden(r) && connections(*net.nodes[r].neuron).empty() && is_silenced(net, r) &&
                 !has_min_reader(net, r, removed))
                 queue.push_back(r);
+    }
+}
+
+/// For each live node: its output if provably the same at every step from reset (spec/07).
+template <class D>
+std::vector<std::optional<double>> constant_values(const Net<D>& net, const Removed& removed) {
+    std::vector<NodeId> order;
+    for (NodeId i = 0; i < net.nodes.size(); ++i)
+        if (detail::alive(&removed, i)) order.push_back(i);
+    std::stable_sort(order.begin(), order.end(),
+                     [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
+    std::vector<std::optional<double>> c(net.nodes.size());
+    for (NodeId i : order) {
+        if (!net.nodes[i].neuron) continue;
+        const Neuron& n = *net.nodes[i].neuron;
+        if (auto* v = std::get_if<VNeuron>(&n)) {
+            if (!v->input) c[i] = eval_v(*v, 0.0);
+            else if (c[*v->input]) c[i] = eval_v(*v, *c[*v->input]);
+            else if (v->op == VOp::Mul && v->weight == 0.0) c[i] = 0.0;
+        } else if (auto* s = std::get_if<SNeuron>(&n)) {
+            if (!s->input || (c[*s->input] && *c[*s->input] == 0.0)) c[i] = 0.0;  // canonical: +0 only
+        } else {
+            const auto& m = std::get<MNeuron>(n);
+            std::vector<double> values;
+            std::vector<bool> present;
+            bool all = true;
+            for (const auto& s : m.slots) {
+                if (s && !c[*s]) { all = false; break; }
+                values.push_back(s ? *c[*s] : 0.0);
+                present.push_back(s.has_value());
+            }
+            if (all) c[i] = canon(aggregate(m.op, values, present));
+        }
+    }
+    return c;
+}
+
+/// Replace constant hidden neurons by constant v_neurons (spec/07); no RNG, no quota.
+template <class D, class MinAge>
+void fold_constants(Net<D>& net, Removed& removed, std::uint64_t generation, MinAge min_age) {
+    detail::fit(net, removed);
+    const auto c = constant_values(net, removed);
+    std::vector<NodeId> cands;
+    for (NodeId i = 0; i < net.nodes.size(); ++i) {
+        if (removed[i] || !net.is_hidden(i) || !c[i] || connections(net.nodes[i].neuron).empty()) continue;
+        const double age = static_cast<double>(generation) - static_cast<double>(net.nodes[i].born_gen);
+        if (age >= min_age(type_of(*net.nodes[i].neuron))) cands.push_back(i);
+    }
+    std::stable_sort(cands.begin(), cands.end(),
+                     [&](NodeId a, NodeId b) { return net.nodes[a].depth > net.nodes[b].depth; });
+    for (NodeId i : cands) {
+        Neuron old = *net.nodes[i].neuron;
+        net.nodes[i].neuron = VNeuron{std::nullopt, Inversion::None, VOp::Add, *c[i]};
+        if (!path_rule_ok(net, &removed)) net.nodes[i].neuron = std::move(old);
     }
 }
 

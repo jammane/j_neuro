@@ -328,3 +328,50 @@ def test_mutation_keeps_mix_rule(name, prof):
 
 def structure(net):
     return [(type(x.neuron).__name__, connections(x.neuron)) for x in net.nodes]
+
+
+# ---------------------------------------------------------------- growth_budget, constant_folding
+
+def test_exact_growth_budget_adds_exactly_one():
+    net = Net.create(3, 1, DepthType.U32, 3, Priority.SPEED, Rng(1))
+    only_v = {"slot_fill": 0, "v_insert": 1, "s_insert": 0, "m_after_m": 0}
+    sizes = {}
+    for mode in ("up_to", "exact"):
+        p = profile(growth_max_pct=1e-9, add_method_weights=only_v, growth_budget=mode)
+        sizes[mode] = [len(mutate(net, p, 1, Rng(s)).nodes) - len(net.nodes) for s in range(40)]
+    assert set(sizes["exact"]) == {1}                          # the whole cap: max(1, ~0) = 1 attempt
+    assert set(sizes["up_to"]) == {0, 1}                       # a random fraction of it
+
+
+def _fold_net():
+    """output m max [3, 4]; 3 = identity of input 0; 4 = (5 + 2) where 5 = input * 0 (constant)."""
+    return make_net(1, 1, 3, [(D16, M("max", [2, 3, None])), (200, V(0, "mul", 1.0)),
+                              (200, V(4, "add", 2.0)), (100, V(0, "mul", 0.0))])
+
+
+def test_constant_folding():
+    net = _fold_net()
+    net.validate()
+    rows = sample_inputs(1)
+    ref = outputs_for(net, rows)
+    p = profile(constant_folding="on", min_age_for_removal=0)
+    child = mutate(net, p, 1, Rng(0))
+    assert len(child.nodes) == 4                               # the constant source is gone
+    folded = child.nodes[3].neuron
+    assert folded == V(None, "add", 2.0)
+    assert outputs_for(child, rows) == ref
+    off = mutate(net, profile(min_age_for_removal=0), 1, Rng(0))
+    assert net_to_bytes(off) == net_to_bytes(net)              # default: no folding
+    young = mutate(net, profile(constant_folding="on"), 1, Rng(0))
+    assert net_to_bytes(young) == net_to_bytes(net)            # younger than min_age_for_removal
+
+
+def test_constant_folding_keeps_path_rule_and_s_zero():
+    # input -> v*0 -> s -> output: folding s or v would cut the only path, so nothing changes
+    net = make_net(1, 1, 3, [(D16, V(3, "add", 0.0)), (100, V(0, "mul", 0.0)), (200, S(2, "mean", 1))])
+    p = profile(constant_folding="on", min_age_for_removal=0)
+    assert net_to_bytes(mutate(net, p, 1, Rng(0))) == net_to_bytes(net)
+    # with a second path, the s of a constant 0 folds to a constant 0
+    net = make_net(1, 1, 3, [(D16, M("max", [0, 3, None])), (100, V(0, "mul", 0.0)), (200, S(2, "mean", 1))])
+    child = mutate(net, p, 1, Rng(0))
+    assert len(child.nodes) == 3 and child.nodes[2].neuron == V(None, "add", 0.0)
