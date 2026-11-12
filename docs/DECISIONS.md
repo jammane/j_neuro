@@ -85,3 +85,26 @@ without an explicit decision by the maintainer and may be revisited.
 | F3 | Every `.jnet` and `.jpnet` ends with a SHA-256 of its contents; C++ uses an in-house SHA-256. | Corruption detection without a dependency. |
 | F4 | A `.jpnet` holds population state (including the shared RNG state) and a table of separate `.jnet` files with their SHA-256 hashes, saved in `<name>_nets/`. | Nets stay individually usable; hashes verify the set on load. |
 | F5 | Embedding the run log in a `.jpnet` is optional, off by default. Without it, the resumed run's log records `resumed_from` and replays from the loaded snapshot. | Files stay small on long runs; exact replay remains possible. |
+
+## Growth, rules and profiles (v0.5)
+
+| # | Decision | Why |
+|---|---|---|
+| G1 | A nonzero mutation cap is never below 1 neuron. | Small nets can always mutate. |
+| G2 | Per-net `path_mix` (create default 2): every path has at least that many v, s and m neurons. | Every path mixes all three neuron kinds. |
+| G3 | Per-net `max_run` (create default 3): at most that many 1:1 or many:1 neurons in a row on any path; starting chains are shuffled and get pass-through separators where needed. | The kinds alternate instead of stacking. |
+| G4 | `lag` s op: the raw input from k steps ago. | History a net can use directly (card counting). |
+| G5 | Growth methods beyond path insertion and slot fill: input taps, `m_clone`, `m_insert`, `v_link`/`s_link`; receivers weighted toward a bell-shaped width target (`width_bias deficit`, `width_peak`, `tap_peak`); link, rewire and retarget sources within `link_max_span` (¼ of the depth range). | Expansion tests showed nets otherwise grow as single long chains, or as funnels widest at the inputs. |
+| G6 | `prune = static` default: edits never cut a live branch; `prune = any` and biased slot edits (`slot_edit`, `slot_add_prob`) are profile options. | Unchecked cutting kept nets from growing past ~50 neurons. |
+| G7 | Growth gating in the profile: `growth_gen_prob` decided per generation by a stateless draw from (seed, generation); `growth_net_prob` per offspring; an offspring that misses growth in a growth generation swaps one neuron s↔v (`no_growth_swap`). | Training needs far slower growth than expansion; the draw replays exactly without saved state. |
+| G8 | `constant_folding`: provably constant neurons become constants and what fed them is collected. | Removes static branches without a quota. |
+| G9 | Mutation counts per operation, informative only. | Confirms every method is used, including in offspring later culled. |
+| G10 | Defaults are tuned for expansion; training uses `profiles/training.json`. | In high/low and blackjack runs, fast or output-changing growth made nets larger without making them better. |
+
+## Examples (v0.5)
+
+| # | Decision | Why |
+|---|---|---|
+| E1 | Blackjack scores with real payout (±1, doubled ±2, blackjack and 5-card charlie 1.5); the hole card is hidden from the net. | With losses free, nets learned to double every hand; seeing the hole card would be cheating. |
+| E2 | Ties at the selection cut are broken by sudden-death deals, then at random after 10. | Nets that play identically never separate. |
+| E3 | Trainers reload the population at each 1000-generation save. | Empties the in-memory run log, which otherwise grows without bound. |

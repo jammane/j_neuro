@@ -6,9 +6,10 @@ An **evolutionary neural-network library**, written twice — once in **C++** an
 **Python** — as exact mirrors of a single language-neutral specification. Networks are not
 trained by gradients; they are **grown, tuned and pruned by mutation**.
 
-> **Status:** spec v0.4.0-draft is implemented in both Python and C++. The two produce
+> **Status:** spec v0.5.0-draft is implemented in both Python and C++. The two produce
 > byte-identical results on every shared golden case, and a run logged in either language
-> replays exactly in the other.
+> replays exactly in the other. Three example programs train and analyze nets on card games and
+> measure how mutation alone shapes a net.
 
 ## Quick start
 
@@ -56,6 +57,10 @@ pop.save("run.jpnet")                                  # run.jpnet + run_nets/<i
 pop = Population.load("run.jpnet")                     # resumes exactly, in Python or C++
 ```
 
+Ready-made mutation profiles live in [`profiles/`](profiles/README.md): `expansion.json` (grows
+wide nets fast) and `training.json` (slow growth for training). Load one with
+`profile_from_json` in either language.
+
 Nets are stored as binary `.jnet` files and populations as `.jpnet` files
 ([spec/09](spec/09-serialization.md)). Both languages write byte-identical files, so a run
 can be exported from one and continued in the other.
@@ -87,7 +92,8 @@ Build and test instructions: [cpp/README.md](cpp/README.md), [python/README.md](
 | `IN_QTY_MAX` | Per-net odd number: m_neuron slot count and maximum s_neuron history. |
 | **Path rule** | Every input always has at least one path to every output. |
 | **Mix rule** | Every input-to-output path passes through at least `path_mix` v, s and m neurons each (default 2, set when a net is created). |
-| **Mutation** | Configurable "up to %" profiles for edits, op changes, growth and removal; neutral insertions; exact neutral pruning with cascades. |
+| **Run rule** | No path has more than `max_run` 1:1 (v, s) or many:1 (m) neurons in a row (default 3), so the kinds alternate. |
+| **Mutation** | A profile sets "up to %" budgets for op changes, edits (including rewiring and slot retargeting), growth, removal and depth shifts. Growth has eleven methods: neutral path insertions (`v_insert`, `s_insert`, `m_after_m`, `m_insert`), branches into open m slots (`slot_fill`, input taps, `v_link`/`s_link`, `m_clone`), with receivers chosen to spread width across the net. Removal is exact neutral pruning with cascades, plus optional constant folding. Growth can be limited to a share of generations and nets, with an s↔v swap for the nets that miss out. Every mutation operation is counted. |
 
 The full, normative definition lives in [`spec/`](spec/README.md).
 
@@ -100,7 +106,21 @@ cpp/         C++ implementation (C++20, header-mostly)
 python/      Python implementation (NumPy)
 tests/golden shared cross-language conformance cases
 tools/       golden-case generators and the RNG reference oracle
+profiles/    ready-made mutation profiles (JSON)
+examples/    C++ example programs (built by CMake with the library)
 ```
+
+## Examples
+
+| Program | What it does |
+|---|---|
+| [`blackjack_trainer`](examples/blackjack/README.md) | Evolves nets that play blackjack (5-deck shoe, real payout) against the same deals, logging score and win rate beside two fixed reference strategies. |
+| [`blackjack_analyze`](examples/blackjack/README.md#analysis) | Plays a saved population on fresh deals: each net's result, its mix of actions, and the best net's structure and decision table. |
+| [`highlow_trainer`](examples/highlow/README.md) | Evolves nets that guess the next card of a shoe (suit, and higher/lower/equal), where remembering earlier cards can help. |
+| [`expansion_test`](examples/expansion/README.md) | Mutation only, no scoring: how a profile grows a net — method use, paths, width by depth and open m slots per generation. |
+
+All of them run until interrupted or `--stop-at N`, save their population, and resume with
+`--resume`.
 
 ## Documentation
 

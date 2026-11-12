@@ -30,4 +30,10 @@ The build refuses fast-math flags and always uses `-ffp-contract=off`
 | `analysis.hpp`, `net_build.hpp` | path rule, mix rule, immunity, depth ranges; `create`, `validate` |
 | `io.hpp`, `sha256.hpp` | `AnyNet`; `.jnet` files: `to_bytes`, `from_bytes`, `save_net`, `load_net`; `create(n_in, n_out, …)`; SHA-256 |
 | `population.hpp` | `Population<D>`: nets by id, `evaluate`, operations, `save`/`load` (`.jpnet`), `replay` |
-| `profile.hpp`, `mutate.hpp`, `removal.hpp` | mutation profile, `mutate`, removal and compaction |
+| `profile.hpp`, `mutate.hpp`, `removal.hpp` | mutation profile, `mutate` (with optional `MutationCounts`), `is_growth_generation`, `mutation_operations`; removal, constant folding and compaction |
+
+## Examples
+
+`cmake --build build -j2` also builds the example programs (turn them off with
+`-DJNEURO_BUILD_EXAMPLES=OFF`): `blackjack_trainer`, `blackjack_analyze`, `highlow_trainer` and
+`expansion_test`. See [examples/](../examples) and the profiles in [profiles/](../profiles).

@@ -20,9 +20,9 @@ python3 -m venv .venv
 | `jneuro.numerics`, `jneuro.rng`, `jneuro.aggregate` | exact float helpers, shared RNG, aggregation |
 | `jneuro.net` | `Net`, `Node`, `VNeuron`, `SNeuron`, `MNeuron`; `Net.create`, `step`, `reset`, `validate` |
 | `jneuro.analysis` | path rule, mix rule, immunity, depth ranges |
-| `jneuro.mutate`, `jneuro.removal` | `Profile`, `mutate`; removal and compaction |
+| `jneuro.mutate`, `jneuro.removal` | `Profile`, `mutate` (with optional operation counts), `is_growth_generation`, `OPERATIONS`; removal, constant folding and compaction |
 | `jneuro.jnet` | `.jnet` files: `net_to_bytes`, `net_from_bytes`, `save_net`, `load_net` (also `net.save`, `Net.load`) |
-| `jneuro.population` | `Population`: nets by id, `evaluate`, operations, `save`/`load` (`.jpnet`), `replay` |
+| `jneuro.population` | `Population`: nets by id, `evaluate`, operations, `mutation_counts`, `save`/`load` (`.jpnet`), `replay` |
 | `jneuro.io` | profile and run-log JSON helpers |
 
 Regenerate implementation-produced golden cases (from the repository root):
