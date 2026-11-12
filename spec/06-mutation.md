@@ -58,6 +58,8 @@ A per-type value overrides the overall value for neurons of that type.
 | `link_max_span` | 0.25 | no | Longest connection a link, rewire or retarget may make, as a fraction of `D_MAX`: the new source is at most `floor(link_max_span × D_MAX)` shallower than the neuron that reads it |
 | `growth_gen_prob` | 1.0 | no | Chance a generation is a growth generation ([growth](#phase-3--growth)); outside one, phase 3 does not run |
 | `growth_net_prob` | 1.0 | no | Chance phase 3 runs for a given offspring in a growth generation |
+| `slot_edit` | `toggle` | no | How an m slot edit picks each slot: `toggle` (a random slot, filled if empty, emptied if connected) or `biased` (first add with `slot_add_prob`, else cut; then a random slot of that kind) |
+| `slot_add_prob` | 0.75 | no | With `slot_edit = biased`: chance a slot change adds a connection |
 | `no_growth_swap` | `on` | no | `off` or `on`: in a growth generation, an offspring whose `growth_net_prob` draw fails gets one [type swap](#type-swap) instead |
 | `prune` | `static` | no | `any` or `static`: with `static`, edits never cut a live branch — an m slot is emptied only if its source is constant ([07](07-removal.md#constant-folding)), and a retarget never leaves its old source without readers |
 
@@ -193,7 +195,12 @@ retarget:
 z = normal()
 c = min(in_qty_max, 1 + floor(|sigma_slots * z|))
 repeat c times:
-    i = below(in_qty_max)
+    if slot_edit == biased:
+        add = u() < slot_add_prob
+        P = empty slots if add else connected slots, ascending index; if P is empty: continue
+        i = P[below(len(P))]
+    else:
+        i = below(in_qty_max)
     if slot i is empty:
         C = live nodes with depth < depth(this node), not connected to any slot of this
             neuron, ascending id

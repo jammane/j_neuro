@@ -75,6 +75,12 @@ def profile_variants():
     gated.overall["growth_max_pct"] = 30.0
     gated.overall["growth_net_prob"] = 0.5
     out["gated"] = gated
+    biased = Profile.default()
+    biased.overall["edit_max_pct"] = 40.0
+    biased.overall["slot_edit"] = "biased"
+    biased.overall["prune"] = "any"
+    biased.overall["insert_depth"] = "uniform"
+    out["biased"] = biased
     heavy = Profile.default()
     for f in PHASES:
         heavy.overall[f] = 40.0

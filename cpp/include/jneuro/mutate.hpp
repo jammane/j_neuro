@@ -250,8 +250,18 @@ private:
         const D my_depth = net_.nodes[*id].depth;
         bool changed = false;
         for (std::uint64_t r = 0; r < c; ++r) {
-            const std::size_t i = static_cast<std::size_t>(rng_.below(q_));
             auto& slots = std::get<MNeuron>(*net_.nodes[*id].neuron).slots;
+            std::size_t i;
+            if (p_.slot_edit() == "biased") {  // add or cut first, then which slot (spec/06)
+                const bool add = rng_.u() < p_.overall("slot_add_prob");
+                std::vector<std::size_t> pool;
+                for (std::size_t s = 0; s < slots.size(); ++s)
+                    if (!slots[s].has_value() == add) pool.push_back(s);
+                if (pool.empty()) continue;
+                i = pool[static_cast<std::size_t>(rng_.below(pool.size()))];
+            } else {
+                i = static_cast<std::size_t>(rng_.below(q_));
+            }
             if (!slots[i]) {
                 std::vector<NodeId> cands;
                 for (NodeId j : live_nodes())

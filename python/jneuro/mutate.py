@@ -48,11 +48,14 @@ DEFAULTS = {
     "growth_gen_prob": 1.0,
     "growth_net_prob": 1.0,
     "no_growth_swap": "on",
+    "slot_edit": "toggle",
+    "slot_add_prob": 0.75,
 }
 CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared"),
            "growth_budget": ("up_to", "exact"), "constant_folding": ("off", "on"),
            "insert_depth": ("uniform", "midpoint"), "width_bias": ("none", "center", "deficit"),
-           "prune": ("any", "static"), "no_growth_swap": ("off", "on")}
+           "prune": ("any", "static"), "no_growth_swap": ("off", "on"),
+           "slot_edit": ("toggle", "biased")}
 OVERRIDABLE = set(PHASE_FIELDS) | {"sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
                                    "rewire_prob", "insert_inversion_prob", "min_age_for_removal",
                                    "slot_retarget_prob"}
@@ -89,7 +92,8 @@ class Profile:
                 raise ValidationError(f"{k} must be in (0, 1)")
             if k == "link_max_span" and v is not None and not 0.0 < float(v) <= 1.0:
                 raise ValidationError("link_max_span must be in (0, 1]")
-            if k in ("growth_gen_prob", "growth_net_prob") and v is not None and not 0.0 <= float(v) <= 1.0:
+            if k in ("growth_gen_prob", "growth_net_prob", "slot_add_prob") and v is not None and \
+                    not 0.0 <= float(v) <= 1.0:
                 raise ValidationError(f"{k} must be in [0, 1]")
             if v is None:
                 self.overall[k] = copy.deepcopy(DEFAULTS[k])
@@ -277,8 +281,16 @@ class _Mutation:
         c = min(self.q, 1 + math.floor(abs(p.effective("sigma_slots", "m") * z)))
         my_depth = self.net.nodes[nid].depth
         changed = False
+        biased = self.p.overall["slot_edit"] == "biased"
         for _ in range(c):
-            i = rng.below(self.q)
+            if biased:                                    # add or cut first, then which slot (spec/06)
+                add = rng.u() < float(self.p.overall["slot_add_prob"])
+                pool = [s for s in range(self.q) if (n.slots[s] is None) == add]
+                if not pool:
+                    continue
+                i = pool[rng.below(len(pool))]
+            else:
+                i = rng.below(self.q)
             if n.slots[i] is None:
                 cands = [j for j in self.live_nodes()
                          if self.net.nodes[j].depth < my_depth and j not in n.slots]

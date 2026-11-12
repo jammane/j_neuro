@@ -636,3 +636,23 @@ def test_type_swap_when_this_net_does_not_grow():
     assert swapped >= 20
     off = profile(growth_max_pct=1e-9, growth_budget="exact", growth_net_prob=0.0, no_growth_swap="off")
     assert all(net_to_bytes(mutate(net, off, 1, Rng(s))) == net_to_bytes(net) for s in range(10))
+
+
+def test_biased_slot_edits():
+    """slot_edit = biased: slot_add_prob 1 only adds connections, 0 only cuts them."""
+    def slots_count(n):
+        return sum(1 for x in n.nodes if isinstance(x.neuron, MNeuron) for s in x.neuron.slots if s is not None)
+    net = base_net(9)
+    for gen in range(1, 4):
+        net = mutate(net, profile(growth_max_pct=60.0, add_method_weights=only_method("m_insert")), gen, Rng(gen))
+    for prob, sign in ((1.0, 1), (0.0, -1)):
+        p = profile(edit_max_pct=100.0, slot_edit="biased", slot_add_prob=prob, prune="any", sigma_slots=2.0,
+                    slot_retarget_prob=0.0)
+        moved = 0
+        for s in range(30):
+            child = mutate(net, p, 9, Rng(s))
+            d = slots_count(child) - slots_count(net)
+            assert d * sign >= 0                               # never the other direction
+            moved += d != 0
+        if sign > 0:
+            assert moved > 5                                   # (cuts here are mostly blocked by the path rule)
