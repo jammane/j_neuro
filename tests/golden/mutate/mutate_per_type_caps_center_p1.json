@@ -49,7 +49,8 @@
    "prune": "static",
    "link_max_span": 0.25,
    "growth_gen_prob": 1.0,
-   "growth_net_prob": 1.0
+   "growth_net_prob": 1.0,
+   "no_growth_swap": "on"
   },
   "v": {
    "growth_max_pct": 5.0,

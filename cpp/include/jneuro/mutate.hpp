@@ -19,7 +19,7 @@ using MutationCounts = std::map<std::string, std::uint64_t>;
 inline const std::vector<std::string>& mutation_operations() {
     static const std::vector<std::string> ops = {
         "op_change", "v_weight", "s_k", "m_slots", "rewire", "m_retarget", "slot_fill", "v_insert",
-        "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap", "m_clone", "m_insert", "v_link", "s_link", "bypass", "remove_silenced",
+        "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap", "m_clone", "m_insert", "v_link", "s_link", "type_swap", "bypass", "remove_silenced",
         "depth_shift", "fold_constant"};
     return ops;
 }
@@ -59,7 +59,9 @@ public:
     Net<D> run() {
         run_phase("op_change_max_pct", &Mutation::op_change);
         run_phase("edit_max_pct", &Mutation::edit);
-        if (grows()) run_phase("growth_max_pct", &Mutation::growth);
+        const int g = grows();
+        if (g == 1) run_phase("growth_max_pct", &Mutation::growth);
+        else if (g == -1 && p_.no_growth_swap() == "on" && type_swap()) ++counts["type_swap"];
         run_phase("removal_max_pct", &Mutation::removal);
         run_phase("depth_shift_max_pct", &Mutation::depth_shift);
         if (p_.constant_folding() == "on") {
@@ -77,10 +79,33 @@ private:
     static constexpr std::array<NeuronType, 3> kTypes{NeuronType::V, NeuronType::S, NeuronType::M};
 
     /// Phase 3 runs only in a growth generation, and then with growth_net_prob (spec/06).
-    bool grows() {
-        if (!growth_generation_) return false;
+    /// 1: grow; 0: not a growth generation; -1: a growth generation, but this offspring's draw failed.
+    int grows() {
+        if (!growth_generation_) return 0;
         const double p = p_.overall("growth_net_prob");
-        return p >= 1.0 || rng_.u() < p;  // no draw when 1.0
+        if (p >= 1.0 || rng_.u() < p) return 1;  // no draw when 1.0
+        return -1;
+    }
+
+    /// Turn one 1:1 neuron into the other kind, same input: v -> s or s -> v (spec/06).
+    bool type_swap() {
+        std::vector<NodeId> cands;
+        for (NodeId i : live_neurons())
+            if (!std::holds_alternative<MNeuron>(*net_.nodes[i].neuron)) cands.push_back(i);
+        if (cands.empty()) return false;
+        const NodeId i = pick(cands);
+        const Neuron old = *net_.nodes[i].neuron;
+        if (const auto* v = std::get_if<VNeuron>(&old)) {
+            net_.nodes[i].neuron = SNeuron{v->input, static_cast<AggOp>(rng_.choice(kSOps)), 1};
+        } else {
+            const VOp op = static_cast<VOp>(rng_.choice(4));
+            net_.nodes[i].neuron = VNeuron{std::get<SNeuron>(old).input, Inversion::None, op, identity_weight(op)};
+        }
+        if (!rules_ok()) {  // a path would be short of v or s
+            net_.nodes[i].neuron = old;
+            return false;
+        }
+        return true;
     }
 
     Net<D> net_;

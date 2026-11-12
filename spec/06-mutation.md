@@ -58,6 +58,7 @@ A per-type value overrides the overall value for neurons of that type.
 | `link_max_span` | 0.25 | no | Longest connection a link, rewire or retarget may make, as a fraction of `D_MAX`: the new source is at most `floor(link_max_span × D_MAX)` shallower than the neuron that reads it |
 | `growth_gen_prob` | 1.0 | no | Chance a generation is a growth generation ([growth](#phase-3--growth)); outside one, phase 3 does not run |
 | `growth_net_prob` | 1.0 | no | Chance phase 3 runs for a given offspring in a growth generation |
+| `no_growth_swap` | `on` | no | `off` or `on`: in a growth generation, an offspring whose `growth_net_prob` draw fails gets one [type swap](#type-swap) instead |
 | `prune` | `static` | no | `any` or `static`: with `static`, edits never cut a live branch — an m slot is emptied only if its source is constant ([07](07-removal.md#constant-folding)), and a retarget never leaves its old source without readers |
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
@@ -222,6 +223,22 @@ is_growth_generation(seed, generation) = true                                  i
 
 A population uses its own seed ([11](11-population.md)). The standalone `mutate` takes the answer
 as an argument (default: a growth generation).
+
+### Type swap
+
+When the gating draw fails in a growth generation and `no_growth_swap` is `on`, phase 3 makes one
+type swap instead of growing:
+
+```
+L = live neurons that are v or s, ascending id; if empty: skip
+X = L[below(len(L))]
+v -> s: s_neuron, same input, op = choice(5) (s ops), k = 1
+s -> v: v_neuron, same input, op = choice(4), inversion none, that op's identity weight
+if a structural rule is now broken: restore X; skip        # a path would be short of v or s
+```
+
+The node, its `birth` and `born_gen` are kept. Both kinds are 1:1, so the run rule cannot break;
+the mix rule can.
 
 Each attempt:
 

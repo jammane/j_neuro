@@ -610,3 +610,29 @@ def test_growth_generation_is_stateless():
     assert days == [is_growth_generation(42, g, p) for g in range(200)]   # same every time
     assert 60 < sum(days) < 140
     assert all(is_growth_generation(42, g, profile()) for g in range(20))  # 1.0: always
+
+
+
+def test_type_swap_when_this_net_does_not_grow():
+    """In a growth generation, an offspring whose growth draw fails swaps one 1:1 neuron s <-> v."""
+    net = base_net(7)
+    for gen in range(1, 5):                                    # extra v and s, so swaps keep the mix rule
+        net = mutate(net, profile(growth_max_pct=60.0, add_method_weights={**only_method("v_insert"),
+                                                                           "s_insert": 1.0}), gen, Rng(gen))
+    swapped = 0
+    for s in range(40):
+        counts = {}
+        p = profile(growth_max_pct=1e-9, growth_budget="exact", growth_net_prob=0.0)
+        child = mutate(net, p, 1, Rng(s), counts)
+        child.validate()
+        assert len(child.nodes) == len(net.nodes)              # nothing added
+        kinds = lambda n: [type(x.neuron).__name__ for x in n.nodes]
+        diff = [i for i, (a, b) in enumerate(zip(kinds(net), kinds(child))) if a != b]
+        assert len(diff) <= 1
+        if diff:
+            swapped += 1
+            assert {kinds(net)[diff[0]], kinds(child)[diff[0]]} == {"VNeuron", "SNeuron"}
+            assert counts.get("type_swap") == 1
+    assert swapped >= 20
+    off = profile(growth_max_pct=1e-9, growth_budget="exact", growth_net_prob=0.0, no_growth_swap="off")
+    assert all(net_to_bytes(mutate(net, off, 1, Rng(s))) == net_to_bytes(net) for s in range(10))

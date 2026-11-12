@@ -37,6 +37,8 @@ public:
     const std::string& width_bias() const { return width_bias_; }
     /// "any" or "static" (spec/06): whether edits may cut only static (constant) branches.
     const std::string& prune() const { return prune_; }
+    /// "off" or "on" (spec/06): an offspring that misses growth in a growth generation swaps s <-> v.
+    const std::string& no_growth_swap() const { return no_growth_swap_; }
     /// Order: v, s, m.
     const std::array<double, 3>& slot_fill_type_weights() const { return sftw_; }
 
@@ -59,6 +61,7 @@ private:
     std::string insert_depth_ = "midpoint";
     std::string width_bias_ = "deficit";
     std::string prune_ = "static";
+    std::string no_growth_swap_ = "on";
     std::array<double, 3> sftw_{1, 1, 1};
     std::array<std::map<std::string, double>, 3> per_type_;
 };

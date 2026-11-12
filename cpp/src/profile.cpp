@@ -32,7 +32,7 @@ const char* const kOverallOrder[] = {
     "depth_shift_mode", "sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots", "rewire_prob",
     "insert_inversion_prob", "min_age_for_removal", "add_method_weights", "slot_fill_type_weights",
     "rng_mode", "growth_budget", "constant_folding", "insert_depth", "slot_retarget_prob", "width_bias",
-    "width_peak", "tap_peak", "prune", "link_max_span", "growth_gen_prob", "growth_net_prob"};
+    "width_peak", "tap_peak", "prune", "link_max_span", "growth_gen_prob", "growth_net_prob", "no_growth_swap"};
 const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap",
                                 "m_clone",   "m_insert", "v_link",   "s_link"};
 constexpr std::array<double, 11> kMethodDefaults{0, 10, 5, 5, 10, 10, 5, 60, 20, 24, 24};
@@ -111,6 +111,10 @@ void Profile::merge_overall(const json& body) {
             if (!v.is_string() || (v != "uniform" && v != "midpoint"))
                 throw ValidationError("insert_depth must be uniform or midpoint");
             insert_depth_ = v.get<std::string>();
+        } else if (k == "no_growth_swap") {
+            if (v.is_null()) { no_growth_swap_ = "on"; continue; }
+            if (!v.is_string() || (v != "off" && v != "on")) throw ValidationError("no_growth_swap must be off or on");
+            no_growth_swap_ = v.get<std::string>();
         } else if (k == "prune") {
             if (v.is_null()) { prune_ = "static"; continue; }
             if (!v.is_string() || (v != "any" && v != "static")) throw ValidationError("prune must be any or static");
@@ -174,6 +178,7 @@ json Profile::to_json() const {
         else if (key == "insert_depth") overall[key] = insert_depth_;
         else if (key == "width_bias") overall[key] = width_bias_;
         else if (key == "prune") overall[key] = prune_;
+        else if (key == "no_growth_swap") overall[key] = no_growth_swap_;
         else if (key == "add_method_weights") {
             json w = json::object();
             for (std::size_t i = 0; i < 11; ++i) w[kMethods[i]] = amw_[i];

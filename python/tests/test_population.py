@@ -319,13 +319,17 @@ def test_default_path_mix_is_two():
 def test_mutation_counts_cover_every_operation():
     from jneuro.mutate import OPERATIONS
     p = Population(DepthType.U32, 5, 4, 2, Priority.SPEED, seed=3)
-    ids = p.create(6)
-    prof = heavy("fresh")
+    ids = p.create(6, rng_mode="shared")                       # seeded: the same run every time
+    prof = heavy("shared")
     prof.overall["constant_folding"] = "on"
     prof.overall["add_method_weights"].update({"v_tap": 40, "s_tap": 40, "m_tap": 40, "m_clone": 40,
                                                "slot_fill": 40})   # slot fill feeds silenced removal and folding
     prof.overall["slot_retarget_prob"] = 0.5
-    for gen in range(18):
+    prof.overall["growth_net_prob"] = 0.7                       # failed draws swap s <-> v
+    prof.overall["rewire_prob"] = 0.3
+    for gen in range(60):
+        if all(p.mutation_counts().values()):
+            break
         ids = [p.mutate(i, prof) for i in ids]
         p.next_generation()
     counts = p.mutation_counts()

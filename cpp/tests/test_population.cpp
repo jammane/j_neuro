@@ -378,10 +378,12 @@ TEST_CASE("pop: default path_mix is two") {
 
 TEST_CASE("pop: mutation counts cover every operation") {
     Population<std::uint32_t> p(5, 4, 2, Priority::Speed, 3);
-    auto ids = p.create(6);
-    Profile prof = heavy("fresh");
+    auto ids = p.create(6, "shared");  // seeded: the same run every time
+    Profile prof = heavy("shared");
     prof.set_overall("min_age_for_removal", 1.0);
     prof.set_overall("slot_retarget_prob", 0.5);
+    prof.set_overall("growth_net_prob", 0.7);  // failed draws swap s <-> v
+    prof.set_overall("rewire_prob", 0.3);
     prof.apply_patch(json{{"overall", {{"constant_folding", "on"},
         {"add_method_weights", {{"v_tap", 40}, {"s_tap", 40}, {"m_tap", 40}, {"m_clone", 40}, {"slot_fill", 40}}}}}});
     auto all_used = [&] {

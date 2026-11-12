@@ -47,11 +47,12 @@ DEFAULTS = {
     "link_max_span": 0.25,
     "growth_gen_prob": 1.0,
     "growth_net_prob": 1.0,
+    "no_growth_swap": "on",
 }
 CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared"),
            "growth_budget": ("up_to", "exact"), "constant_folding": ("off", "on"),
            "insert_depth": ("uniform", "midpoint"), "width_bias": ("none", "center", "deficit"),
-           "prune": ("any", "static")}
+           "prune": ("any", "static"), "no_growth_swap": ("off", "on")}
 OVERRIDABLE = set(PHASE_FIELDS) | {"sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
                                    "rewire_prob", "insert_inversion_prob", "min_age_for_removal",
                                    "slot_retarget_prob"}
@@ -344,11 +345,33 @@ class _Mutation:
         return t
 
     def grows(self):
-        """Phase 3 runs only in a growth generation, and then with growth_net_prob (spec/06)."""
+        """Phase 3 runs only in a growth generation, and then with growth_net_prob (spec/06).
+        Returns True (grow), False (not a growth generation) or None (a growth generation, but
+        this offspring's draw failed)."""
         if not self.growth_generation:
             return False
         p = float(self.p.overall["growth_net_prob"])
-        return p >= 1.0 or self.rng.u() < p                # no draw when 1.0
+        if p >= 1.0 or self.rng.u() < p:                   # no draw when 1.0
+            return True
+        return None
+
+    def type_swap(self):
+        """Turn one 1:1 neuron into the other kind, same input: v -> s or s -> v (spec/06)."""
+        net, rng = self.net, self.rng
+        cands = [i for i in self.live_neurons() if isinstance(net.nodes[i].neuron, (VNeuron, SNeuron))]
+        if not cands:
+            return False
+        i = cands[rng.below(len(cands))]
+        old = net.nodes[i].neuron
+        if isinstance(old, VNeuron):
+            net.nodes[i].neuron = SNeuron(old.input, AggOp(rng.choice(S_OPS)), 1)
+        else:
+            op = VOp(rng.choice(4))
+            net.nodes[i].neuron = VNeuron(old.input, Inversion.NONE, op, IDENTITY_WEIGHT[op])
+        if not self.rules_ok():                            # a path would be short of v or s
+            net.nodes[i].neuron = old
+            return False
+        return True
 
     def span_floor(self, depth):
         """Shallowest source depth a link, rewire or retarget may reach from a node at `depth`
@@ -687,8 +710,12 @@ class _Mutation:
     def run(self) -> Net:
         self.run_phase("op_change_max_pct", self.op_change)
         self.run_phase("edit_max_pct", self.edit)
-        if self.grows():
+        g = self.grows()
+        if g:
             self.run_phase("growth_max_pct", self.growth)
+        elif g is None and self.p.overall["no_growth_swap"] == "on":
+            if self.type_swap():
+                self.counts["type_swap"] = self.counts.get("type_swap", 0) + 1
         self.run_phase("removal_max_pct", self.removal)
         self.run_phase("depth_shift_max_pct", self.depth_shift)
         if self.p.overall["constant_folding"] == "on":
@@ -703,7 +730,7 @@ class _Mutation:
 
 # Every operation name that mutation counts (informative; not part of the spec's results).
 OPERATIONS = ("op_change", "v_weight", "s_k", "m_slots", "rewire", "m_retarget") + METHODS + \
-             ("bypass", "remove_silenced", "depth_shift", "fold_constant")
+             ("type_swap", "bypass", "remove_silenced", "depth_shift", "fold_constant")
 
 
 def is_growth_generation(seed: int, generation: int, profile: Profile) -> bool:

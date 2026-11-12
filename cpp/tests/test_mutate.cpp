@@ -620,3 +620,32 @@ TEST_CASE("growth gating") {
     }
     CHECK((days > 60 && days < 140));
 }
+
+TEST_CASE("type swap when this net does not grow") {
+    N32 net = base_net(7);
+    for (std::uint64_t gen = 1; gen < 5; ++gen) {  // extra v and s, so swaps keep the mix rule
+        Profile g = growth_only("v_insert");
+        g.set_overall("growth_max_pct", 60.0);
+        g.apply_patch(json{{"overall", {{"add_method_weights", {{"s_insert", 1.0}}}}}});
+        Rng r(gen);
+        net = mutate(net, g, gen, r);
+    }
+    Profile p = zero_profile();
+    p.set_overall("growth_max_pct", 1e-9);
+    p.set_overall("growth_net_prob", 0.0);
+    p.apply_patch(json{{"overall", {{"growth_budget", "exact"}}}});
+    int swapped = 0;
+    for (std::uint64_t s = 0; s < 40; ++s) {
+        Rng r(s);
+        MutationCounts counts;
+        const N32 child = mutate(net, p, 1, r, &counts);
+        child.validate();
+        REQUIRE(child.nodes.size() == net.nodes.size());
+        int diff = 0;
+        for (std::size_t i = 0; i < net.nodes.size(); ++i)
+            if (net.nodes[i].neuron && net.nodes[i].neuron->index() != child.nodes[i].neuron->index()) ++diff;
+        CHECK(diff <= 1);
+        if (diff) { ++swapped; CHECK(counts["type_swap"] == 1); }
+    }
+    CHECK(swapped >= 20);
+}
