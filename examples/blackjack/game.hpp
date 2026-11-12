@@ -125,12 +125,18 @@ struct Table {
     }
 
     /// Real blackjack payout, per hand: win +1, loss -1, push 0; a doubled hand pays +-2. A player
-    /// bust loses even if the dealer busts too.
-    int score(const Deal& d) const {
-        int s = 0;
+    /// bust loses even if the dealer busts too. A blackjack (the original, unsplit two cards
+    /// totalling 21) and a 5-card charlie (five cards without busting; wins against any dealer
+    /// hand) pay 1.5.
+    double score(const Deal& d) const {
+        double s = 0;
         for (const Hand& hand : hands) {
-            const int t = best_total(hand.cards, hand.revealed), stake = hand.doubled ? 2 : 1;
+            const int t = best_total(hand.cards, hand.revealed);
+            const double stake = hand.doubled ? 2 : 1;
+            const bool natural = hands.size() == 1 && hand.revealed == 2 && t == 21 && !hand.doubled;
+            const bool charlie = hand.revealed >= 5 && t <= 21;
             if (t > 21) s -= stake;                                             // player bust
+            else if (natural || charlie) s += 1.5;                              // blackjack, 5-card charlie
             else if (d.dealer_total > 21 || t > d.dealer_total) s += stake;     // win
             else if (t < d.dealer_total) s -= stake;                            // loss
         }                                                                       // equal totals: push
@@ -140,7 +146,7 @@ struct Table {
 
 /// Play one deal with `net`; returns the score. `observe(hand, deal, action)` sees every decision.
 template <class Observe>
-int play_deal(Net<D>& net, const Deal& deal, Observe&& observe) {
+double play_deal(Net<D>& net, const Deal& deal, Observe&& observe) {
     Table table(deal);
     net.reset();  // s_neuron history covers one deal
     std::vector<double> in(9);
@@ -156,7 +162,7 @@ int play_deal(Net<D>& net, const Deal& deal, Observe&& observe) {
     }
     return table.score(deal);
 }
-inline int play_deal(Net<D>& net, const Deal& deal) {
+inline double play_deal(Net<D>& net, const Deal& deal) {
     return play_deal(net, deal, [](const Hand&, const Deal&, Action) {});
 }
 
@@ -173,7 +179,7 @@ inline bool winnable(const Deal& deal, const Table& table) {
 inline bool winnable(const Deal& deal) { return winnable(deal, Table(deal)); }
 
 /// The simple hit rule (a reference, not a net): hit below 12, or below 17 when the dealer's first
-/// card is 7 or higher; otherwise stand. Never doubles or splits. Returns the score.
+/// card is 7 or higher; otherwise stand. Never doubles or splits.
 inline Action hit_rule(const Hand& hand, const Deal& deal) {
     const int total = best_total(hand.cards, hand.revealed), up = points(deal.dealer[0]);
     return (total < 12 || (total < 17 && up >= 7)) ? Hit : Stand;
@@ -189,12 +195,12 @@ inline Action double_rule(const Hand& hand, const Deal& deal) {
 
 /// Play one deal with a fixed rule; returns the score.
 template <class Rule>
-int play_rule(const Deal& deal, Rule rule) {
+double play_rule(const Deal& deal, Rule rule) {
     Table table(deal);
     while (!table.finished()) table.act(deal, rule(table.hands[table.h], deal));
     return table.score(deal);
 }
-inline int play_hit_rule(const Deal& deal) { return play_rule(deal, hit_rule); }
-inline int play_double_rule(const Deal& deal) { return play_rule(deal, double_rule); }
+inline double play_hit_rule(const Deal& deal) { return play_rule(deal, hit_rule); }
+inline double play_double_rule(const Deal& deal) { return play_rule(deal, double_rule); }
 
 }  // namespace bj

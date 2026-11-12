@@ -23,7 +23,8 @@ using Pop = Population<D>;
 namespace {
 
 struct Stats {
-    long score = 0, won = 0;
+    double score = 0;
+    long won = 0;
     std::array<long, 4> actions{};  // stand, hit, double, split (as decided by the net)
     // decision table: [player total 4..21][dealer card 2..11][action]
     std::array<std::array<std::array<long, 4>, 12>, 22> table{};
@@ -38,7 +39,7 @@ Stats run(const std::vector<Deal>& deals, Play play) {
         if (total <= 21) ++st.table[total][up][a];
     };
     for (const Deal& d : deals) {
-        const int s = play(d, observe);
+        const double s = play(d, observe);
         st.score += s;
         st.won += s > 0;
     }
@@ -168,7 +169,7 @@ int main(int argc, char** argv) {
 
     auto line = [&](const std::string& who, const Stats& st) {
         std::cout << "  " << std::left << std::setw(16) << who << std::right << std::fixed << std::setprecision(3)
-                  << std::setw(8) << static_cast<double>(st.score) / n_deals << std::setprecision(1) << std::setw(9)
+                  << std::setw(8) << st.score / n_deals << std::setprecision(1) << std::setw(9)
                   << 100.0 * st.won / winnable_n << "%   " << mix(st) << "\n";
     };
     std::cout << pop.size() << " nets from " << argv[1] << " (generation " << pop.generation() << "), " << n_deals

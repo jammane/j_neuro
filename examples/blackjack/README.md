@@ -38,8 +38,10 @@ Options: `--deals N` (deals per generation, default 200), `--out DIR`, `--seed N
 - **Dealer:** after all player hands, reveals cards while below 17 (stands on 17, including
   soft 17), up to 7 cards.
 - **Score:** real blackjack payout per hand: win +1, loss −1, push 0; a doubled hand pays ±2. A
-  player bust loses even if the dealer busts too. A deal's score is the sum over its hands, so it
-  can be negative.
+  player bust loses even if the dealer busts too. A **blackjack** (the original, unsplit two cards
+  totalling 21: an ace and a ten-value card) pays 1.5, and so does a **5-card charlie** (five
+  cards without busting, which wins against any dealer hand). A deal's score is the sum over its
+  hands, so it can be negative.
 
 ## Training loop
 

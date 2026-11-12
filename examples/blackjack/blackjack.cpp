@@ -204,26 +204,28 @@ int main(int argc, char** argv) {
 
         // the same deals for every net this generation, and the hit rule's score on them
         std::vector<Deal> gen_deals;
-        int n_winnable = 0, rule_score = 0, rule_won = 0, dbl_score = 0, dbl_won = 0;
+        int n_winnable = 0, rule_won = 0, dbl_won = 0;
+        double rule_score = 0, dbl_score = 0;
         for (int i = 0; i < kHandsPerNet; ++i) {
             gen_deals.emplace_back(deals.next_u64());
             n_winnable += winnable(gen_deals.back());
-            const int s = play_hit_rule(gen_deals.back());
+            const double s = play_hit_rule(gen_deals.back());
             rule_score += s;
             rule_won += s > 0;
-            const int sd = play_double_rule(gen_deals.back());
+            const double sd = play_double_rule(gen_deals.back());
             dbl_score += sd;
             dbl_won += sd > 0;
         }
 
         const std::vector<std::uint64_t> ids = pop.ids();
-        std::vector<int> scores(ids.size(), 0), won(ids.size(), 0);  // won: deals with a winning hand
+        std::vector<double> scores(ids.size(), 0.0);  // scores are sums of halves: exact in binary64
+        std::vector<int> won(ids.size(), 0);           // won: deals with a positive score
         std::atomic<std::size_t> next{0};
         auto worker = [&] {
             for (std::size_t k; (k = next++) < ids.size();) {
                 Net<D>& net = pop.get(ids[k]);
                 for (const Deal& d : gen_deals) {
-                    const int s = play_deal(net, d);
+                    const double s = play_deal(net, d);
                     scores[k] += s;
                     won[k] += s > 0;
                 }
@@ -244,7 +246,7 @@ int main(int argc, char** argv) {
         // Sudden-death deals only rank the tied nets; they do not count toward scores.
         int sudden_death = 0;
         if (order.size() > static_cast<std::size_t>(kKeep) && scores[order[kKeep - 1]] == scores[order[kKeep]]) {
-            const int tied = scores[order[kKeep]];
+            const double tied = scores[order[kKeep]];
             std::size_t lo = 0, hi;
             while (scores[order[lo]] != tied) ++lo;
             for (hi = lo; hi < order.size() && scores[order[hi]] == tied; ++hi) {}
@@ -258,7 +260,7 @@ int main(int argc, char** argv) {
                 }
                 const Deal d(deals.next_u64());
                 ++sudden_death;
-                std::vector<std::pair<int, std::size_t>> r;
+                std::vector<std::pair<double, std::size_t>> r;
                 for (std::size_t k : alive) r.emplace_back(play_deal(pop.get(ids[k]), d), k);
                 std::stable_sort(r.begin(), r.end(), [](auto& a, auto& b) { return a.first > b.first; });
                 std::vector<std::size_t> still, out;
