@@ -13,13 +13,16 @@ build/blackjack_trainer --resume runs/blackjack-…/population.jpnet --out runs/
 ```
 
 Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--alter PCT`
-(default 22), `--grow PCT` (default 12), `--console-every SECONDS` (default 2).
+(default 22), `--grow PCT` (default 12), `--big-alter PCT` (default 5), `--big-grow PCT`
+(default 1.5), `--console-every SECONDS` (default 2).
 
 ## Game
 
-- Cards `1 2 3 4 5 6 7 8 9 10 J Q K A`; J, Q, K count 10; A counts 1 or 11. Suits ignored.
-- Each deal shuffles a fresh 5-deck shoe (280 cards) and draws 7 cards for the player and 7
-  for the dealer up front.
+- Cards `2 3 4 5 6 7 8 9 10 J Q K A`; J, Q, K count 10; A counts 1 or 11, whichever is better
+  for the hand. Suits ignored.
+- Each deal shuffles a fresh 5-deck shoe (260 cards) and draws every card up front, in a
+  fixed order: 7 for the player, 7 for the dealer, then a block of 7 for each possible split.
+  Split *k* always uses block *k*, so every net that splits sees the same cards.
 - **Net inputs (9):** the dealer's 2 cards, then 7 player slots: revealed cards by value
   (A = 11), unrevealed slots 0. Two player cards start revealed.
 - **Net output (1):** clamped to 0–3 and rounded up: 0 stand, 1 hit, 2 double down, 3 split.
@@ -27,7 +30,8 @@ Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--alter 
 - **Double down:** reveal one card, then stand; a win scores 2.
 - **Split:** only with exactly 2 revealed cards of the same rank (and at most 4 hands);
   otherwise it counts as stand. The first card moves to a new hand; the existing hand gets
-  one new card at the end (back to 7) and the new hand is filled to 7 from the shoe. Hands
+  one new card at the end (back to 7) and the new hand is filled to 7, all from the split's
+  block. Hands
   are played one after the other, each starting with 2 revealed cards.
 - **Dealer:** after all player hands, reveals cards while below 17 (stands on 17, including
   soft 17), up to 7 cards.
@@ -35,17 +39,27 @@ Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--alter 
 
 ## Training loop
 
-- 40 nets; every net plays the same 50 deals each generation.
+- 40 nets; every net plays the same 200 deals each generation.
 - The top 10 are kept, the other 30 removed, and each survivor is mutated 3 times.
+- **Ties at the cut:** if nets tied on score straddle 10th place, they play sudden-death
+  deals (single elimination): each round all of them play one new deal; nets scoring below
+  the rest are out, a group that fits in the open places goes through, and the group still
+  straddling the line plays again. Sudden-death deals don't count toward scores. Nets that
+  play identically never separate, so after 10 sudden-death deals the remaining places are
+  picked at random.
+- Nets start from the library's minimal net with `path_mix` 2: every input-to-output path
+  passes through at least 2 v, 2 s and 2 m neurons, and mutation keeps it that way.
 - Mutation caps: 22% of neurons altered (edits and operation changes), 12% added/removed.
-  Caps are percentages of the net's neurons, drawn "up to" each generation.
+  Once a net has more than 50 neurons, its offspring use 5% and 1.5% instead. Caps are
+  percentages of the net's neurons, drawn "up to" each generation; a nonzero cap is never
+  below 1 neuron, so small nets always can mutate.
 - Each net's s_neuron history is reset at the start of every deal.
 
 ## Output (in `runs/blackjack-<timestamp>/`)
 
 | File | Contents |
 |---|---|
-| `log.csv` | One row per generation: top-10 average score, best score, population average, and top-10 averages of nodes, neurons, v/s/m neurons, elapsed seconds |
+| `log.csv` | One row per generation: top-10 average score, best score, population average, and top-10 averages of nodes, neurons, v/s/m neurons; `unwinnable` (deals of the 200 where no line of play wins a hand, found by trying every decision sequence); `best_win_pct_winnable` and `top10_win_pct_winnable` (deals with at least one winning hand ÷ winnable deals, for the best net and the top-10 average); `sudden_death_deals` (tiebreak deals played that generation); elapsed seconds |
 | `best.jnet` | Best net of the most recent console update |
 | `population.jpnet` + `population_nets/` | Saved every 1000 generations and on exit; resume with `--resume` |
 | `run_info.txt` | Seeds and settings of each start |

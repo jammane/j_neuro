@@ -1,11 +1,14 @@
 // Example trainer: evolve nets that play blackjack, using jneuro::Population.
 //
-// Each generation every net plays the same 50 deals. The top 10 nets are kept, the other
+// Each generation every net plays the same 200 deals. The top 10 nets are kept, the other
 // 30 are culled, and each survivor is mutated 3 times to refill the population to 40.
 // Runs until interrupted (Ctrl+C / SIGINT / SIGTERM), then saves the population.
 //
 // Usage: blackjack_trainer [--out DIR] [--seed N] [--resume FILE.jpnet]
-//                          [--alter PCT] [--grow PCT] [--console-every SECONDS]
+//                          [--alter PCT] [--grow PCT] [--big-alter PCT] [--big-grow PCT]
+//                          [--console-every SECONDS]
+//
+// Nets with more than 50 neurons mutate with the smaller --big-* caps (default 5% / 1.5%).
 
 #include <jneuro/jneuro.hpp>
 
@@ -35,20 +38,22 @@ namespace {
 constexpr int kPopulation = 40;
 constexpr int kKeep = 10;
 constexpr int kChildrenPerSurvivor = 3;
-constexpr int kHandsPerNet = 50;
+constexpr int kHandsPerNet = 200;
 constexpr int kDecks = 5;          // a 5-deck shoe
-constexpr int kRanks = 14;         // 1..10, J, Q, K, A
+constexpr int kRanks = 13;         // 2..10, J, Q, K, A
 constexpr int kCardsPerHand = 7;
 constexpr int kMaxHands = 4;       // limit on split hands per deal
 constexpr std::uint32_t kInQtyMax = 3;
+constexpr int kMaxSuddenDeath = 10;  // then remaining tied nets are picked at random
+constexpr std::size_t kBigNet = 50;   // above this many neurons, mutate with the small caps
 
 std::atomic<bool> g_stop{false};
 void on_signal(int) { g_stop = true; }
 
 // ------------------------------------------------------------------ cards
-// rank index: 0..9 -> "1".."10", 10 J, 11 Q, 12 K, 13 A
-bool is_ace(int r) { return r == 13; }
-int points(int r) { return r <= 9 ? r + 1 : (r <= 12 ? 10 : 11); }
+// rank index: 0..8 -> "2".."10", 9 J, 10 Q, 11 K, 12 A
+bool is_ace(int r) { return r == 12; }
+int points(int r) { return r <= 8 ? r + 2 : (r <= 11 ? 10 : 11); }
 double input_value(int r) { return static_cast<double>(points(r)); }  // A = 11, J/Q/K = 10
 
 int best_total(const std::vector<int>& cards, std::size_t n) {
@@ -94,63 +99,101 @@ Action decode(double y) {  // bound to 0..3, round up
     return static_cast<Action>(static_cast<int>(c));
 }
 
-/// Play one deal with `net`; returns the score (win 1, doubled win 2, per hand).
-int play_deal(Net<D>& net, std::uint64_t deal_seed) {
-    Shoe shoe(deal_seed);
-    std::vector<Hand> hands(1);
-    std::vector<int> dealer;
-    for (int i = 0; i < kCardsPerHand; ++i) hands[0].cards.push_back(shoe.draw());
-    for (int i = 0; i < kCardsPerHand; ++i) dealer.push_back(shoe.draw());
+/// One deal. Every card is drawn up front, in a fixed order: player, dealer, then one block
+/// of 7 per possible split. Split k always uses block k, so every net that takes the same
+/// splits sees the same cards. The dealer's play does not depend on the player's.
+struct Deal {
+    std::vector<int> player, dealer, split_cards;
+    int dealer_total = 0;
 
-    net.reset();  // s_neuron history covers one deal
-    std::vector<double> in(9);
-    for (std::size_t h = 0; h < hands.size(); ++h) {
-        while (!hands[h].done) {
-            Hand& hand = hands[h];
-            in[0] = input_value(dealer[0]);
-            in[1] = input_value(dealer[1]);
-            for (int i = 0; i < kCardsPerHand; ++i)
-                in[2 + i] = static_cast<std::size_t>(i) < hand.revealed ? input_value(hand.cards[i]) : 0.0;
-            switch (decode(net.step(in)[0])) {
-                case Stand:
-                    hand.done = true;
-                    break;
-                case Hit:
-                    if (hand.revealed < kCardsPerHand) ++hand.revealed;
-                    if (hand.revealed == kCardsPerHand || best_total(hand.cards, hand.revealed) > 21) hand.done = true;
-                    break;
-                case Double:
-                    if (hand.revealed < kCardsPerHand) ++hand.revealed;
-                    hand.doubled = true;
-                    hand.done = true;
-                    break;
-                case Split: {
-                    const bool valid = hand.revealed == 2 && hand.cards[0] == hand.cards[1] &&
-                                       hands.size() < static_cast<std::size_t>(kMaxHands);
-                    if (!valid) { hand.done = true; break; }  // invalid split: stand
-                    Hand fresh;
-                    fresh.cards.push_back(hand.cards[0]);      // first card starts the new hand
-                    hand.cards.erase(hand.cards.begin());
-                    hand.cards.push_back(shoe.draw());         // existing hand back to 7 cards
-                    for (int i = 1; i < kCardsPerHand; ++i) fresh.cards.push_back(shoe.draw());
-                    hands.push_back(std::move(fresh));         // played after the current hand
-                    break;                                     // decide again on 2 revealed cards
-                }
+    explicit Deal(std::uint64_t seed) {
+        Shoe shoe(seed);
+        for (int i = 0; i < kCardsPerHand; ++i) player.push_back(shoe.draw());
+        for (int i = 0; i < kCardsPerHand; ++i) dealer.push_back(shoe.draw());
+        for (int i = 0; i < (kMaxHands - 1) * kCardsPerHand; ++i) split_cards.push_back(shoe.draw());
+        std::size_t dn = 2;  // dealer stands on 17 or more, hits on 16 or less
+        while (best_total(dealer, dn) < 17 && dn < static_cast<std::size_t>(kCardsPerHand)) ++dn;
+        dealer_total = best_total(dealer, dn);
+    }
+};
+
+/// The player's side of a deal in progress; `h` is the hand being decided.
+struct Table {
+    std::vector<Hand> hands;
+    std::size_t h = 0;
+    std::size_t next_split_card = 0;
+
+    explicit Table(const Deal& d) : hands(1) { hands[0].cards = d.player; }
+    bool finished() const { return h >= hands.size(); }
+
+    void act(const Deal& d, Action a) {
+        Hand& hand = hands[h];
+        switch (a) {
+            case Stand:
+                hand.done = true;
+                break;
+            case Hit:
+                if (hand.revealed < kCardsPerHand) ++hand.revealed;
+                if (hand.revealed == kCardsPerHand || best_total(hand.cards, hand.revealed) > 21) hand.done = true;
+                break;
+            case Double:
+                if (hand.revealed < kCardsPerHand) ++hand.revealed;
+                hand.doubled = true;
+                hand.done = true;
+                break;
+            case Split: {
+                const bool valid = hand.revealed == 2 && hand.cards[0] == hand.cards[1] &&
+                                   hands.size() < static_cast<std::size_t>(kMaxHands);
+                if (!valid) { hand.done = true; break; }  // invalid split: stand
+                Hand fresh;
+                fresh.cards.push_back(hand.cards[0]);      // first card starts the new hand
+                hand.cards.erase(hand.cards.begin());
+                hand.cards.push_back(d.split_cards[next_split_card++]);  // existing hand back to 7
+                for (int i = 1; i < kCardsPerHand; ++i) fresh.cards.push_back(d.split_cards[next_split_card++]);
+                hands.push_back(std::move(fresh));         // played after the current hand
+                break;                                     // decide again on 2 revealed cards
             }
         }
+        while (!finished() && hands[h].done) ++h;
     }
 
-    std::size_t dn = 2;  // dealer stands on 17 or more, hits on 16 or less
-    while (best_total(dealer, dn) < 17 && dn < static_cast<std::size_t>(kCardsPerHand)) ++dn;
-    const int dealer_total = best_total(dealer, dn);
-
-    int score = 0;
-    for (const Hand& hand : hands) {
-        const int t = best_total(hand.cards, hand.revealed);
-        if (t <= 21 && (dealer_total > 21 || t > dealer_total)) score += hand.doubled ? 2 : 1;
+    int score(const Deal& d) const {  // win 1, doubled win 2, per hand
+        int s = 0;
+        for (const Hand& hand : hands) {
+            const int t = best_total(hand.cards, hand.revealed);
+            if (t <= 21 && (d.dealer_total > 21 || t > d.dealer_total)) s += hand.doubled ? 2 : 1;
+        }
+        return s;
     }
-    return score;
+};
+
+/// Play one deal with `net`; returns the score.
+int play_deal(Net<D>& net, const Deal& deal) {
+    Table table(deal);
+    net.reset();  // s_neuron history covers one deal
+    std::vector<double> in(9);
+    while (!table.finished()) {
+        const Hand& hand = table.hands[table.h];
+        in[0] = input_value(deal.dealer[0]);
+        in[1] = input_value(deal.dealer[1]);
+        for (int i = 0; i < kCardsPerHand; ++i)
+            in[2 + i] = static_cast<std::size_t>(i) < hand.revealed ? input_value(hand.cards[i]) : 0.0;
+        table.act(deal, decode(net.step(in)[0]));
+    }
+    return table.score(deal);
 }
+
+/// True if some sequence of decisions wins at least one hand (exhaustive search).
+bool winnable(const Deal& deal, const Table& table) {
+    if (table.finished()) return table.score(deal) > 0;
+    for (Action a : {Stand, Hit, Double, Split}) {
+        Table next = table;
+        next.act(deal, a);
+        if (winnable(deal, next)) return true;
+    }
+    return false;
+}
+bool winnable(const Deal& deal) { return winnable(deal, Table(deal)); }
 
 // ------------------------------------------------------------------ helpers
 struct Counts {
@@ -194,7 +237,7 @@ int main(int argc, char** argv) {
     fs::path out = fs::path("runs") / ("blackjack-" + timestamp());
     std::optional<std::uint64_t> seed;
     std::optional<fs::path> resume;
-    double alter = 22.0, grow = 12.0, console_every = 2.0;
+    double alter = 22.0, grow = 12.0, big_alter = 5.0, big_grow = 1.5, console_every = 2.0;
     for (int i = 1; i + 1 < argc; i += 2) {
         const std::string a = argv[i], v = argv[i + 1];
         if (a == "--out") out = v;
@@ -202,6 +245,8 @@ int main(int argc, char** argv) {
         else if (a == "--resume") resume = v;
         else if (a == "--alter") alter = std::stod(v);
         else if (a == "--grow") grow = std::stod(v);
+        else if (a == "--big-alter") big_alter = std::stod(v);
+        else if (a == "--big-grow") big_grow = std::stod(v);
         else if (a == "--console-every") console_every = std::stod(v);
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
     }
@@ -212,6 +257,7 @@ int main(int argc, char** argv) {
     Pop pop = resume ? Pop::load(*resume) : Pop(kInQtyMax, 9, 1, Priority::Speed);
     if (!resume) pop.create(kPopulation);
     const Profile profile = make_profile(alter, grow);
+    const Profile big_profile = make_profile(big_alter, big_grow);  // nets over kBigNet neurons
     const std::uint64_t deal_seed = seed ? *seed : fresh_seed();
     Rng deals(deal_seed);
 
@@ -219,35 +265,46 @@ int main(int argc, char** argv) {
     std::ofstream csv(out / "log.csv", std::ios::app);
     if (new_csv)
         csv << "generation,top10_avg_score,best_score,all_avg_score,top10_avg_nodes,top10_avg_neurons,"
-               "top10_avg_v,top10_avg_s,top10_avg_m,elapsed_s\n";
+               "top10_avg_v,top10_avg_s,top10_avg_m,unwinnable,best_win_pct_winnable,top10_win_pct_winnable,"
+               "sudden_death_deals,elapsed_s\n";
     {
         std::ofstream info(out / "run_info.txt", std::ios::app);
         info << "start " << timestamp() << " deal_seed " << deal_seed << " population_seed " << pop.seed()
-             << " alter_pct " << alter << " grow_pct " << grow << " in_qty_max " << kInQtyMax
+             << " alter_pct " << alter << " grow_pct " << grow << " big_alter_pct " << big_alter
+             << " big_grow_pct " << big_grow << " big_net_neurons " << kBigNet << " in_qty_max " << kInQtyMax
              << (resume ? " resumed_from " + resume->string() : std::string()) << "\n";
     }
     std::cout << "blackjack trainer: output in " << out.string() << " (deal seed " << deal_seed
               << "). Ctrl+C to stop and save.\n"
               << std::setw(8) << "gen" << std::setw(10) << "top10avg" << std::setw(7) << "best"
               << std::setw(9) << "allavg" << std::setw(9) << "nodes" << std::setw(9) << "neurons"
-              << std::setw(7) << "v" << std::setw(7) << "s" << std::setw(7) << "m" << "\n";
+              << std::setw(7) << "v" << std::setw(7) << "s" << std::setw(7) << "m" << std::setw(7) << "unwin"
+              << std::setw(8) << "best%" << std::setw(8) << "top10%" << "\n";
 
     const auto t0 = std::chrono::steady_clock::now();
     auto last_print = t0 - std::chrono::hours(1);
     const unsigned threads = std::max(1u, std::thread::hardware_concurrency());
 
     while (!g_stop) {
-        // the same 50 deals for every net this generation
-        std::vector<std::uint64_t> deal_seeds(kHandsPerNet);
-        for (auto& s : deal_seeds) s = deals.next_u64();
+        // the same 200 deals for every net this generation
+        std::vector<Deal> gen_deals;
+        int n_winnable = 0;
+        for (int i = 0; i < kHandsPerNet; ++i) {
+            gen_deals.emplace_back(deals.next_u64());
+            n_winnable += winnable(gen_deals.back());
+        }
 
         const std::vector<std::uint64_t> ids = pop.ids();
-        std::vector<int> scores(ids.size(), 0);
+        std::vector<int> scores(ids.size(), 0), won(ids.size(), 0);  // won: deals with a winning hand
         std::atomic<std::size_t> next{0};
         auto worker = [&] {
             for (std::size_t k; (k = next++) < ids.size();) {
                 Net<D>& net = pop.get(ids[k]);
-                for (std::uint64_t s : deal_seeds) scores[k] += play_deal(net, s);
+                for (const Deal& d : gen_deals) {
+                    const int s = play_deal(net, d);
+                    scores[k] += s;
+                    won[k] += s > 0;
+                }
             }
         };
         std::vector<std::thread> pool;
@@ -259,22 +316,72 @@ int main(int argc, char** argv) {
         for (std::size_t k = 0; k < order.size(); ++k) order[k] = k;
         std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return scores[a] > scores[b]; });
 
+        // A tie across the keep/cull line is broken by sudden-death deals, single elimination:
+        // the tied nets all play one new deal; those scoring below the rest are out, any group
+        // that fits in the open spots advances, and the group straddling the line plays again.
+        // Sudden-death deals only rank the tied nets; they do not count toward scores.
+        int sudden_death = 0;
+        if (order.size() > static_cast<std::size_t>(kKeep) && scores[order[kKeep - 1]] == scores[order[kKeep]]) {
+            const int tied = scores[order[kKeep]];
+            std::size_t lo = 0, hi;
+            while (scores[order[lo]] != tied) ++lo;
+            for (hi = lo; hi < order.size() && scores[order[hi]] == tied; ++hi) {}
+            std::vector<std::size_t> alive(order.begin() + lo, order.begin() + hi), advanced, eliminated;
+            std::size_t slots = kKeep - lo;
+            while (alive.size() > slots) {
+                if (sudden_death == kMaxSuddenDeath) {  // e.g. identical copies: pick at random
+                    for (std::size_t i = alive.size() - 1; i > 0; --i)
+                        std::swap(alive[i], alive[static_cast<std::size_t>(deals.below(i + 1))]);
+                    break;
+                }
+                const Deal d(deals.next_u64());
+                ++sudden_death;
+                std::vector<std::pair<int, std::size_t>> r;
+                for (std::size_t k : alive) r.emplace_back(play_deal(pop.get(ids[k]), d), k);
+                std::stable_sort(r.begin(), r.end(), [](auto& a, auto& b) { return a.first > b.first; });
+                std::vector<std::size_t> still, out;
+                for (std::size_t i = 0; i < r.size();) {
+                    std::size_t j = i;
+                    while (j < r.size() && r[j].first == r[i].first) ++j;
+                    if (slots == 0 || !still.empty()) {
+                        for (std::size_t x = i; x < j; ++x) out.push_back(r[x].second);
+                    } else if (j - i <= slots) {
+                        for (std::size_t x = i; x < j; ++x) advanced.push_back(r[x].second);
+                        slots -= j - i;
+                    } else {
+                        for (std::size_t x = i; x < j; ++x) still.push_back(r[x].second);
+                    }
+                    i = j;
+                }
+                eliminated.insert(eliminated.begin(), out.begin(), out.end());  // later = ranked higher
+                alive = std::move(still);
+            }
+            std::size_t pos = lo;
+            for (std::size_t k : advanced) order[pos++] = k;
+            for (std::size_t k : alive) order[pos++] = k;
+            for (std::size_t k : eliminated) order[pos++] = k;
+        }
+
         Counts sum;
-        double top_score = 0, all_score = 0;
+        double top_score = 0, all_score = 0, top_won = 0;
         for (std::size_t k = 0; k < ids.size(); ++k) all_score += scores[k];
         for (int r = 0; r < kKeep; ++r) {
             const std::size_t k = order[r];
             top_score += scores[k];
+            top_won += won[k];
             const Counts c = count(pop.get(ids[k]));
             sum.nodes += c.nodes; sum.neurons += c.neurons; sum.v += c.v; sum.s += c.s; sum.m += c.m;
         }
         const double n = kKeep;
         const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         const std::uint64_t gen = pop.generation();
+        auto pct_of_winnable = [&](double w) { return n_winnable ? 100.0 * w / n_winnable : 0.0; };
+        const double best_pct = pct_of_winnable(won[order[0]]), top_pct = pct_of_winnable(top_won / n);
         std::ostringstream row;
         row << std::fixed << std::setprecision(2) << gen << ',' << top_score / n << ',' << scores[order[0]] << ','
             << all_score / ids.size() << ',' << sum.nodes / n << ',' << sum.neurons / n << ',' << sum.v / n << ','
-            << sum.s / n << ',' << sum.m / n << ',' << elapsed << '\n';
+            << sum.s / n << ',' << sum.m / n << ',' << kHandsPerNet - n_winnable << ',' << best_pct << ','
+            << top_pct << ',' << sudden_death << ',' << elapsed << '\n';
         csv << row.str();
         csv.flush();
 
@@ -284,14 +391,18 @@ int main(int argc, char** argv) {
             std::cout << std::fixed << std::setprecision(2) << std::setw(8) << gen << std::setw(10) << top_score / n
                       << std::setw(7) << scores[order[0]] << std::setw(9) << all_score / ids.size()
                       << std::setw(9) << sum.nodes / n << std::setw(9) << sum.neurons / n << std::setw(7)
-                      << sum.v / n << std::setw(7) << sum.s / n << std::setw(7) << sum.m / n << std::endl;
+                      << sum.v / n << std::setw(7) << sum.s / n << std::setw(7) << sum.m / n << std::setw(7)
+                      << kHandsPerNet - n_winnable << std::setw(8) << best_pct << std::setw(8) << top_pct << std::endl;
             save_net(out / "best.jnet", pop.get(ids[order[0]]));
         }
 
         // cull the bottom 30, refill with 3 mutated offspring of each of the top 10
         for (std::size_t r = kKeep; r < order.size(); ++r) pop.remove(ids[order[r]]);
-        for (int r = 0; r < kKeep; ++r)
-            for (int c = 0; c < kChildrenPerSurvivor; ++c) pop.mutate(ids[order[r]], profile);
+        for (int r = 0; r < kKeep; ++r) {
+            const std::uint64_t parent = ids[order[r]];
+            const bool big = count(pop.get(parent)).neurons > kBigNet;
+            for (int c = 0; c < kChildrenPerSurvivor; ++c) pop.mutate(parent, big ? big_profile : profile);
+        }
         pop.next_generation();
 
         if (gen % 1000 == 999) pop.save(out / "population.jpnet");
