@@ -451,7 +451,12 @@ int main(int argc, char** argv) {
         csv << row.str();
         csv.flush();
 
-        if (gen % 1000 == 999) pop.save(out / "population.jpnet");
+        if (gen % 1000 == 999) {
+            // Reloading continues exactly (same ids, nets, RNG state) but empties the population's
+            // in-memory run log, which otherwise grows by ~60 operations per generation.
+            pop.save(out / "population.jpnet");
+            pop = Pop::load(out / "population.jpnet");
+        }
     }
 
     pop.save(out / "population.jpnet");
