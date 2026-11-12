@@ -17,7 +17,7 @@
    "sign_flip_prob": 0.02,
    "sigma_k": 1.0,
    "sigma_slots": 1.0,
-   "rewire_prob": 0.1,
+   "rewire_prob": 0.05,
    "insert_inversion_prob": 0.05,
    "min_age_for_removal": 5,
    "add_method_weights": {
@@ -35,7 +35,7 @@
    "growth_budget": "up_to",
    "constant_folding": "off",
    "insert_depth": "midpoint",
-   "slot_retarget_prob": 0.1,
+   "slot_retarget_prob": 0.05,
    "width_bias": "deficit",
    "width_peak": 0.5,
    "tap_peak": 0.25,

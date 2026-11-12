@@ -137,7 +137,7 @@ TEST_CASE("v02: insert inversion") {
 
 TEST_CASE("v02: default profile has new fields") {
     auto p = Profile::defaults();
-    CHECK(p.overall("rewire_prob") == 0.1);
+    CHECK(p.overall("rewire_prob") == 0.05);
     CHECK(p.overall("insert_inversion_prob") == 0.05);
 }
 

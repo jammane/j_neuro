@@ -55,7 +55,7 @@ private:
     std::string rng_mode_ = "fresh";
     std::string growth_budget_ = "up_to";
     std::string constant_folding_ = "off";
-    std::array<double, 11> amw_{40, 30, 20, 10, 20, 20, 20, 20, 20, 20, 20};
+    std::array<double, 11> amw_{0, 10, 5, 5, 10, 10, 5, 60, 20, 24, 24};
     std::string insert_depth_ = "midpoint";
     std::string width_bias_ = "deficit";
     std::string prune_ = "static";

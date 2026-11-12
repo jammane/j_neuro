@@ -383,7 +383,7 @@ TEST_CASE("pop: mutation counts cover every operation") {
     prof.set_overall("min_age_for_removal", 1.0);
     prof.set_overall("slot_retarget_prob", 0.5);
     prof.apply_patch(json{{"overall", {{"constant_folding", "on"},
-        {"add_method_weights", {{"v_tap", 40}, {"s_tap", 40}, {"m_tap", 40}, {"m_clone", 40}}}}}});
+        {"add_method_weights", {{"v_tap", 40}, {"s_tap", 40}, {"m_tap", 40}, {"m_clone", 40}, {"slot_fill", 40}}}}}});
     auto all_used = [&] {
         for (auto& [op, n] : p.mutation_counts()) if (n == 0) return false;
         return true;

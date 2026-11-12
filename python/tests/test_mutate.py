@@ -56,10 +56,10 @@ def test_profile_defaults():
     p = Profile.default()
     assert p.overall["edit_max_pct"] == 5.0
     assert p.overall["growth_max_pct"] == 1.5
-    assert p.overall["add_method_weights"] == {"slot_fill": 40, "v_insert": 30, "s_insert": 20,
-                                               "m_after_m": 10, "v_tap": 20, "s_tap": 20, "m_tap": 20,
-                                               "m_clone": 20, "m_insert": 20,
-                                               "v_link": 20, "s_link": 20}
+    assert p.overall["add_method_weights"] == {"slot_fill": 0, "v_insert": 10, "s_insert": 5,
+                                               "m_after_m": 5, "v_tap": 10, "s_tap": 10, "m_tap": 5,
+                                               "m_clone": 60, "m_insert": 20,
+                                               "v_link": 24, "s_link": 24}
     assert p.effective("sigma_weight", "v") == 0.1
 
 

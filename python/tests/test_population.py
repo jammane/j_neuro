@@ -322,7 +322,8 @@ def test_mutation_counts_cover_every_operation():
     ids = p.create(6)
     prof = heavy("fresh")
     prof.overall["constant_folding"] = "on"
-    prof.overall["add_method_weights"].update({"v_tap": 40, "s_tap": 40, "m_tap": 40, "m_clone": 40})
+    prof.overall["add_method_weights"].update({"v_tap": 40, "s_tap": 40, "m_tap": 40, "m_clone": 40,
+                                               "slot_fill": 40})   # slot fill feeds silenced removal and folding
     prof.overall["slot_retarget_prob"] = 0.5
     for gen in range(18):
         ids = [p.mutate(i, prof) for i in ids]

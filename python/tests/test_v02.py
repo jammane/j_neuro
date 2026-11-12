@@ -134,7 +134,7 @@ def test_insert_inversion():
 
 def test_default_profile_has_new_fields():
     p = Profile.default()
-    assert p.overall["rewire_prob"] == 0.1
+    assert p.overall["rewire_prob"] == 0.05
     assert p.overall["insert_inversion_prob"] == 0.05
 
 

@@ -42,16 +42,16 @@ A per-type value overrides the overall value for neurons of that type.
 | `sign_flip_prob` | 0.02 | yes (v) | Probability a weight edit also flips its sign |
 | `sigma_k` | 1.0 | yes (s) | History-length mutation scale |
 | `sigma_slots` | 1.0 | yes (m) | Scale of how many slots change per m edit |
-| `rewire_prob` | 0.1 | yes (v, s) | Probability a v/s edit rewires the input instead of editing a parameter |
+| `rewire_prob` | 0.05 | yes (v, s) | Probability a v/s edit rewires the input instead of editing a parameter |
 | `insert_inversion_prob` | 0.05 | yes (v) | Probability a newly added v_neuron starts with an inversion |
 | `min_age_for_removal` | 5 | yes | Generations a neuron must exist before it can trigger a removal |
-| `add_method_weights` | `slot_fill 40, v_insert 30, s_insert 20, m_after_m 10, v_tap 20, s_tap 20, m_tap 20, m_clone 20, m_insert 20, v_link 20, s_link 20` | no | Odds of each addition method; a weight left out counts as its default |
+| `add_method_weights` | `slot_fill 0, v_insert 10, s_insert 5, m_after_m 5, v_tap 10, s_tap 10, m_tap 5, m_clone 60, m_insert 20, v_link 24, s_link 24` | no | Odds of each addition method; a weight left out counts as its default |
 | `slot_fill_type_weights` | `v 1, s 1, m 1` | no | Odds of each neuron type created by slot fill |
 | `rng_mode` | `fresh` | no | Where a population's `mutate` draws random numbers: `fresh` or `shared` ([11](11-population.md#rng-modes)). Ignored by the standalone `mutate` function, which takes its RNG directly. |
 | `growth_budget` | `up_to` | no | `up_to` or `exact`: whether the growth budget is a random fraction of its cap or the whole cap ([budgets](#budgets)). |
 | `constant_folding` | `off` | no | `off` or `on`: replace constant neurons by constants before garbage collection ([07](07-removal.md#constant-folding)). |
 | `insert_depth` | `midpoint` | no | `uniform` or `midpoint`: where a new node goes within its allowed depth range ([growth](#phase-3--growth)) |
-| `slot_retarget_prob` | 0.1 | yes (m) | Probability an m edit retargets one slot instead of the usual slot changes |
+| `slot_retarget_prob` | 0.05 | yes (m) | Probability an m edit retargets one slot instead of the usual slot changes |
 | `width_bias` | `deficit` | no | `none`, `center` or `deficit`: how growth chooses the m_neuron that receives a new branch ([receivers](#choosing-a-receiver)) |
 | `width_peak` | 0.5 | no | Depth fraction in (0, 1) where receivers are favored most (slot fill, m_clone, links) |
 | `tap_peak` | 0.25 | no | The same, for input taps |

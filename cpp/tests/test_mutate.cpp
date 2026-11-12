@@ -58,7 +58,7 @@ TEST_CASE("profile defaults") {
     auto p = Profile::defaults();
     CHECK(p.effective("edit_max_pct", NeuronType::V) == 5.0);
     CHECK(p.effective("growth_max_pct", NeuronType::M) == 1.5);
-    CHECK(p.add_method_weights() == std::array<double, 11>{40, 30, 20, 10, 20, 20, 20, 20, 20, 20, 20});
+    CHECK(p.add_method_weights() == std::array<double, 11>{0, 10, 5, 5, 10, 10, 5, 60, 20, 24, 24});
     CHECK(p.effective("sigma_weight", NeuronType::V) == 0.1);
 }
 

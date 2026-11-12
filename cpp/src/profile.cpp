@@ -14,8 +14,8 @@ const std::map<std::string, double>& numeric_defaults() {
         {"op_change_max_pct", 1.0}, {"edit_max_pct", 5.0}, {"growth_max_pct", 1.5},
         {"removal_max_pct", 1.0},   {"depth_shift_max_pct", 5.0}, {"sigma_weight", 0.1},
         {"sign_flip_prob", 0.02},   {"sigma_k", 1.0}, {"sigma_slots", 1.0},
-        {"rewire_prob", 0.1},       {"insert_inversion_prob", 0.05}, {"min_age_for_removal", 5.0},
-        {"slot_retarget_prob", 0.1}, {"width_peak", 0.5}, {"tap_peak", 0.25}, {"link_max_span", 0.25}};
+        {"rewire_prob", 0.05},       {"insert_inversion_prob", 0.05}, {"min_age_for_removal", 5.0},
+        {"slot_retarget_prob", 0.05}, {"width_peak", 0.5}, {"tap_peak", 0.25}, {"link_max_span", 0.25}};
     return d;
 }
 const std::set<std::string>& overridable() {
@@ -34,7 +34,7 @@ const char* const kOverallOrder[] = {
     "width_peak", "tap_peak", "prune", "link_max_span"};
 const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap",
                                 "m_clone",   "m_insert", "v_link",   "s_link"};
-constexpr std::array<double, 11> kMethodDefaults{40, 30, 20, 10, 20, 20, 20, 20, 20, 20, 20};
+constexpr std::array<double, 11> kMethodDefaults{0, 10, 5, 5, 10, 10, 5, 60, 20, 24, 24};
 const char* const kTypes[] = {"v", "s", "m"};
 
 double number(const json& v, const std::string& k) {
