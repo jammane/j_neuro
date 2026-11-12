@@ -4,11 +4,19 @@
 // 30 are culled, and each survivor is mutated 3 times to refill the population to 40.
 // Runs until interrupted (Ctrl+C / SIGINT / SIGTERM), then saves the population.
 //
-// Usage: blackjack_trainer [--out DIR] [--seed N] [--resume FILE.jpnet]
-//                          [--alter PCT] [--grow PCT] [--big-alter PCT] [--big-grow PCT]
+// Usage: blackjack_trainer [--out DIR] [--seed N] [--resume FILE.jpnet] [--rules new|old]
 //                          [--console-every SECONDS]
+//   new rules (default):   [--edit PCT] [--op PCT] [--grow-gen PCT] [--grow-net PCT]
+//   old rules:             [--alter PCT] [--grow PCT] [--big-alter PCT] [--big-grow PCT]
 //
-// Nets with more than 50 neurons mutate with the smaller --big-* caps (default 5% / 1.5%).
+// New rules: every child gets parameter edits on up to --edit % of its neurons (default 20)
+// and operation changes on up to --op % (default 1, i.e. 5% of the 20%). Growth is rare: each
+// generation has a --grow-gen % chance (default 10) of being a growth generation, and then
+// each child has a --grow-net % chance (default 10) of exactly one addition attempt. No
+// quota-based removal; constant neurons are folded away (spec/07).
+//
+// Old rules: up to --alter % edited and op-changed, --grow % added and removed; nets over 50
+// neurons use the --big-* caps instead.
 
 #include <jneuro/jneuro.hpp>
 
@@ -222,6 +230,17 @@ std::string timestamp() {
     return buf;
 }
 
+/// New rules: edits and op changes "up to", optional exactly-one growth attempt, folding.
+Profile make_new_profile(double edit_pct, double op_pct, bool grow) {
+    Profile p = Profile::defaults();
+    p.set_overall("edit_max_pct", edit_pct);
+    p.set_overall("op_change_max_pct", op_pct);
+    p.set_overall("growth_max_pct", grow ? 1e-9 : 0.0);  // exact: max(1, ~0) = 1 attempt
+    p.set_overall("removal_max_pct", 0.0);
+    p.apply_patch(nlohmann::json{{"overall", {{"growth_budget", "exact"}, {"constant_folding", "on"}}}});
+    return p;
+}
+
 Profile make_profile(double alter_pct, double grow_pct) {
     Profile p = Profile::defaults();
     p.set_overall("edit_max_pct", alter_pct);       // "altered": parameter edits ...
@@ -238,6 +257,8 @@ int main(int argc, char** argv) {
     std::optional<std::uint64_t> seed;
     std::optional<fs::path> resume;
     double alter = 22.0, grow = 12.0, big_alter = 5.0, big_grow = 1.5, console_every = 2.0;
+    double edit_pct = 20.0, op_pct = 1.0, grow_gen = 10.0, grow_net = 10.0;
+    std::string rules = "new";
     for (int i = 1; i + 1 < argc; i += 2) {
         const std::string a = argv[i], v = argv[i + 1];
         if (a == "--out") out = v;
@@ -248,8 +269,15 @@ int main(int argc, char** argv) {
         else if (a == "--big-alter") big_alter = std::stod(v);
         else if (a == "--big-grow") big_grow = std::stod(v);
         else if (a == "--console-every") console_every = std::stod(v);
+        else if (a == "--rules") rules = v;
+        else if (a == "--edit") edit_pct = std::stod(v);
+        else if (a == "--op") op_pct = std::stod(v);
+        else if (a == "--grow-gen") grow_gen = std::stod(v);
+        else if (a == "--grow-net") grow_net = std::stod(v);
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
     }
+    if (rules != "new" && rules != "old") { std::cerr << "--rules must be new or old\n"; return 2; }
+    const bool new_rules = rules == "new";
     fs::create_directories(out);
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
@@ -258,20 +286,28 @@ int main(int argc, char** argv) {
     if (!resume) pop.create(kPopulation);
     const Profile profile = make_profile(alter, grow);
     const Profile big_profile = make_profile(big_alter, big_grow);  // nets over kBigNet neurons
+    const Profile steady = make_new_profile(edit_pct, op_pct, false), grow_one = make_new_profile(edit_pct, op_pct, true);
     const std::uint64_t deal_seed = seed ? *seed : fresh_seed();
     Rng deals(deal_seed);
+    Rng growth_rng(deal_seed ^ 0x9E3779B97F4A7C15ull);  // growth-generation and growth-child draws
 
     const bool new_csv = !fs::exists(out / "log.csv");
     std::ofstream csv(out / "log.csv", std::ios::app);
     if (new_csv)
         csv << "generation,top10_avg_score,best_score,all_avg_score,top10_avg_nodes,top10_avg_neurons,"
                "top10_avg_v,top10_avg_s,top10_avg_m,unwinnable,best_win_pct_winnable,top10_win_pct_winnable,"
-               "sudden_death_deals,elapsed_s\n";
+               "sudden_death_deals,growth_children,elapsed_s\n";
     {
         std::ofstream info(out / "run_info.txt", std::ios::app);
         info << "start " << timestamp() << " deal_seed " << deal_seed << " population_seed " << pop.seed()
-             << " alter_pct " << alter << " grow_pct " << grow << " big_alter_pct " << big_alter
-             << " big_grow_pct " << big_grow << " big_net_neurons " << kBigNet << " in_qty_max " << kInQtyMax
+             << " rules " << rules;
+        if (new_rules)
+            info << " edit_pct " << edit_pct << " op_pct " << op_pct << " grow_gen_pct " << grow_gen
+                 << " grow_net_pct " << grow_net << " constant_folding on";
+        else
+            info << " alter_pct " << alter << " grow_pct " << grow << " big_alter_pct " << big_alter
+                 << " big_grow_pct " << big_grow << " big_net_neurons " << kBigNet;
+        info << " in_qty_max " << kInQtyMax
              << (resume ? " resumed_from " + resume->string() : std::string()) << "\n";
     }
     std::cout << "blackjack trainer: output in " << out.string() << " (deal seed " << deal_seed
@@ -286,6 +322,10 @@ int main(int argc, char** argv) {
     const unsigned threads = std::max(1u, std::thread::hardware_concurrency());
 
     while (!g_stop) {
+        // new rules: is this a growth generation? (decided up front so the log row can report it)
+        const bool growth_gen = new_rules && growth_rng.u() * 100.0 < grow_gen;
+        int growth_children = 0;
+
         // the same 200 deals for every net this generation
         std::vector<Deal> gen_deals;
         int n_winnable = 0;
@@ -381,9 +421,7 @@ int main(int argc, char** argv) {
         row << std::fixed << std::setprecision(2) << gen << ',' << top_score / n << ',' << scores[order[0]] << ','
             << all_score / ids.size() << ',' << sum.nodes / n << ',' << sum.neurons / n << ',' << sum.v / n << ','
             << sum.s / n << ',' << sum.m / n << ',' << kHandsPerNet - n_winnable << ',' << best_pct << ','
-            << top_pct << ',' << sudden_death << ',' << elapsed << '\n';
-        csv << row.str();
-        csv.flush();
+            << top_pct << ',' << sudden_death << ',';  // growth_children and elapsed added after mutation
 
         const auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration<double>(now - last_print).count() >= console_every) {
@@ -401,9 +439,17 @@ int main(int argc, char** argv) {
         for (int r = 0; r < kKeep; ++r) {
             const std::uint64_t parent = ids[order[r]];
             const bool big = count(pop.get(parent)).neurons > kBigNet;
-            for (int c = 0; c < kChildrenPerSurvivor; ++c) pop.mutate(parent, big ? big_profile : profile);
+            for (int c = 0; c < kChildrenPerSurvivor; ++c) {
+                if (!new_rules) { pop.mutate(parent, big ? big_profile : profile); continue; }
+                const bool grows = growth_gen && growth_rng.u() * 100.0 < grow_net;
+                growth_children += grows;
+                pop.mutate(parent, grows ? grow_one : steady);
+            }
         }
         pop.next_generation();
+        row << growth_children << ',' << elapsed << '\n';  // same fixed formatting as the rest of the row
+        csv << row.str();
+        csv.flush();
 
         if (gen % 1000 == 999) pop.save(out / "population.jpnet");
     }
