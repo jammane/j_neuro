@@ -12,10 +12,10 @@ build/blackjack_trainer                      # runs until Ctrl+C, then saves
 build/blackjack_trainer --resume runs/blackjack-…/population.jpnet --out runs/blackjack-…
 ```
 
-Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules new|old`
+Options: `--deals N` (deals per generation, default 200), `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules new|old`
 (default new), `--alter PCT`
 (default 22), `--grow PCT` (default 12), `--big-alter PCT` (default 5), `--big-grow PCT`
-(default 1.5) for `--rules old`; `--profile FILE` and the overrides `--edit`, `--op`, `--grow-gen`,
+(default 1.5) for `--rules old`; `--stop-at N` (stop and save after N generations); `--profile FILE` and the overrides `--edit`, `--op`, `--grow-gen`,
 `--grow-net`, `--tap-weight` for `--rules new`; `--console-every SECONDS` (default 2).
 
 ## Game
@@ -29,7 +29,7 @@ Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules 
   (A = 11), unrevealed slots 0. Two player cards start revealed.
 - **Net output (1):** clamped to 0–3 and rounded up: 0 stand, 1 hit, 2 double down, 3 split.
 - **Hit:** reveal the next card and decide again; a bust or 7 revealed cards ends the hand.
-- **Double down:** reveal one card, then stand; a win scores 2.
+- **Double down:** reveal one card, then stand; the hand's stake is doubled (wins +2, losses −2).
 - **Split:** only with exactly 2 revealed cards of the same rank (and at most 4 hands);
   otherwise it counts as stand. The first card moves to a new hand; the existing hand gets
   one new card at the end (back to 7) and the new hand is filled to 7, all from the split's
@@ -37,7 +37,9 @@ Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules 
   are played one after the other, each starting with 2 revealed cards.
 - **Dealer:** after all player hands, reveals cards while below 17 (stands on 17, including
   soft 17), up to 7 cards.
-- **Score:** each winning hand scores 1 (2 if doubled); pushes and losses score 0.
+- **Score:** real blackjack payout per hand: win +1, loss −1, push 0; a doubled hand pays ±2. A
+  player bust loses even if the dealer busts too. A deal's score is the sum over its hands, so it
+  can be negative.
 
 ## Training loop
 
@@ -67,7 +69,16 @@ Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules 
 
 | File | Contents |
 |---|---|
-| `log.csv` | One row per generation: top-10 average score, best score, population average, and top-10 averages of nodes, neurons, v/s/m neurons; `unwinnable` (deals of the 200 where no line of play wins a hand, found by trying every decision sequence); `best_win_pct_winnable` and `top10_win_pct_winnable` (deals with at least one winning hand ÷ winnable deals, for the best net and the top-10 average); `sudden_death_deals` (tiebreak deals played that generation); `growth_added` (neurons added by growth); elapsed seconds |
+| `log.csv` | One row per generation: top-10 average score, best score, population average, and top-10 averages of nodes, neurons, v/s/m neurons; `unwinnable` (deals where no line of play ends with a positive score, found by trying every decision sequence); `best_win_pct_winnable` and `top10_win_pct_winnable` (deals with a positive score ÷ winnable deals, for the best net and the top-10 average); `hitrule_score`, `hitrule_win_pct_winnable`, `doublerule_score`, `doublerule_win_pct_winnable` (the two fixed rules on the same deals); `sudden_death_deals` (tiebreak deals played that generation); `growth_added` (neurons added by growth); elapsed seconds |
 | `best.jnet` | Best net of the most recent console update |
 | `population.jpnet` + `population_nets/` | Saved every 1000 generations and on exit; resume with `--resume` |
 | `run_info.txt` | Seeds and settings of each start |
+
+## Analysis
+
+`blackjack_analyze POPULATION.jpnet [--deals N] [--seed N]` plays every net of a saved population,
+the simple hit rule (hit below 12, or below 17 vs a dealer 7+) and the simple double rule (the hit
+rule, plus double on a two-card 10 or 11 when the dealer's card is lower) on the same fresh deals
+(default 100,000). It prints each net's points per deal, win % of winnable deals and mix of actions,
+and for the best net its structure and its decision table (most common action per player total and
+dealer card) beside the double rule's.
