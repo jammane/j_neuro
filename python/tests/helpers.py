@@ -36,12 +36,12 @@ def M(op, slots):
     return MNeuron(AggOp[op.upper()], list(slots))
 
 
-def make_net(n_in, n_out, q, noninput, depth_type="U16", priority="SPEED", born_gen=0):
+def make_net(n_in, n_out, q, noninput, depth_type="U16", priority="SPEED", born_gen=0, path_mix=0):
     """noninput: list of (depth, neuron) for ids n_in.. (outputs first, then hidden)."""
     nodes = [Node(i, 0, 0, None) for i in range(n_in)]
     for j, (depth, neuron) in enumerate(noninput):
         nodes.append(Node(n_in + j, born_gen, depth, neuron))
-    return Net(Priority[priority], DepthType[depth_type], q, n_in, n_out, nodes, len(nodes))
+    return Net(Priority[priority], DepthType[depth_type], q, n_in, n_out, nodes, len(nodes), path_mix)
 
 
 def outputs_for(net, input_rows):

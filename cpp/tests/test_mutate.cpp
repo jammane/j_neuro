@@ -268,7 +268,8 @@ TEST_CASE("create golden") {
         AnyNet net = create(c["n_inputs"].get<std::uint32_t>(), c["n_outputs"].get<std::uint32_t>(),
                             parse_depth_type(c["depth_type"].get<std::string>()),
                             c["in_qty_max"].get<std::uint32_t>(),
-                            parse_priority(c["priority"].get<std::string>()), r);
+                            parse_priority(c["priority"].get<std::string>()), r,
+                            c["path_mix"].get<std::uint32_t>());
         Bytes expected = hex_to_bytes(c["expected_jnet"].get<std::string>());
         CHECK(std::visit([](const auto& n) { return to_bytes(n); }, net) == expected);
     }
@@ -317,5 +318,73 @@ TEST_CASE("property: neutral chains preserve outputs") {
             net.validate();
             CHECK(outputs_for(net, rows) == ref);
         }
+    }
+}
+
+TEST_CASE("nonzero cap is at least one") {
+    auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(0, VOp::Mul, 2.0)}});
+    auto p = zero_profile();
+    p.set_overall("edit_max_pct", 1.0);
+    int changed = 0;
+    for (std::uint64_t s = 0; s < 60; ++s) {
+        Rng r(s);
+        if (to_bytes(mutate(net, p, 1, r)) != to_bytes(net)) ++changed;
+    }
+    CHECK(changed >= 10);
+    for (std::uint64_t s = 0; s < 20; ++s) {
+        Rng r(s);
+        CHECK(to_bytes(mutate(net, zero_profile(), 1, r)) == to_bytes(net));
+    }
+}
+
+// ---------------------------------------------------------------- mix rule (spec/03, spec/06)
+
+TEST_CASE("mutation keeps mix rule") {
+    // input 0 -> v 2 (identity) -> s 3 / s 4 -> output m 1. Every path: 1 v, 1 s, 1 m.
+    auto mix_net = [](std::uint32_t mix) {
+        return make_net<std::uint16_t>(1, 1, 3, {{D16, M(AggOp::Max, {3, 4, none})}, {100, V(0, VOp::Mul, 1.0)},
+                                                 {200, S(2, AggOp::Mean, 1)}, {200, S(2, AggOp::Mean, 1)}},
+                                       Priority::Speed, mix);
+    };
+    auto structure = [](const N16& n) {
+        std::vector<std::pair<std::size_t, std::vector<NodeId>>> out;
+        for (auto& x : n.nodes) out.emplace_back(x.neuron ? x.neuron->index() + 1 : 0, connections(x.neuron));
+        return out;
+    };
+    std::vector<std::pair<std::string, Profile>> cases;
+    {
+        Profile p = zero_profile();
+        p.set_overall("removal_max_pct", 100.0);
+        p.set_overall("min_age_for_removal", 0.0);
+        cases.emplace_back("bypass", p);
+    }
+    {
+        Profile p = zero_profile();
+        p.set_overall("edit_max_pct", 100.0);
+        p.set_overall("rewire_prob", 1.0);
+        cases.emplace_back("rewire", p);
+    }
+    {
+        Profile p = zero_profile();
+        p.set_overall("edit_max_pct", 100.0);
+        p.set_overall("rewire_prob", 0.0);
+        p.set_overall("sigma_slots", 3.0);
+        cases.emplace_back("slot_connect", p);
+    }
+    cases.emplace_back("slot_fill", growth_only("slot_fill"));
+    for (auto& [name, p] : cases) {
+        INFO(name);
+        int changed[2] = {0, 0};
+        for (std::uint32_t mix : {0u, 1u}) {
+            const N16 net = mix_net(mix);
+            net.validate();
+            for (std::uint64_t s = 0; s < 80; ++s) {
+                Rng r(s);
+                const N16 child = mutate(net, p, 10, r);
+                child.validate();  // includes the mix rule
+                changed[mix] += structure(child) != structure(net);
+            }
+        }
+        CHECK(changed[0] > changed[1]);  // the rule blocked something
     }
 }

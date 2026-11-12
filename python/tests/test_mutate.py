@@ -4,7 +4,7 @@ import pytest
 from helpers import M, S, V, load_golden, make_net, outputs_for, sample_inputs
 
 from jneuro import AggOp, DepthType, MNeuron, Net, Priority, SNeuron, VNeuron
-from jneuro.analysis import path_rule_ok
+from jneuro.analysis import connections, path_rule_ok
 from jneuro.io import profile_from_json
 from jneuro.jnet import net_from_bytes, net_to_bytes
 from jneuro.mutate import Profile, mutate
@@ -249,7 +249,7 @@ CREATE = load_golden("create")
 @pytest.mark.parametrize("name,case", CREATE, ids=[c[0] for c in CREATE])
 def test_create_golden(name, case):
     net = Net.create(case["n_inputs"], case["n_outputs"], DepthType[case["depth_type"]],
-                     case["in_qty_max"], Priority[case["priority"]], Rng(case["seed"]))
+                     case["in_qty_max"], Priority[case["priority"]], Rng(case["seed"]), case["path_mix"])
     assert net_to_bytes(net) == bytes.fromhex(case["expected_jnet"])
 
 
@@ -285,3 +285,46 @@ def test_property_neutral_chains_preserve_outputs(seed):
         net = mutate(net, p, gen, r)
         net.validate()
         assert outputs_for(net, rows) == ref
+
+
+def test_nonzero_cap_is_at_least_one():
+    net = make_net(1, 1, 3, [(D16, V(0, "mul", 2.0))])          # a single neuron
+    p = profile(edit_max_pct=1.0)                               # 1% of 1 neuron -> cap 1
+    changed = sum(net_to_bytes(mutate(net, p, 1, Rng(s))) != net_to_bytes(net) for s in range(60))
+    assert changed >= 10
+    assert all(net_to_bytes(mutate(net, profile(), 1, Rng(s))) == net_to_bytes(net) for s in range(20))
+
+
+# ---------------------------------------------------------------- mix rule (spec/03, spec/06)
+
+def _mix_net(path_mix):
+    """input 0 -> v 2 (identity) -> s 3 / s 4 -> output m 1. Every path: 1 v, 1 s, 1 m."""
+    return make_net(1, 1, 3, [(D16, M("max", [3, 4, None])), (100, V(0, "mul", 1.0)),
+                              (200, S(2, "mean", 1)), (200, S(2, "mean", 1))], path_mix=path_mix)
+
+
+@pytest.mark.parametrize("name,prof", [
+    ("bypass", dict(removal_max_pct=100.0, min_age_for_removal=0)),
+    ("rewire", dict(edit_max_pct=100.0, rewire_prob=1.0)),
+    ("slot_connect", dict(edit_max_pct=100.0, rewire_prob=0.0, sigma_slots=3.0)),
+    ("slot_fill", dict(growth_max_pct=100.0,
+                       add_method_weights={"slot_fill": 1, "v_insert": 0, "s_insert": 0, "m_after_m": 0})),
+])
+def test_mutation_keeps_mix_rule(name, prof):
+    """Each change that could leave a path short of a type is skipped (or undone) instead."""
+    p = profile(**prof)
+    changed = {}
+    for mix in (0, 1):
+        net = _mix_net(mix)
+        net.validate()
+        n = 0
+        for s in range(80):
+            child = mutate(net, p, 10, Rng(s))
+            child.validate()                                   # includes the mix rule
+            n += structure(child) != structure(net)
+        changed[mix] = n
+    assert changed[0] > changed[1]                             # the rule blocked something
+
+
+def structure(net):
+    return [(type(x.neuron).__name__, connections(x.neuron)) for x in net.nodes]

@@ -86,6 +86,7 @@ Build and test instructions: [cpp/README.md](cpp/README.md), [python/README.md](
 | `DEPTH` | Per-net integer type of depth values: `U16`, `U32` or `U64`. Bounds how finely structure can be layered. |
 | `IN_QTY_MAX` | Per-net odd number: m_neuron slot count and maximum s_neuron history. |
 | **Path rule** | Every input always has at least one path to every output. |
+| **Mix rule** | Every input-to-output path passes through at least `path_mix` v, s and m neurons each (default 2, set when a net is created). |
 | **Mutation** | Configurable "up to %" profiles for edits, op changes, growth and removal; neutral insertions; exact neutral pruning with cascades. |
 
 The full, normative definition lives in [`spec/`](spec/README.md).

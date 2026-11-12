@@ -12,7 +12,7 @@ from .types import AggOp, DepthType, Inversion, Priority, ValidationError, VOp
 
 MAGIC = b"JNET"
 FORMAT_VERSION = 1
-SPEC_VERSION = (0, 4, 0)
+SPEC_VERSION = (0, 5, 0)
 WIDTH = {DepthType.U16: 2, DepthType.U32: 4, DepthType.U64: 8}
 
 
@@ -107,6 +107,7 @@ def net_to_bytes(net: Net) -> bytes:
     w.u(net.in_qty_max, 4)
     w.u(net.n_inputs, 4)
     w.u(net.n_outputs, 4)
+    w.u(net.path_mix, 1)
     w.u(net.next_birth, 8)
     w.u(len(net.nodes), wd)
 
@@ -150,6 +151,7 @@ def net_from_bytes(data: bytes) -> Net:
     q = r.u(4)
     n_in = r.u(4)
     n_out = r.u(4)
+    path_mix = r.u(1)
     next_birth = r.u(8)
     count = r.u(wd)
     if count > depth_type.d_max:
@@ -183,7 +185,7 @@ def net_from_bytes(data: bytes) -> Net:
             raise ValidationError(f"jnet: neuron type byte {kind} out of range")
         nodes.append(Node(birth, born_gen, depth, neuron))
     r.done()
-    net = Net(priority, depth_type, q, n_in, n_out, nodes, next_birth)
+    net = Net(priority, depth_type, q, n_in, n_out, nodes, next_birth, path_mix)
     net.validate()
     return net
 

@@ -5,8 +5,8 @@ import struct
 import pytest
 from helpers import M, S, V, load_golden, make_net
 
-from jneuro import AggOp, DepthType, MNeuron, Net, Priority, ValidationError, VNeuron
-from jneuro.analysis import path_rule_ok
+from jneuro import AggOp, DepthType, MNeuron, Net, Priority, SNeuron, ValidationError, VNeuron
+from jneuro.analysis import connections, mix_ok, path_rule_ok
 from jneuro.jnet import load_net, net_from_bytes, net_to_bytes, save_net
 from jneuro.rng import Rng
 
@@ -27,8 +27,8 @@ def test_invalid_present():
 def test_exact_layout():
     """Bytes built by hand from spec/09, independent of the library's writer."""
     net = make_net(1, 1, 3, [(D16, V(0, "add", 0.5))])
-    body = b"JNET" + struct.pack("<HHHH", 1, 0, 4, 0)
-    body += struct.pack("<BBIIIQ", 0, 0, 3, 1, 1, 2)          # SPEED, U16, q, n_in, n_out, next_birth
+    body = b"JNET" + struct.pack("<HHHH", 1, 0, 5, 0)
+    body += struct.pack("<BBIIIBQ", 0, 0, 3, 1, 1, 0, 2)      # SPEED, U16, q, n_in, n_out, path_mix, next_birth
     body += struct.pack("<H", 2)                               # node_count (W = 2)
     body += struct.pack("<QQHB", 0, 0, 0, 0)                   # input node
     body += struct.pack("<QQHB", 1, 0, 0xFFFF, 1)              # output node, v neuron
@@ -42,7 +42,7 @@ def test_none_sentinel_and_widths():
         net = make_net(2, 1, 3, [(dmax, M("max", [0, 1, None])), ], depth_type=dt)
         b = net_to_bytes(net)
         assert b[-32 - w:-32] == none                          # last slot of the m neuron is empty
-        header = 4 + 8 + 2 + 12 + 8
+        header = 4 + 8 + 2 + 12 + 1 + 8
         nodes = 3 * (16 + w + 1) + (1 + 3 * w)
         assert len(b) == header + w + nodes + 32
 
@@ -97,7 +97,7 @@ def test_damage_detected():
 @pytest.mark.parametrize("n_in,n_out,q", [(1, 3, 3), (3, 2, 3), (2, 1, 5), (7, 2, 3), (30, 2, 3), (5, 1, 3)])
 def test_create_minimal(n_in, n_out, q):
     for dt in DepthType:
-        net = Net.create(n_in, n_out, dt, q, Priority.MEMORY, Rng(11))
+        net = Net.create(n_in, n_out, dt, q, Priority.MEMORY, Rng(11), path_mix=0)
         net.validate()
         assert path_rule_ok(net)
         assert net.next_birth == len(net.nodes)
@@ -116,7 +116,7 @@ def test_create_minimal(n_in, n_out, q):
 
 
 def test_create_tree_shape():
-    net = Net.create(7, 2, DepthType.U16, 3, Priority.SPEED, Rng(1))
+    net = Net.create(7, 2, DepthType.U16, 3, Priority.SPEED, Rng(1), path_mix=0)
     hidden = net.nodes[9:]
     assert len(hidden) == 3
     assert [h.neuron.slots for h in hidden] == [[0, 1, 2], [3, 4, 5], [6, None, None]]
@@ -145,3 +145,59 @@ def test_create_rejects_bad_params():
         Net.create(2, 1, DepthType.U16, 4, Priority.SPEED, Rng(1))
     with pytest.raises(ValidationError):
         Net.create(0, 1, DepthType.U16, 3, Priority.SPEED, Rng(1))
+
+
+def _path_counts(net):
+    """Every input-to-output path as a (v, s, m) count, by brute force."""
+    rd = {i: [] for i in range(len(net.nodes))}
+    for i, node in enumerate(net.nodes):
+        for c in connections(node.neuron):
+            rd[c].append(i)
+    out = []
+
+    def walk(i, counts):
+        n = net.nodes[i].neuron
+        if n is not None:
+            k = 0 if isinstance(n, VNeuron) else 1 if isinstance(n, SNeuron) else 2
+            counts = tuple(x + (j == k) for j, x in enumerate(counts))
+        if net.is_output(i):
+            out.append(counts)
+        for r in rd[i]:
+            walk(r, counts)
+
+    for i in range(net.n_inputs):
+        walk(i, (0, 0, 0))
+    return out
+
+
+@pytest.mark.parametrize("n_in,n_out,q", [(1, 3, 3), (3, 2, 3), (2, 1, 5), (7, 2, 3), (9, 1, 3), (30, 2, 3)])
+@pytest.mark.parametrize("mix", [1, 2, 3])
+def test_create_meets_path_mix(n_in, n_out, q, mix):
+    net = Net.create(n_in, n_out, DepthType.U16, q, Priority.SPEED, Rng(4), path_mix=mix)
+    net.validate()
+    assert net.path_mix == mix and mix_ok(net)
+    counts = _path_counts(net)
+    assert counts and all(min(c) >= mix for c in counts)
+    assert min(min(c) for c in counts) == mix                  # no more than needed
+    assert net_from_bytes(net_to_bytes(net)).path_mix == mix
+
+
+def test_create_default_path_mix_chain():
+    net = Net.create(9, 1, DepthType.U32, 3, Priority.SPEED, Rng(2))   # the blackjack shape
+    assert net.path_mix == 2
+    kinds = [type(n.neuron).__name__[0] for n in net.nodes[9:]]
+    assert kinds == ["V", "M", "M", "M", "M", "S", "S", "V"]  # output v, 3 tree m, merge m, s, s, v
+    assert set(_path_counts(net)) == {(2, 2, 2)}
+    net.reset()
+    assert net.step([float(i) for i in range(9)]) is not None
+
+
+def test_mix_rule_rejects():
+    net = make_net(1, 1, 3, [(D16, V(2, "add", 0.0)), (5, M("min", [0, None, None]))], path_mix=1)
+    assert not mix_ok(net)                                     # no s_neuron on the path
+    with pytest.raises(ValidationError):
+        net.validate()
+    net.path_mix = 0
+    net.validate()
+    with pytest.raises(ValidationError):
+        Net.create(2, 1, path_mix=256)

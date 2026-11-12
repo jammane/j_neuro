@@ -18,6 +18,10 @@ using the procedures of [08](08-rng.md), in exactly the order this document list
    the next attempt.
 4. **Path rule.** No mutation may leave an input without a path to an output
    ([03](03-net-structure.md#path-rule)).
+5. **Mix rule.** No mutation may leave a path with fewer than `path_mix` neurons of any type
+   ([03](03-net-structure.md#mix-rule)). Operation changes, edits of parameters, path
+   insertions, emptying slots, silenced removals, depth shifts and garbage collection can
+   never break it; rewiring, connecting a slot, slot fill and bypass are checked below.
 
 ## Mutation profile
 
@@ -68,16 +72,20 @@ At the start of each of phases 1–5:
 
 ```
 N = number of live neurons
-B = prob_round((u() * overall.max_pct) * N / 100.0)          # attempts this phase
+limit(pct) = 0.0                      if pct == 0
+             max(1.0, pct * N / 100.0) otherwise              # a nonzero cap is at least 1
+B = prob_round(u() * limit(overall.max_pct))                  # attempts this phase
 for T in [v, s, m]:
     if section T overrides max_pct:
-        cap[T] = prob_round((u() * T.max_pct) * N / 100.0)
+        cap[T] = prob_round(u() * limit(T.max_pct))
     else:
         cap[T] = unlimited
     used[T] = 0
 ```
 
-`max_pct` is the phase's field (`op_change_max_pct`, …). `N` is converted to binary64.
+`max_pct` is the phase's field (`op_change_max_pct`, …). `N` is converted to binary64 and
+`pct * N / 100.0` is evaluated left to right. Because a nonzero cap is never below 1, small
+nets can always mutate: a 1-neuron net with a 1% cap still gets up to 1 change.
 The phase then makes `B` attempts. An attempt whose neuron type `T` has `used[T] == cap[T]`
 is skipped. A successful attempt increments `used[T]`.
 
@@ -110,7 +118,7 @@ rewire:
     C = live nodes with depth < depth(this node), ≠ old, ascending id
     if C is empty: skip
     input = C[below(len(C))]
-    if the path rule is now broken: restore old; skip
+    if the path rule or the mix rule is now broken: restore old; skip
 ```
 
 **v — weight.**
@@ -153,6 +161,7 @@ repeat c times:
             neuron, ascending id
         if C is empty: continue
         slot i = C[below(len(C))]
+        if the mix rule is now broken: slot i = empty; continue
     else:
         if emptying slot i would break the path rule: continue
         slot i = empty
@@ -230,6 +239,8 @@ silencing v_neuron **W** (`mul`, weight `0.0`) so the net's outputs are unchange
      pick a node from `C` not yet chosen (`below` over the remaining list, ascending id);
      `op = choice(4)`.
 6. **Connect.** Append Q, then W (input Q). Set `R.slots[s] = W`.
+7. **Mix check.** If the mix rule is now broken, undo the attempt (remove Q and W, empty the
+   slot again, restore `next_birth`) and skip. The draws already made stay drawn.
 
 Why not into `min` receivers: `min` skips empty slots but not a real 0, so a silenced filler
 would change its output.

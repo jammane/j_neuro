@@ -45,7 +45,8 @@ class Node:
 
 class Net:
     def __init__(self, priority: Priority, depth_type: DepthType, in_qty_max: int,
-                 n_inputs: int, n_outputs: int, nodes: List[Node], next_birth: int):
+                 n_inputs: int, n_outputs: int, nodes: List[Node], next_birth: int,
+                 path_mix: int = 0):
         self.priority = Priority(priority)
         self.depth_type = DepthType(depth_type)
         self.in_qty_max = in_qty_max
@@ -53,6 +54,7 @@ class Net:
         self.n_outputs = n_outputs
         self.nodes = nodes
         self.next_birth = next_birth
+        self.path_mix = path_mix          # min v, s and m neurons on every path (spec/03)
         self._state = None
 
     @property
@@ -71,7 +73,7 @@ class Net:
     def copy(self) -> "Net":
         """Deep copy of the genome, in the reset state."""
         return Net(self.priority, self.depth_type, self.in_qty_max, self.n_inputs,
-                   self.n_outputs, _copy.deepcopy(self.nodes), self.next_birth)
+                   self.n_outputs, _copy.deepcopy(self.nodes), self.next_birth, self.path_mix)
 
     # ------------------------------------------------------------ .jnet files (spec/09)
 
@@ -183,9 +185,10 @@ class Net:
     @classmethod
     def create(cls, n_inputs: int, n_outputs: int, depth_type: DepthType = DepthType.U32,
                in_qty_max: int = 5, priority: Priority = Priority.BALANCED,
-               rng: Optional[Rng] = None) -> "Net":
-        """Minimal net in which every input reaches every output. Only the counts are required."""
+               rng: Optional[Rng] = None, path_mix: int = 2) -> "Net":
+        """Minimal net satisfying the path and mix rules (spec/03). Only the counts are required."""
         _check_params(n_inputs, n_outputs, in_qty_max)
+        _check_path_mix(path_mix)
         rng = Rng(0) if rng is None else rng
         depth_type = DepthType(depth_type)
         d_max = depth_type.d_max
@@ -196,39 +199,60 @@ class Net:
         def slots(ids):
             return list(ids) + [None] * (q - len(ids))
 
-        if n_inputs == 1:
-            for o in range(n_outputs):
-                op = VOp(rng.choice(4))
-                nodes[1 + o].neuron = VNeuron(0, Inversion.NONE, op, IDENTITY_WEIGHT[op])
-        else:
-            level = list(range(n_inputs))
-            hidden_levels = []
-            while len(level) > q:
-                nxt = []
-                for c in range(0, len(level), q):
+        # merge tree (n > Q)
+        level = list(range(n_inputs))
+        hidden_levels = []
+        while len(level) > q:
+            nxt = []
+            for c in range(0, len(level), q):
+                nid = len(nodes)
+                nodes.append(Node(nid, 0, 0, MNeuron(AggOp(rng.choice(4)), slots(level[c:c + q]))))
+                nxt.append(nid)
+            hidden_levels.append(nxt)
+            level = nxt
+        n_tree = len(hidden_levels)
+
+        # each output's chain: [merge m], extra m (min), s ..., v ...; the last one writes the output
+        chain = ["merge"] if len(level) > 1 else []
+        m_have = n_tree + 1 if chain else 0
+        chain += ["min"] * max(0, path_mix - m_have) + ["s"] * path_mix
+        chain += ["v"] * (path_mix if path_mix > 0 or chain else 1)
+        n_levels = n_tree + len(chain) - 1
+        step = d_max // (n_levels + 1)
+        for li, ids in enumerate(hidden_levels, start=1):
+            for nid in ids:
+                nodes[nid].depth = step * li
+        for o in range(n_outputs):
+            prev = level
+            for j, kind in enumerate(chain):
+                if kind == "merge":
+                    neuron = MNeuron(AggOp(rng.choice(4)), slots(prev))
+                elif kind == "min":
+                    neuron = MNeuron(AggOp.MIN, slots(prev))
+                elif kind == "s":
+                    neuron = SNeuron(prev[0], AggOp.MEAN, 1)
+                else:
+                    op = VOp(rng.choice(4))
+                    neuron = VNeuron(prev[0], Inversion.NONE, op, IDENTITY_WEIGHT[op])
+                if j == len(chain) - 1:
+                    nodes[n_inputs + o].neuron = neuron
+                else:
                     nid = len(nodes)
-                    nodes.append(Node(nid, 0, 0, MNeuron(AggOp(rng.choice(4)), slots(level[c:c + q]))))
-                    nxt.append(nid)
-                hidden_levels.append(nxt)
-                level = nxt
-            n_levels = len(hidden_levels)
-            for li, ids in enumerate(hidden_levels, start=1):
-                for nid in ids:
-                    nodes[nid].depth = (d_max // (n_levels + 1)) * li
-            for o in range(n_outputs):
-                nodes[n_inputs + o].neuron = MNeuron(AggOp(rng.choice(4)), slots(level))
+                    nodes.append(Node(nid, 0, step * (n_tree + 1 + j), neuron))
+                    prev = [nid]
         if len(nodes) > d_max:
             raise ValidationError(f"node cap: {len(nodes)} nodes exceed D_MAX of {depth_type.name}")
         for i, node in enumerate(nodes):
             node.birth = i
-        return cls(priority, depth_type, q, n_inputs, n_outputs, nodes, len(nodes))
+        return cls(priority, depth_type, q, n_inputs, n_outputs, nodes, len(nodes), path_mix)
 
     # ------------------------------------------------------------ validation (spec/03, spec/09)
 
     def validate(self):
         """Raise ValidationError unless every structural invariant holds."""
-        from .analysis import connections, path_rule_ok, reaching_output
+        from .analysis import connections, mix_ok, path_rule_ok, reaching_output
         _check_params(self.n_inputs, self.n_outputs, self.in_qty_max)
+        _check_path_mix(self.path_mix)
         n = len(self.nodes)
         if n < self.n_inputs + self.n_outputs:
             raise ValidationError("fewer nodes than inputs + outputs")
@@ -262,6 +286,8 @@ class Net:
             births.add(node.birth)
         if not path_rule_ok(self):
             raise ValidationError("path rule: some input has no path to some output")
+        if not mix_ok(self):
+            raise ValidationError(f"mix rule: some path has fewer than {self.path_mix} v, s or m neurons")
         reach = reaching_output(self)
         for i in range(self.n_inputs + self.n_outputs, n):
             if i not in reach:
@@ -292,6 +318,11 @@ def _check_params(n_inputs, n_outputs, q):
         raise ValidationError("in_qty_max must be an odd integer >= 3")
     if not isinstance(n_inputs, int) or n_inputs < 1 or not isinstance(n_outputs, int) or n_outputs < 1:
         raise ValidationError("n_inputs and n_outputs must be >= 1")
+
+
+def _check_path_mix(p):
+    if not isinstance(p, int) or isinstance(p, bool) or not 0 <= p <= 255:
+        raise ValidationError("path_mix must be an integer in [0, 255]")
 
 
 def _check_neuron(neuron, q, i):

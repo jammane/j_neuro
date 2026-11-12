@@ -20,15 +20,18 @@ public:
     using Outputs = std::map<std::uint64_t, std::vector<std::vector<double>>>;
 
     Population(std::uint32_t in_qty_max, std::uint32_t n_inputs, std::uint32_t n_outputs,
-               Priority priority = Priority::Balanced, std::optional<std::uint64_t> seed = std::nullopt)
-        : in_qty_max_(in_qty_max), n_inputs_(n_inputs), n_outputs_(n_outputs), priority_(priority),
-          seed_(seed ? *seed : fresh_seed()), rng_(seed_) {
+               Priority priority = Priority::Balanced, std::optional<std::uint64_t> seed = std::nullopt,
+               std::uint32_t path_mix = 2)
+        : in_qty_max_(in_qty_max), n_inputs_(n_inputs), n_outputs_(n_outputs), path_mix_(path_mix),
+          priority_(priority), seed_(seed ? *seed : fresh_seed()), rng_(seed_) {
         detail::check_params(n_inputs, n_outputs, in_qty_max);
+        detail::check_path_mix(path_mix);
     }
 
     // ---------------------------------------------------------------- inspection
     std::uint64_t generation() const { return generation_; }
     std::uint64_t seed() const { return seed_; }
+    std::uint32_t path_mix() const { return path_mix_; }
     std::size_t size() const { return nets_.size(); }
     std::vector<std::uint64_t> ids() const {
         std::vector<std::uint64_t> out;
@@ -46,7 +49,8 @@ public:
 
     /// Add a copy of an existing net with the population's parameters.
     std::uint64_t add(const Net<D>& net) {
-        if (net.in_qty_max != in_qty_max_ || net.n_inputs != n_inputs_ || net.n_outputs != n_outputs_)
+        if (net.in_qty_max != in_qty_max_ || net.n_inputs != n_inputs_ || net.n_outputs != n_outputs_ ||
+            net.path_mix != path_mix_)
             throw ValidationError("net parameters differ from the population's");
         net.validate();
         const std::uint64_t id = store(net.copy_genome());
@@ -124,7 +128,8 @@ public:
         d["spec_version"] = kSpecVersion;
         d["population"] = nlohmann::json{{"depth_type", to_string(Net<D>::depth_type)},
                                           {"in_qty_max", in_qty_max_}, {"n_inputs", n_inputs_},
-                                          {"n_outputs", n_outputs_}, {"priority", to_string(priority_)},
+                                          {"n_outputs", n_outputs_}, {"path_mix", path_mix_},
+                                          {"priority", to_string(priority_)},
                                           {"seed", seed_}};
         d["resumed_from"] = resumed_from_ ? nlohmann::json(*resumed_from_) : nlohmann::json(nullptr);
         d["profiles"] = profiles_;
@@ -145,6 +150,7 @@ public:
         w.u(in_qty_max_, 4);
         w.u(n_inputs_, 4);
         w.u(n_outputs_, 4);
+        w.u(path_mix_, 1);
         w.u(seed_, 8);
         for (std::uint64_t s : rng_.get_state()) w.u(s, 8);
         w.u(generation_, 8);
@@ -182,11 +188,12 @@ public:
         const auto q = static_cast<std::uint32_t>(r.u(4));
         const auto n_in = static_cast<std::uint32_t>(r.u(4));
         const auto n_out = static_cast<std::uint32_t>(r.u(4));
+        const auto path_mix = static_cast<std::uint32_t>(r.u(1));
         const std::uint64_t seed = r.u(8);
         std::array<std::uint64_t, 4> state;
         for (auto& s : state) s = r.u(8);
         const std::uint64_t generation = r.u(8), next_id = r.u(8), count = r.u(8);
-        Population pop(q, n_in, n_out, priority, seed);
+        Population pop(q, n_in, n_out, priority, seed, path_mix);
         pop.rng_.set_state(state);
         pop.generation_ = generation;
         pop.next_id_ = next_id;
@@ -207,7 +214,8 @@ public:
             if (!std::equal(h.begin(), h.end(), digest)) throw ValidationError("jpnet: hash mismatch for " + rel);
             AnyNet any = from_bytes(raw);
             auto* net = std::get_if<Net<D>>(&any);
-            if (!net || net->in_qty_max != q || net->n_inputs != n_in || net->n_outputs != n_out)
+            if (!net || net->in_qty_max != q || net->n_inputs != n_in || net->n_outputs != n_out ||
+                net->path_mix != path_mix)
                 throw ValidationError("jpnet: " + rel + " does not match the population's parameters");
             pop.nets_.emplace(id, std::move(*net));
         }
@@ -253,7 +261,8 @@ public:
         const bool resumed = d.contains("resumed_from") && !d.at("resumed_from").is_null();
         Population pop = resumed ? Population(3, 1, 1) : Population(pp.at("in_qty_max").get<std::uint32_t>(),
                        pp.at("n_inputs").get<std::uint32_t>(), pp.at("n_outputs").get<std::uint32_t>(),
-                       parse_priority(pp.at("priority").get<std::string>()), pp.at("seed").get<std::uint64_t>());
+                       parse_priority(pp.at("priority").get<std::string>()), pp.at("seed").get<std::uint64_t>(),
+                       pp.at("path_mix").get<std::uint32_t>());
         if (resumed) {
             const std::string h = d.at("resumed_from").get<std::string>();
             if (!base || base->snapshot_hash_ != h)
@@ -307,7 +316,7 @@ public:
     }
 
 private:
-    std::uint32_t in_qty_max_, n_inputs_, n_outputs_;
+    std::uint32_t in_qty_max_, n_inputs_, n_outputs_, path_mix_;
     Priority priority_;
     std::uint64_t seed_;
     Rng rng_;
@@ -322,7 +331,7 @@ private:
 
     /// Same nets, ids, generation and shared-stream state; an empty journal.
     Population copy_state() const {
-        Population p(in_qty_max_, n_inputs_, n_outputs_, priority_, seed_);
+        Population p(in_qty_max_, n_inputs_, n_outputs_, priority_, seed_, path_mix_);
         p.rng_.set_state(rng_.get_state());
         p.nets_ = nets_;
         for (auto& [k, v] : p.nets_) v.reset();
@@ -370,7 +379,7 @@ private:
         OpRng o = op_rng(mode, recorded);
         std::vector<std::uint64_t> ids;
         for (std::uint64_t i = 0; i < count; ++i)
-            ids.push_back(store(Net<D>::create(n_inputs_, n_outputs_, in_qty_max_, priority_, rng_of(o))));
+            ids.push_back(store(Net<D>::create(n_inputs_, n_outputs_, in_qty_max_, priority_, rng_of(o), path_mix_)));
         ops_.push_back(nlohmann::json{{"op", "create"}, {"count", count}, {"ids", ids}, {"seed", seed_json(o.seed)}});
         return ids;
     }

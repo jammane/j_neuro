@@ -9,8 +9,10 @@
 | `in_qty_max` | odd integer ≥ 3 | Slots per m_neuron; maximum s_neuron history length `k`. |
 | `n_inputs` | integer ≥ 1 | Number of input nodes. |
 | `n_outputs` | integer ≥ 1 | Number of output nodes. |
+| `path_mix` | integer 0–255 | Minimum number of v, of s and of m neurons on every input-to-output path ([mix rule](#mix-rule)). |
 
-`depth_type`, `in_qty_max`, `n_inputs` and `n_outputs` are fixed when the net is created.
+`depth_type`, `in_qty_max`, `n_inputs`, `n_outputs` and `path_mix` are fixed when the net is
+created.
 `priority` MAY be changed at any time without affecting results.
 
 **Node cap.** A net MUST NOT have more than `D_MAX` nodes in total (inputs, outputs and
@@ -65,40 +67,66 @@ depend on each other.
 - The rule is checked on load ([09](09-serialization.md)) and is preserved by every mutation
   ([06](06-mutation.md), [07](07-removal.md)).
 
+## Mix rule
+
+**Every path from an input node to an output node MUST pass through at least `path_mix`
+v_neurons, at least `path_mix` s_neurons and at least `path_mix` m_neurons.**
+
+- Paths are as in the path rule. A path's neurons are the neurons writing its non-input
+  nodes, the output node included.
+- `path_mix = 0` disables the rule. [`create`](#minimal-net) defaults to `path_mix = 2`.
+- The rule is checked on load ([09](09-serialization.md)) and is preserved by every mutation:
+  an attempt that would break it is skipped ([06](06-mutation.md), [07](07-removal.md)).
+- Check (informative): visit live nodes in ascending depth; give each input `(0, 0, 0)`; give
+  every other node the element-wise minimum of its connected nodes' triples, plus 1 in the
+  position of its own neuron type (v, s, m). Nodes with no connected predecessor get none. The
+  rule holds when every output's triple has all entries `≥ path_mix`.
+
 ## Minimal net
 
-`create(n_inputs, n_outputs, depth_type, in_qty_max, priority, rng)` builds the smallest net
-satisfying the path rule. The caller supplies only the input and output counts; no layers or
-starting neurons are specified by hand. All other arguments are optional, with these defaults
-(identical in both implementations): `depth_type = U32`, `in_qty_max = 5`,
-`priority = BALANCED`, `rng = seed(0)`. All new nodes get `born_gen = 0` and consecutive `birth` ids equal
-to their `id`.
+`create(n_inputs, n_outputs, depth_type, in_qty_max, priority, rng, path_mix)` builds the
+smallest net satisfying the path rule and the mix rule. The caller supplies only the input and
+output counts; no layers or starting neurons are specified by hand. All other arguments are
+optional, with these defaults (identical in both implementations): `depth_type = U32`,
+`in_qty_max = 5`, `priority = BALANCED`, `rng = seed(0)`, `path_mix = 2`. All new nodes get
+`born_gen = 0` and consecutive `birth` ids equal to their `id`.
 
-Let `n = n_inputs`, `Q = in_qty_max`.
+Let `n = n_inputs`, `Q = in_qty_max`, `P = path_mix`.
 
-**Case n = 1.** Each output is written by a v_neuron reading input 0, inversion `none`, a
-random op ([08](08-rng.md#derived-procedures)) from `[mul, div, add, sub]` and that op's identity weight
-([04](04-neurons.md#v_neuron)).
+**1. Merge tree.** Level 0 is the list of input nodes. While the current level has more than
+`Q` nodes: split it, in order, into consecutive chunks of `Q` (last chunk may be shorter). Each
+chunk becomes one new hidden node written by an m_neuron (random op from
+`[mean, median, min, max]`, [08](08-rng.md#derived-procedures)) whose slots `0…` connect to
+the chunk's nodes in order, remaining slots empty. The new nodes, in order, form the next
+level. Let `L` be the number of tree levels built (0 if `n ≤ Q`) and `F` the final level.
 
-**Case 2 ≤ n ≤ Q.** Each output is written by an m_neuron with a random aggregation op from
-`[mean, median, min, max]`, slots `0 … n−1` connected to inputs `0 … n−1` in order, remaining
-slots empty.
+**2. Chain.** Every output gets its own chain of neurons, in this order:
 
-**Case n > Q.** Build a merge tree:
+| Part | Count | Neuron | Reads |
+|---|---|---|---|
+| merge | 1 if `n ≥ 2`, else 0 | m_neuron, random op | slots `0…` = `F` in order |
+| extra m | `max(0, P − m_have)`, where `m_have = L + 1` if `n ≥ 2`, else 0 | m_neuron, op `min` | slot 0 = previous |
+| s | `P` | s_neuron, op `mean`, `k = 1` | previous |
+| v | `P`; but 1 if `P = 0` and the chain would otherwise be empty | v_neuron, inversion `none`, random op from `[mul, div, add, sub]`, that op's identity weight ([04](04-neurons.md#v_neuron)) | previous |
 
-1. Level 0 is the list of input nodes.
-2. While the current level has more than `Q` nodes: split it, in order, into consecutive
-   chunks of `Q` (last chunk may be shorter). Each chunk becomes one new hidden node written
-   by an m_neuron (random op) whose slots `0…` connect to the chunk's nodes in order. The new
-   nodes, in order, form the next level.
-3. Each output is written by an m_neuron (random op) whose slots connect, in order, to the
-   nodes of the final level.
+"Previous" is the node written by the chain's preceding neuron, or input 0 for the first one.
+The last neuron of the chain writes the output node; each other one writes a new hidden node.
+Every chain has the same length `K`.
 
-With `L` hidden levels, nodes of hidden level `ℓ` (1-based) get depth
-`(D_MAX / (L + 1)) * ℓ`, using integer division first.
+**Depths.** There are `H = L + K − 1` hidden levels: tree levels `1 … L`, then chain positions
+`L + 1 … L + K − 1`. A hidden node of level `ℓ` gets depth `(D_MAX / (H + 1)) * ℓ`, using
+integer division first.
 
 If the resulting net would exceed the node cap, `create` fails with a validation error.
 
-**RNG order.** Exactly one op choice is drawn per neuron, in this order: hidden neurons level
-by level (each level in chunk order), then output neurons in output order. Hidden node ids are
-assigned in the same order, after the output ids.
+**RNG order and ids.** One op choice is drawn for each merge-tree neuron (level by level, each
+level in chunk order), then for each output in output order, for each neuron of its chain in
+chain order: one op choice for the merge m_neuron and for each v_neuron; extra m_neurons and
+s_neurons draw nothing. Hidden node ids are assigned in the same order, after the output ids.
+
+Informative: the extra m_neurons (`min` over one connected slot) and the v_neurons return
+their input exactly. An s_neuron with `k = 1` returns its input minus the input of the
+previous step (its input itself on the first step after a reset), so a net built with `P ≥ 1`
+starts out seeing differences of its inputs. With `P = 0` the construction is the minimal net
+of spec 0.4: one v_neuron per output when `n = 1`, otherwise the merge tree plus one merge
+m_neuron per output.

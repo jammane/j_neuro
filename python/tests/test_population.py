@@ -16,7 +16,8 @@ PHASES = ["op_change_max_pct", "edit_max_pct", "growth_max_pct", "removal_max_pc
 
 
 def pop(seed=11, prio=Priority.BALANCED):
-    return Population(DepthType.U32, 5, 3, 2, prio, seed=seed)
+    """path_mix 0, so the hand-built nets below can be added."""
+    return Population(DepthType.U32, 5, 3, 2, prio, seed=seed, path_mix=0)
 
 
 def heavy(mode="fresh"):
@@ -59,7 +60,9 @@ def test_add_rejects_mismatch_and_copies():
         p.add(Net.create(2, 2, DepthType.U32, 5))
     with pytest.raises(ValidationError):
         p.add(Net.create(3, 2, DepthType.U32, 3))
-    net = Net.create(3, 2, DepthType.U32, 5)
+    with pytest.raises(ValidationError):
+        p.add(Net.create(3, 2, DepthType.U32, 5))              # path_mix 2, population has 0
+    net = Net.create(3, 2, DepthType.U32, 5, path_mix=0)
     i = p.add(net)
     net.nodes[3].neuron.op = AggOp((net.nodes[3].neuron.op + 1) % 4)
     assert net_to_bytes(p.get(i)) != net_to_bytes(net)
@@ -164,7 +167,7 @@ def test_generation_used_for_new_neurons():
 
 
 def session_with_everything(seed=None):
-    p = Population(DepthType.U32, 5, 3, 2, Priority.SPEED, seed=seed)
+    p = Population(DepthType.U32, 5, 3, 2, Priority.SPEED, seed=seed, path_mix=0)  # adds a hand-built net
     ids = p.create(3)
     p.create(2, rng_mode="shared")
     a = p.mutate(ids[0], heavy("fresh"), times=2)
@@ -301,3 +304,13 @@ def test_resumed_log_needs_base(tmp_path):
     other.save(tmp_path / "other.jpnet")
     with pytest.raises(ValidationError):
         Population.replay(q.run_log(), base=Population.load(tmp_path / "other.jpnet"))
+
+
+def test_default_path_mix_is_two():
+    p = Population(DepthType.U32, 3, 9, 1, Priority.SPEED, seed=5)
+    assert p.path_mix == 2
+    for i in p.create(3):
+        assert p.get(i).path_mix == 2
+    child = p.mutate(0, heavy("fresh"), times=5)
+    p.get(child).validate()                                    # mix rule preserved
+    assert Population.replay(p.run_log()).path_mix == 2

@@ -14,8 +14,8 @@
 
 namespace jneuro {
 
-inline constexpr const char* kSpecVersion = "0.4.0";
-inline constexpr std::uint16_t kSpecMajor = 0, kSpecMinor = 4, kSpecPatch = 0;
+inline constexpr const char* kSpecVersion = "0.5.0";
+inline constexpr std::uint16_t kSpecMajor = 0, kSpecMinor = 5, kSpecPatch = 0;
 inline constexpr std::uint16_t kFormatVersion = 1;
 
 /// Same MAJOR; while MAJOR is 0, also the same MINOR (spec/README).
@@ -42,9 +42,9 @@ void write_file(const std::filesystem::path& path, const Bytes& data);
 
 /// Minimal net from input/output counts (spec/03). Defaults match the Python implementation.
 AnyNet create(std::uint32_t n_inputs, std::uint32_t n_outputs, DepthType depth_type, std::uint32_t in_qty_max,
-              Priority priority, Rng& rng);
+              Priority priority, Rng& rng, std::uint32_t path_mix = 2);
 AnyNet create(std::uint32_t n_inputs, std::uint32_t n_outputs, DepthType depth_type = DepthType::U32,
-              std::uint32_t in_qty_max = 5, Priority priority = Priority::Balanced);
+              std::uint32_t in_qty_max = 5, Priority priority = Priority::Balanced, std::uint32_t path_mix = 2);
 
 namespace detail {
 
@@ -113,6 +113,7 @@ Bytes to_bytes(const Net<D>& net) {
     w.u(net.in_qty_max, 4);
     w.u(net.n_inputs, 4);
     w.u(net.n_outputs, 4);
+    w.u(net.path_mix, 1);
     w.u(net.next_birth, 8);
     w.u(net.nodes.size(), W);
     auto ref = [&](const std::optional<NodeId>& r) { w.u(r ? *r : none, W); };

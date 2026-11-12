@@ -34,12 +34,12 @@ def make_create():
     params = [(1, 1, "U16", 3), (1, 4, "U32", 5), (3, 2, "U64", 3), (5, 3, "U32", 5),
               (7, 2, "U16", 3), (30, 3, "U32", 3), (40, 1, "U64", 5), (6, 6, "U16", 7)]
     for i, (n_in, n_out, dt, q) in enumerate(params):
-        for seed in (0, 77):
+        for seed, mix in ((0, 2), (77, 0 if i % 2 == 0 else 3)):
             prio = list(Priority)[(i + seed) % 3].name
-            net = Net.create(n_in, n_out, DepthType[dt], q, Priority[prio], Rng(seed))
-            write("create", f"create_{n_in}x{n_out}_{dt}_q{q}_s{seed}",
+            net = Net.create(n_in, n_out, DepthType[dt], q, Priority[prio], Rng(seed), mix)
+            write("create", f"create_{n_in}x{n_out}_{dt}_q{q}_s{seed}_p{mix}",
                   {"kind": "create", "seed": seed, "n_inputs": n_in, "n_outputs": n_out,
-                   "depth_type": dt, "in_qty_max": q, "priority": prio,
+                   "depth_type": dt, "in_qty_max": q, "priority": prio, "path_mix": mix,
                    "expected_jnet": net_to_bytes(net).hex()})
 
 
@@ -87,7 +87,7 @@ def make_mutate():
     for i, (n_in, n_out, dt, q) in enumerate([(3, 2, "U16", 3), (6, 1, "U32", 5), (1, 2, "U64", 3),
                                               (9, 2, "U32", 3)]):
         r = Rng(500 + i)
-        net = Net.create(n_in, n_out, DepthType[dt], q, Priority.SPEED, r)
+        net = Net.create(n_in, n_out, DepthType[dt], q, Priority.SPEED, r, [2, 0, 3, 2][i])  # path_mix
         for gen in range(1, 13):
             net = mutate(net, grow, gen, r)
         parents.append(net)
@@ -99,6 +99,32 @@ def make_mutate():
             write("mutate", f"mutate_{pname}_p{pi}",
                   {"kind": "mutate", "seed": seed, "generation": gen,
                    "jnet": net_to_bytes(parent).hex(), "profile": prof.to_dict(),
+                   "expected_jnet": net_to_bytes(child).hex()})
+
+
+def make_mutate_mix():
+    """Small path_mix 1 net where each mix-rule check of spec/06 can trigger."""
+    from jneuro import AggOp, Inversion, MNeuron, Node, SNeuron, VNeuron, VOp
+    d = DepthType.U16.d_max
+    nodes = [Node(0, 0, 0), Node(1, 0, d, MNeuron(AggOp.MAX, [3, 4, None])),
+             Node(2, 0, 100, VNeuron(0, Inversion.NONE, VOp.MUL, 1.0)),
+             Node(3, 0, 200, SNeuron(2, AggOp.MEAN, 1)), Node(4, 0, 200, SNeuron(2, AggOp.MEAN, 1))]
+    net = Net(Priority.SPEED, DepthType.U16, 3, 1, 1, nodes, 5, 1)
+    net.validate()
+    fill = {"slot_fill": 1, "v_insert": 0, "s_insert": 0, "m_after_m": 0}
+    for name, over in [("bypass", {"removal_max_pct": 100.0, "min_age_for_removal": 0}),
+                       ("rewire", {"edit_max_pct": 100.0, "rewire_prob": 1.0}),
+                       ("slot_connect", {"edit_max_pct": 100.0, "rewire_prob": 0.0, "sigma_slots": 3.0}),
+                       ("slot_fill", {"growth_max_pct": 100.0, "add_method_weights": fill})]:
+        prof = Profile.default()
+        for f in PHASES:
+            prof.overall[f] = 0.0
+        prof.overall.update(over)
+        for seed in range(3):
+            child = mutate(net, prof, 10, Rng(seed))
+            write("mutate", f"mutate_mix_{name}_{seed}",
+                  {"kind": "mutate", "seed": seed, "generation": 10,
+                   "jnet": net_to_bytes(net).hex(), "profile": prof.to_dict(),
                    "expected_jnet": net_to_bytes(child).hex()})
 
 
@@ -163,6 +189,7 @@ if __name__ == "__main__":
         make_create()
     if what in ("mutate", "all"):
         make_mutate()
+        make_mutate_mix()
     if what in ("diversity", "all"):
         make_diversity()
     if what in ("population", "all"):

@@ -51,7 +51,7 @@ def genome(n_in, n_out, q, noninput, depth_type="U16"):
         "format": "j_neuro.genome",
         "spec_version": "0.3.0",
         "params": {"priority": "SPEED", "depth_type": depth_type, "in_qty_max": q,
-                   "n_inputs": n_in, "n_outputs": n_out},
+                   "n_inputs": n_in, "n_outputs": n_out, "path_mix": 0},
         "next_birth": len(nodes),
         "nodes": nodes,
     }
@@ -67,7 +67,7 @@ VOPS = {"mul": 0, "div": 1, "add": 2, "sub": 3}
 AGG = {"mean": 0, "median": 1, "min": 2, "max": 3}
 
 
-def encode(g, magic=b"JNET", fmt=1, ver=(0, 4, 0), dt_byte=None, pri_byte=None,
+def encode(g, magic=b"JNET", fmt=1, ver=(0, 5, 0), dt_byte=None, pri_byte=None,
            cut=0, extra=b"", bad_hash=False):
     p = g["params"]
     w = WIDTH[p["depth_type"]]
@@ -79,7 +79,8 @@ def encode(g, magic=b"JNET", fmt=1, ver=(0, 4, 0), dt_byte=None, pri_byte=None,
     b = magic + struct.pack("<HHHH", fmt, *ver)
     b += bytes([PRI[p["priority"]] if pri_byte is None else pri_byte,
                 DT[p["depth_type"]] if dt_byte is None else dt_byte])
-    b += struct.pack("<IIIQ", p["in_qty_max"], p["n_inputs"], p["n_outputs"], g["next_birth"])
+    b += struct.pack("<IIIBQ", p["in_qty_max"], p["n_inputs"], p["n_outputs"], p["path_mix"],
+                     g["next_birth"])
     b += u(len(g["nodes"]))
     for n in g["nodes"]:
         b += struct.pack("<QQ", n["birth"], n["born_gen"]) + n["depth"].to_bytes(w, "little")
@@ -197,6 +198,8 @@ bad("wrong_slot_count", "slot count", lambda g: g["nodes"][5]["neuron"]["slots"]
 bad("deeper_connection", "connection depth",
     lambda g: g["nodes"][3]["neuron"].__setitem__("input", 5))
 bad("path_rule", "path rule", lambda g: g["nodes"][5]["neuron"].__setitem__("slots", [3, None, None]))
+bad("mix_rule", "mix rule: no s_neuron on any path, path_mix 1",
+    lambda g: g["params"].__setitem__("path_mix", 1))
 bad("input_with_neuron", "input node has neuron",
     lambda g: g["nodes"][0].__setitem__("neuron", v(None, "add", 1.0)))
 bad("output_depth", "output depth", lambda g: g["nodes"][2].__setitem__("depth", 300))
@@ -206,7 +209,7 @@ bad("birth_too_large", "next_birth", lambda g: g.__setitem__("next_birth", 5))
 bad("magic", "magic", same, magic=b"XNET")
 bad("format_version", "format version", same, fmt=2)
 bad("major_version", "spec_version", same, ver=(1, 0, 0))
-bad("minor_version_pre_1", "spec_version 0.x minor", same, ver=(0, 3, 0))
+bad("minor_version_pre_1", "spec_version 0.x minor", same, ver=(0, 4, 0))
 bad("truncated", "truncated", same, cut=1)
 bad("trailing_bytes", "trailing bytes", same, extra=b"\x00")
 bad("checksum", "checksum", same, bad_hash=True)

@@ -39,7 +39,7 @@ listed priority.
 
 ```json
 {"kind": "create", "seed": 1, "n_inputs": 7, "n_outputs": 2,
- "depth_type": "U16", "in_qty_max": 3, "priority": "MEMORY",
+ "depth_type": "U16", "in_qty_max": 3, "priority": "MEMORY", "path_mix": 2,
  "expected_jnet": "4a4e4554…"}
 ```
 
@@ -94,7 +94,9 @@ The golden set SHOULD include at least:
 - Every aggregation op for m_neurons with empty slots, and for s_neurons during warm-up
   (`min` skipping unfilled entries).
 - Compensated mean cases where naive summation would round differently, and overflow cases.
-- Minimal-net creation for `n_inputs` = 1, ≤ `in_qty_max`, and > `in_qty_max`.
+- Minimal-net creation for `n_inputs` = 1, ≤ `in_qty_max`, and > `in_qty_max`, with
+  `path_mix` 0 and above.
+- Every mix-rule skip: rewire, slot connect, slot fill and bypass.
 - Every addition method, including skipped attempts (no gap, no eligible receiver, cap
   reached).
 - Bypass, silenced removal with downstream cascade stopping at a `min` reader and at a

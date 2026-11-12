@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import math
 
-from .analysis import connections, is_immune, legal_depth_range, path_rule_ok, readers
+from .analysis import connections, is_immune, legal_depth_range, mix_ok, path_rule_ok, readers
 from .net import MNeuron, Net, Node, SNeuron, VNeuron
 from .removal import (bypass, compact, garbage_collect, has_min_reader, is_identity,
                       is_silenced, remove_silenced)
@@ -143,11 +143,15 @@ class _Mutation:
     def budget(self, field):
         rng = self.rng
         n = float(len(self.live_neurons()))
-        b = rng.prob_round((rng.u() * self.p.overall[field]) * n / 100.0)
+
+        def limit(pct):                       # a nonzero cap is at least 1 (spec/06)
+            return 0.0 if pct == 0 else max(1.0, pct * n / 100.0)
+
+        b = rng.prob_round(rng.u() * limit(self.p.overall[field]))
         caps = {}
         for t in TYPES:
             if self.p.has_override(field, t):
-                caps[t] = rng.prob_round((rng.u() * self.p.per_type[t][field]) * n / 100.0)
+                caps[t] = rng.prob_round(rng.u() * limit(self.p.per_type[t][field]))
             else:
                 caps[t] = None
         return b, caps, {t: 0 for t in TYPES}
@@ -238,6 +242,9 @@ class _Mutation:
                 if not cands:
                     continue
                 n.slots[i] = cands[rng.below(len(cands))]
+                if not mix_ok(self.net, self.removed):
+                    n.slots[i] = None
+                    continue
                 changed = True
             else:
                 old = n.slots[i]
@@ -258,7 +265,7 @@ class _Mutation:
         if not cands:
             return None
         n.input = cands[rng.below(len(cands))]
-        if not path_rule_ok(net, self.removed):
+        if not path_rule_ok(net, self.removed) or not mix_ok(net, self.removed):
             n.input = old
             return None
         return t
@@ -360,6 +367,11 @@ class _Mutation:
         net.nodes.append(Node(net.next_birth + 1, self.gen, d_w, VNeuron(q_id, Inversion.NONE, VOp.MUL, 0.0)))
         net.next_birth += 2
         rn.slots[slot] = w_id
+        if not mix_ok(net, self.removed):                 # undo: the new paths break the mix rule
+            rn.slots[slot] = None
+            del net.nodes[q_id:]
+            net.next_birth -= 2
+            return None
         return t
 
     # phase 4
@@ -373,7 +385,13 @@ class _Mutation:
         if self.gen - net.nodes[nid].born_gen < self.p.effective("min_age_for_removal", t):
             return None
         if is_identity(net, nid):
+            saved = [(r, copy.deepcopy(net.nodes[r].neuron)) for r in readers(net, self.removed)[nid]]
             bypass(net, nid, self.removed)
+            if not mix_ok(net, self.removed):             # undo: paths through it would lose a v
+                for r, neuron in saved:
+                    net.nodes[r].neuron = neuron
+                self.removed.discard(nid)
+                return None
             return t
         if not is_silenced(net, nid):
             return None

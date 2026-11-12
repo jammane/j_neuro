@@ -76,10 +76,11 @@ private:
 
     void run_phase(const std::string& field, Attempt attempt) {
         const double n = static_cast<double>(live_neurons().size());
-        const std::int64_t b = rng_.prob_round((rng_.u() * p_.overall(field)) * n / 100.0);
+        auto limit = [n](double pct) { return pct == 0 ? 0.0 : std::max(1.0, pct * n / 100.0); };  // spec/06
+        const std::int64_t b = rng_.prob_round(rng_.u() * limit(p_.overall(field)));
         for (NeuronType t : kTypes) {
             if (p_.has_override(field, t))
-                caps_[ti(t)] = rng_.prob_round((rng_.u() * p_.override_value(field, t)) * n / 100.0);
+                caps_[ti(t)] = rng_.prob_round(rng_.u() * limit(p_.override_value(field, t)));
             else
                 caps_[ti(t)] = std::nullopt;
             used_[ti(t)] = 0;
@@ -171,6 +172,10 @@ private:
                         cands.push_back(j);
                 if (cands.empty()) continue;
                 slots[i] = pick(cands);
+                if (!mix_ok(net_, &removed_)) {
+                    slots[i] = std::nullopt;
+                    continue;
+                }
                 changed = true;
             } else {
                 const auto old = slots[i];
@@ -203,7 +208,7 @@ private:
             if (net_.nodes[j].depth < my_depth && (!old || j != *old)) cands.push_back(j);
         if (cands.empty()) return std::nullopt;
         input_ref(id) = pick(cands);
-        if (!path_rule_ok(net_, &removed_)) {
+        if (!path_rule_ok(net_, &removed_) || !mix_ok(net_, &removed_)) {
             input_ref(id) = old;
             return std::nullopt;
         }
@@ -328,6 +333,13 @@ private:
         append(Node<D>{net_.next_birth + 1, gen_, static_cast<D>(d_w), VNeuron{q_id, Inversion::None, VOp::Mul, 0.0}});
         net_.next_birth += 2;
         std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = w_id;
+        if (!mix_ok(net_, &removed_)) {  // undo: the new paths break the mix rule
+            std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = std::nullopt;
+            net_.nodes.resize(q_id);
+            removed_.resize(q_id);
+            net_.next_birth -= 2;
+            return std::nullopt;
+        }
         return t;
     }
 
@@ -340,7 +352,15 @@ private:
         const double age = static_cast<double>(gen_) - static_cast<double>(net_.nodes[*id].born_gen);
         if (age < p_.effective("min_age_for_removal", t)) return std::nullopt;
         if (is_identity(net_, *id)) {
+            std::vector<std::pair<NodeId, Neuron>> saved;
+            const auto rd = readers(net_, &removed_);
+            for (NodeId r : rd[*id]) saved.emplace_back(r, *net_.nodes[r].neuron);
             bypass(net_, *id, removed_);
+            if (!mix_ok(net_, &removed_)) {  // undo: paths through it would lose a v
+                for (auto& [r, n] : saved) net_.nodes[r].neuron = std::move(n);
+                removed_[*id] = false;
+                return std::nullopt;
+            }
             return t;
         }
         if (!is_silenced(net_, *id)) return std::nullopt;

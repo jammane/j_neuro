@@ -81,6 +81,6 @@ per lane, each in its own fixed order. Independent episodes or nets can also run
 
 1. Unit tests per module in each language.
 2. Golden cases (`tests/golden/`) run by both suites, compared bit-exactly.
-3. Property tests: random genomes/mutations checked for invariants (path rule, depth rules,
+3. Property tests: random genomes/mutations checked for invariants (path rule, mix rule, depth rules,
    no dead nodes) and for exact output preservation by neutral operations (v insertion,
    bypass, silenced removal, depth shifts, GC).

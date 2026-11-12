@@ -67,6 +67,7 @@ public:
     std::uint32_t in_qty_max = 5;
     std::uint32_t n_inputs = 0;
     std::uint32_t n_outputs = 0;
+    std::uint32_t path_mix = 0;  ///< min v, s and m neurons on every path (spec/03 mix rule), 0..255
     std::uint64_t next_birth = 0;
     std::vector<Node<D>> nodes;
 
@@ -74,9 +75,9 @@ public:
     bool is_output(NodeId i) const { return i >= n_inputs && i < n_inputs + n_outputs; }
     bool is_hidden(NodeId i) const { return i >= n_inputs + n_outputs; }
 
-    /// Minimal net satisfying the path rule (spec/03).
+    /// Minimal net satisfying the path and mix rules (spec/03).
     static Net create(std::uint32_t n_inputs, std::uint32_t n_outputs, std::uint32_t in_qty_max,
-                      Priority priority, Rng& rng);
+                      Priority priority, Rng& rng, std::uint32_t path_mix = 2);
 
     /// Throws ValidationError unless every invariant of spec/03 and spec/09 holds.
     void validate() const;

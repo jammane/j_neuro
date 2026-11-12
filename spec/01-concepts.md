@@ -28,6 +28,7 @@ Nets are not trained by gradients; they change by **mutation**.
 | **Reader** | Neuron that has a connection to a given node. |
 | **Path** | Sequence of connections from one node to a deeper node. |
 | **Path rule** | Every input node has at least one path to every output node ([03](03-net-structure.md#path-rule)). |
+| **Mix rule** | Every input-to-output path passes through at least `path_mix` v, s and m neurons each ([03](03-net-structure.md#mix-rule)). |
 | **Aggregation op** | One of `mean`, `median`, `min`, `max` ([04](04-neurons.md#aggregate)). |
 | **Priority** | Per-net secondary goal: `SPEED`, `MEMORY` or `BALANCED`. Affects storage and caching only. |
 | **DEPTH** | Per-net integer type of depth values: `U16`, `U32`, `U64`. `D_MAX` is its maximum value. |

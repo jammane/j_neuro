@@ -4,6 +4,9 @@
 
 #include <jneuro/net.hpp>
 
+#include <algorithm>
+#include <array>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -82,6 +85,38 @@ bool path_rule_ok(const Net<D>& net, const Removed* removed = nullptr,
         for (NodeId o = net.n_inputs; o < net.n_inputs + net.n_outputs; ++o)
             if (!seen[o]) return false;
     }
+    return true;
+}
+
+/// Mix rule (spec/03): every input-to-output path has >= path_mix v, s and m neurons.
+template <class D>
+bool mix_ok(const Net<D>& net, const Removed* removed = nullptr) {
+    if (net.path_mix == 0) return true;
+    const std::size_t n = net.nodes.size();
+    std::vector<NodeId> order;
+    for (NodeId i = 0; i < n; ++i)
+        if (detail::alive(removed, i)) order.push_back(i);
+    std::stable_sort(order.begin(), order.end(),
+                     [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
+    using Triple = std::array<std::uint64_t, 3>;  // fewest (v, s, m) from any input
+    std::vector<std::optional<Triple>> fewest(n);
+    for (NodeId i : order) {
+        const auto& neuron = net.nodes[i].neuron;
+        if (!neuron) { fewest[i] = Triple{0, 0, 0}; continue; }
+        std::optional<Triple> best;
+        for (NodeId c : connections(*neuron)) {
+            if (!detail::alive(removed, c) || !fewest[c]) continue;
+            if (!best) best = fewest[c];
+            else for (int k = 0; k < 3; ++k) (*best)[k] = std::min((*best)[k], (*fewest[c])[k]);
+        }
+        if (!best) continue;
+        ++(*best)[neuron->index()];  // variant order: VNeuron, SNeuron, MNeuron
+        fewest[i] = best;
+    }
+    for (NodeId o = net.n_inputs; o < net.n_inputs + net.n_outputs; ++o)
+        if (detail::alive(removed, o) && fewest[o])
+            for (int k = 0; k < 3; ++k)
+                if ((*fewest[o])[k] < net.path_mix) return false;
     return true;
 }
 

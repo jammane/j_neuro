@@ -115,6 +115,7 @@ Net<D> parse_net(detail::Reader& r, Priority priority) {
     net.in_qty_max = static_cast<std::uint32_t>(r.u(4));
     net.n_inputs = static_cast<std::uint32_t>(r.u(4));
     net.n_outputs = static_cast<std::uint32_t>(r.u(4));
+    net.path_mix = static_cast<std::uint32_t>(r.u(1));
     net.next_birth = r.u(8);
     const std::uint64_t count = r.u(W);
     if (count > Net<D>::d_max) throw ValidationError("jnet: more than D_MAX nodes");
@@ -175,19 +176,19 @@ AnyNet from_bytes(const Bytes& data) {
 AnyNet load_net(const std::filesystem::path& path) { return from_bytes(read_file(path)); }
 
 AnyNet create(std::uint32_t n_inputs, std::uint32_t n_outputs, DepthType depth_type, std::uint32_t q,
-              Priority priority, Rng& rng) {
+              Priority priority, Rng& rng, std::uint32_t path_mix) {
     switch (depth_type) {
-        case DepthType::U16: return Net<std::uint16_t>::create(n_inputs, n_outputs, q, priority, rng);
-        case DepthType::U32: return Net<std::uint32_t>::create(n_inputs, n_outputs, q, priority, rng);
-        case DepthType::U64: return Net<std::uint64_t>::create(n_inputs, n_outputs, q, priority, rng);
+        case DepthType::U16: return Net<std::uint16_t>::create(n_inputs, n_outputs, q, priority, rng, path_mix);
+        case DepthType::U32: return Net<std::uint32_t>::create(n_inputs, n_outputs, q, priority, rng, path_mix);
+        case DepthType::U64: return Net<std::uint64_t>::create(n_inputs, n_outputs, q, priority, rng, path_mix);
     }
     throw ValidationError("unknown depth_type");
 }
 
 AnyNet create(std::uint32_t n_inputs, std::uint32_t n_outputs, DepthType depth_type, std::uint32_t q,
-              Priority priority) {
+              Priority priority, std::uint32_t path_mix) {
     Rng rng(0);
-    return create(n_inputs, n_outputs, depth_type, q, priority, rng);
+    return create(n_inputs, n_outputs, depth_type, q, priority, rng, path_mix);
 }
 
 }  // namespace jneuro

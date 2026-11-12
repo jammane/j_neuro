@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <functional>
 #include <limits>
 
 using namespace th;
@@ -33,8 +34,8 @@ TEST_CASE("exact layout") {
     // Bytes built by hand from spec/09, independent of the library's writer.
     auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(0, VOp::Add, 0.5)}});
     Bytes b = {'J', 'N', 'E', 'T'};
-    put(b, 1, 2); put(b, 0, 2); put(b, 4, 2); put(b, 0, 2);
-    put(b, 0, 1); put(b, 0, 1); put(b, 3, 4); put(b, 1, 4); put(b, 1, 4); put(b, 2, 8);
+    put(b, 1, 2); put(b, 0, 2); put(b, 5, 2); put(b, 0, 2);
+    put(b, 0, 1); put(b, 0, 1); put(b, 3, 4); put(b, 1, 4); put(b, 1, 4); put(b, 0, 1); put(b, 2, 8);
     put(b, 2, 2);
     put(b, 0, 8); put(b, 0, 8); put(b, 0, 2); put(b, 0, 1);
     put(b, 1, 8); put(b, 0, 8); put(b, 0xFFFF, 2); put(b, 1, 1);
@@ -50,7 +51,7 @@ TEST_CASE("none sentinel and widths") {
         auto net = make_net<D>(2, 1, 3, {{std::numeric_limits<D>::max(), M(AggOp::Max, {0, 1, none})}});
         Bytes b = to_bytes(net);
         for (std::size_t i = 0; i < w; ++i) CHECK(b[b.size() - 32 - w + i] == 0xFF);
-        CHECK(b.size() == 34 + w + 3 * (16 + w + 1) + (1 + 3 * w) + 32);
+        CHECK(b.size() == 35 + w + 3 * (16 + w + 1) + (1 + 3 * w) + 32);
     };
     check(std::uint16_t{}, 2);
     check(std::uint32_t{}, 4);
@@ -106,7 +107,7 @@ TEST_CASE("damage detected") {
 template <class D>
 static void check_create(std::uint32_t n_in, std::uint32_t n_out, std::uint32_t q) {
     Rng r(11);
-    auto net = Net<D>::create(n_in, n_out, q, Priority::Memory, r);
+    auto net = Net<D>::create(n_in, n_out, q, Priority::Memory, r, 0);
     net.validate();
     CHECK(path_rule_ok(net));
     CHECK(net.next_birth == net.nodes.size());
@@ -138,7 +139,7 @@ TEST_CASE("create minimal") {
 
 TEST_CASE("create tree shape") {
     Rng r(1);
-    auto net = Net<std::uint16_t>::create(7, 2, 3, Priority::Speed, r);
+    auto net = Net<std::uint16_t>::create(7, 2, 3, Priority::Speed, r, 0);
     REQUIRE(net.nodes.size() == 12);
     CHECK(std::get<MNeuron>(*net.nodes[9].neuron).slots == Slots{0, 1, 2});
     CHECK(std::get<MNeuron>(*net.nodes[10].neuron).slots == Slots{3, 4, 5});
@@ -168,4 +169,65 @@ TEST_CASE("create rejects bad params") {
     Rng r(1);
     CHECK_THROWS_AS(Net<std::uint16_t>::create(2, 1, 4, Priority::Speed, r), ValidationError);
     CHECK_THROWS_AS(Net<std::uint16_t>::create(0, 1, 3, Priority::Speed, r), ValidationError);
+}
+
+// ---------------------------------------------------------------- mix rule (spec/03)
+
+/// Every input-to-output path as a (v, s, m) count, by brute force.
+template <class D>
+static std::vector<std::array<int, 3>> path_counts(const Net<D>& net) {
+    std::vector<std::vector<NodeId>> rd(net.nodes.size());
+    for (NodeId i = 0; i < net.nodes.size(); ++i)
+        for (NodeId c : connections(net.nodes[i].neuron)) rd[c].push_back(i);
+    std::vector<std::array<int, 3>> out;
+    std::function<void(NodeId, std::array<int, 3>)> walk = [&](NodeId i, std::array<int, 3> c) {
+        if (net.nodes[i].neuron) ++c[net.nodes[i].neuron->index()];
+        if (net.is_output(i)) out.push_back(c);
+        for (NodeId r : rd[i]) walk(r, c);
+    };
+    for (NodeId i = 0; i < net.n_inputs; ++i) walk(i, {0, 0, 0});
+    return out;
+}
+
+TEST_CASE("create meets path_mix") {
+    std::vector<std::array<std::uint32_t, 3>> cases = {{1, 3, 3}, {3, 2, 3}, {2, 1, 5}, {7, 2, 3}, {9, 1, 3}, {30, 2, 3}};
+    for (auto& c : cases) {
+        for (std::uint32_t mix : {1u, 2u, 3u}) {
+            Rng r(4);
+            auto net = Net<std::uint16_t>::create(c[0], c[1], c[2], Priority::Speed, r, mix);
+            net.validate();
+            CHECK(net.path_mix == mix);
+            CHECK(mix_ok(net));
+            const auto counts = path_counts(net);
+            REQUIRE(!counts.empty());
+            int lowest = 1 << 30;
+            for (auto& k : counts) {
+                CHECK(std::min({k[0], k[1], k[2]}) >= static_cast<int>(mix));
+                lowest = std::min(lowest, std::min({k[0], k[1], k[2]}));
+            }
+            CHECK(lowest == static_cast<int>(mix));
+            CHECK(std::get<Net<std::uint16_t>>(from_bytes(to_bytes(net))).path_mix == mix);
+        }
+    }
+}
+
+TEST_CASE("create default path_mix chain") {
+    Rng r(2);
+    auto net = Net<std::uint32_t>::create(9, 1, 3, Priority::Speed, r);  // the blackjack shape
+    CHECK(net.path_mix == 2);
+    std::string kinds;
+    for (std::size_t i = 9; i < net.nodes.size(); ++i) kinds += "VSM"[net.nodes[i].neuron->index()];
+    CHECK(kinds == "VMMMMSSV");  // output v, 3 tree m, merge m, s, s, v
+    for (auto& k : path_counts(net)) CHECK(k == std::array<int, 3>{2, 2, 2});
+}
+
+TEST_CASE("mix rule rejects") {
+    auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(2, VOp::Add, 0.0)}, {5, M(AggOp::Min, {0, none, none})}},
+                                       Priority::Speed, 1);
+    CHECK_FALSE(mix_ok(net));  // no s_neuron on the path
+    CHECK_THROWS_AS(net.validate(), ValidationError);
+    net.path_mix = 0;
+    net.validate();
+    Rng r(0);
+    CHECK_THROWS_AS(Net<std::uint16_t>::create(2, 1, 3, Priority::Speed, r, 256), ValidationError);
 }

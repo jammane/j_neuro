@@ -10,8 +10,9 @@ static constexpr std::uint32_t D32 = 0xFFFFFFFFu;
 static const char* PHASES[] = {"op_change_max_pct", "edit_max_pct", "growth_max_pct",
                                "removal_max_pct", "depth_shift_max_pct"};
 
+/// path_mix 0, so hand-built nets can be added.
 static Pop pop(std::optional<std::uint64_t> seed = 11, Priority prio = Priority::Balanced) {
-    return Pop(5, 3, 2, prio, seed);
+    return Pop(5, 3, 2, prio, seed, 0);
 }
 
 static Profile heavy(const std::string& mode = "fresh") {
@@ -50,7 +51,8 @@ TEST_CASE("pop: add rejects mismatch and copies") {
     Rng r(0);
     CHECK_THROWS_AS(p.add(N32::create(2, 2, 5, Priority::Speed, r)), ValidationError);
     CHECK_THROWS_AS(p.add(N32::create(3, 2, 3, Priority::Speed, r)), ValidationError);
-    auto net = N32::create(3, 2, 5, Priority::Speed, r);
+    CHECK_THROWS_AS(p.add(N32::create(3, 2, 5, Priority::Speed, r)), ValidationError);  // path_mix 2 vs 0
+    auto net = N32::create(3, 2, 5, Priority::Speed, r, 0);
     auto i = p.add(net);
     auto& m = std::get<MNeuron>(*net.nodes[3].neuron);
     m.op = static_cast<AggOp>((static_cast<int>(m.op) + 1) % 4);
@@ -172,7 +174,7 @@ TEST_CASE("pop: generation used for new neurons") {
 }
 
 static Pop session_with_everything() {
-    Pop p(5, 3, 2, Priority::Speed, std::nullopt);
+    Pop p(5, 3, 2, Priority::Speed, std::nullopt, 0);  // adds a hand-built net
     auto ids = p.create(3);
     p.create(2, "shared");
     auto a = p.mutate(ids[0], heavy("fresh"), 2);
@@ -274,7 +276,7 @@ struct TempDir {
 };
 
 Pop seeded_session(std::uint64_t seed) {
-    Pop p(5, 3, 2, Priority::Speed, seed);
+    Pop p(5, 3, 2, Priority::Speed, seed, 0);  // adds a hand-built net
     auto ids = p.create(3);
     auto a = p.mutate(ids[0], heavy("fresh"), 2);
     p.next_generation();
@@ -363,4 +365,13 @@ TEST_CASE("pop: resumed log needs base") {
     other.save(d.path / "other.jpnet");
     auto wrong = Pop::load(d.path / "other.jpnet");
     CHECK_THROWS_AS(Pop::replay(q.run_log(), &wrong), ValidationError);
+}
+
+TEST_CASE("pop: default path_mix is two") {
+    Population<std::uint32_t> p(3, 9, 1, Priority::Speed, 5);
+    CHECK(p.path_mix() == 2);
+    for (auto i : p.create(3)) CHECK(p.get(i).path_mix == 2);
+    auto child = p.mutate(0, heavy("fresh"), 5);
+    p.get(child).validate();  // mix rule preserved
+    CHECK(Population<std::uint32_t>::replay(p.run_log()).path_mix() == 2);
 }

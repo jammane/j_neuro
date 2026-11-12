@@ -38,9 +38,11 @@ inline Neuron M(AggOp op, Slots slots) { return MNeuron{op, std::move(slots)}; }
 
 template <class D>
 Net<D> make_net(std::uint32_t n_in, std::uint32_t n_out, std::uint32_t q,
-                std::vector<std::pair<D, Neuron>> noninput, Priority prio = Priority::Speed) {
+                std::vector<std::pair<D, Neuron>> noninput, Priority prio = Priority::Speed,
+                std::uint32_t path_mix = 0) {
     Net<D> net;
     net.priority = prio;
+    net.path_mix = path_mix;
     net.in_qty_max = q;
     net.n_inputs = n_in;
     net.n_outputs = n_out;

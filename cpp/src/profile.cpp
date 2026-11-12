@@ -143,7 +143,7 @@ json Profile::to_json() const {
         }
     }
     o["format"] = "j_neuro.profile";
-    o["spec_version"] = "0.4.0";
+    o["spec_version"] = "0.5.0";
     o["overall"] = overall;
     for (std::size_t t = 0; t < 3; ++t) {
         json sec = json::object();

@@ -7,10 +7,12 @@ the trainer the outputs of every net, keyed by id, and operations to apply to ne
 ## Construction
 
 ```
-Population(depth_type, in_qty_max, n_inputs, n_outputs, priority = BALANCED, seed = none)
+Population(depth_type, in_qty_max, n_inputs, n_outputs, priority = BALANCED, seed = none,
+           path_mix = 2)
 ```
 
-- Every net in the population has exactly these four parameters; mixed nets are rejected.
+- Every net in the population has exactly these five parameters (`depth_type`, `in_qty_max`,
+  `n_inputs`, `n_outputs`, `path_mix`); mixed nets are rejected.
 - `priority` is the population's speed/memory choice for `evaluate` (below). Each net keeps
   its own priority for its own evaluation.
 - `seed` seeds the population's **shared RNG stream**. If omitted, a seed is taken from the
@@ -40,7 +42,7 @@ is exactly replayable from its run log (below).
 
 | Operation | Effect |
 |---|---|
-| `create(count, rng_mode)` → ids | Adds `count` minimal nets ([03](03-net-structure.md#minimal-net)), all drawn from one operation RNG, in id order. |
+| `create(count, rng_mode)` → ids | Adds `count` minimal nets with the population's `path_mix` ([03](03-net-structure.md#minimal-net)), all drawn from one operation RNG, in id order. |
 | `add(net)` → id | Adds a copy of an existing net. Rejected if its parameters differ from the population's. |
 | `get(id)` | The net itself (for direct inspection or stepping). |
 | `ids()`, `size()`, `generation` | Inspection. |

@@ -19,7 +19,7 @@ python3 -m venv .venv
 | `jneuro.types` | enums, `ValidationError` |
 | `jneuro.numerics`, `jneuro.rng`, `jneuro.aggregate` | exact float helpers, shared RNG, aggregation |
 | `jneuro.net` | `Net`, `Node`, `VNeuron`, `SNeuron`, `MNeuron`; `Net.create`, `step`, `reset`, `validate` |
-| `jneuro.analysis` | path rule, immunity, depth ranges |
+| `jneuro.analysis` | path rule, mix rule, immunity, depth ranges |
 | `jneuro.mutate`, `jneuro.removal` | `Profile`, `mutate`; removal and compaction |
 | `jneuro.jnet` | `.jnet` files: `net_to_bytes`, `net_from_bytes`, `save_net`, `load_net` (also `net.save`, `Net.load`) |
 | `jneuro.population` | `Population`: nets by id, `evaluate`, operations, `save`/`load` (`.jpnet`), `replay` |

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Set, Tuple
 
-from .net import MNeuron, Net
+from .net import MNeuron, Net, SNeuron, VNeuron
 
 
 def connections(neuron) -> List[int]:
@@ -74,6 +74,34 @@ def path_rule_ok(net: Net, removed: Optional[Set[int]] = None, cut: Optional[int
                     seen.add(r)
                     stack.append(r)
         if any(o not in seen for o in outputs):
+            return False
+    return True
+
+
+def mix_ok(net: Net, removed: Optional[Set[int]] = None) -> bool:
+    """Mix rule (spec/03): every input-to-output path has >= path_mix v, s and m neurons."""
+    p = net.path_mix
+    if p == 0:
+        return True
+    alive = _live(net, removed)
+    order = sorted((i for i in range(len(net.nodes)) if alive[i]), key=lambda i: net.nodes[i].depth)
+    fewest: List[Optional[Tuple[int, int, int]]] = [None] * len(net.nodes)  # min (v, s, m) from any input
+    for i in order:
+        neuron = net.nodes[i].neuron
+        if neuron is None:
+            fewest[i] = (0, 0, 0)
+            continue
+        best = None
+        for c in connections(neuron):
+            f = fewest[c] if alive[c] else None
+            if f is not None:
+                best = f if best is None else (min(best[0], f[0]), min(best[1], f[1]), min(best[2], f[2]))
+        if best is None:
+            continue
+        t = 0 if isinstance(neuron, VNeuron) else 1 if isinstance(neuron, SNeuron) else 2
+        fewest[i] = tuple(x + (k == t) for k, x in enumerate(best))
+    for o in range(net.n_inputs, net.n_inputs + net.n_outputs):
+        if alive[o] and fewest[o] is not None and min(fewest[o]) < p:
             return False
     return True
 
