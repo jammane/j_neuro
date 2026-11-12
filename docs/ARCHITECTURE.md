@@ -37,6 +37,7 @@ Names: C++ namespace `jneuro`, Python package `jneuro`.
 | `removal` | candidates, bypass, cascade, GC, compaction | 07 |
 | `jnet` / `io` | binary `.jnet` files, SHA-256; profile and run-log JSON | 09 |
 | `population` | nets by id, evaluation, operations, `.jpnet` files, replay | 11 |
+| `modify` | add and remove inputs and outputs of an existing net | 12 |
 
 Keeping the module boundaries identical makes the two code bases easy to compare line by line.
 

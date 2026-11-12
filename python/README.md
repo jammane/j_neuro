@@ -21,6 +21,7 @@ python3 -m venv .venv
 | `jneuro.net` | `Net`, `Node`, `VNeuron`, `SNeuron`, `MNeuron`; `Net.create`, `step`, `reset`, `validate` |
 | `jneuro.analysis` | path rule, mix rule, immunity, depth ranges |
 | `jneuro.mutate`, `jneuro.removal` | `Profile`, `mutate` (with optional operation counts), `is_growth_generation`, `OPERATIONS`; removal, constant folding and compaction |
+| `jneuro.modify` | `add_input`, `add_output_clone`, `add_output_fresh`, `remove_input`, `remove_output` (spec/12) |
 | `jneuro.jnet` | `.jnet` files: `net_to_bytes`, `net_from_bytes`, `save_net`, `load_net` (also `net.save`, `Net.load`) |
 | `jneuro.population` | `Population`: nets by id, `evaluate`, operations, `mutation_counts`, `save`/`load` (`.jpnet`), `replay` |
 | `jneuro.io` | profile and run-log JSON helpers |

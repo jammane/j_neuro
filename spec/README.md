@@ -20,6 +20,7 @@ implementation and this document disagree, the implementation is wrong.
 | 09 | [Serialization](09-serialization.md) | Binary `.jnet` / `.jpnet` files; profile and run-log JSON |
 | 10 | [Conformance](10-conformance.md) | Shared golden-test format |
 | 11 | [Population](11-population.md) | Container of nets by id, evaluation, operations, RNG modes, replay |
+| 12 | [Modification](12-modification.md) | Adding and removing inputs and outputs of an existing net |
 
 ## Normative language
 

@@ -108,3 +108,12 @@ without an explicit decision by the maintainer and may be revisited.
 | E1 | Blackjack scores with real payout (±1, doubled ±2, blackjack and 5-card charlie 1.5); the hole card is hidden from the net. | With losses free, nets learned to double every hand; seeing the hole card would be cheating. |
 | E2 | Ties at the selection cut are broken by sudden-death deals, then at random after 10. | Nets that play identically never separate. |
 | E3 | Trainers reload the population at each 1000-generation save. | Empties the in-memory run log, which otherwise grows without bound. |
+
+## Modification (v0.5)
+
+| # | Decision | Why |
+|---|---|---|
+| X1 | Adding and removing inputs and outputs (spec/12) are library operations on one net. They return a new net, are deterministic (except `add_output_fresh`, which takes an RNG), and are written into the 0.5.0 draft without a version bump. | A trained net can change shape without starting over. A population holds one shape, so a modified net goes into a new population with `add`. Bumping MINOR would make every saved 0.5 net unloadable, including the trained nets this feature is for. |
+| X2 | `remove_input` removes what only that input reaches, then garbage-collects what fed only those neurons. Shared neurons stay and just lose the slot. `remove_output` is garbage collection alone. | It removes only what is not shared, downstream and upstream. |
+| X3 | `add_input` uses one chain that meets the mix and run rules, ending in a v_neuron W that feeds empty slots of existing m_neurons chosen to cover every output. By default W is `mul 0`, which leaves outputs bit-for-bit unchanged and is immune to removal. `active` makes W an identity instead. | A trained net keeps its results until mutation gives the new input weight. An exact `median` insertion (a majority of slots reading the old neuron) covers outputs that no `mean`, `median` or `max` receiver reaches. |
+| X4 | `add_output_clone` copies an existing output's neuron; `add_output_fresh` grafts the chain that `create` would build for one output. | The clone reuses the trained net and starts equal to its source. The fresh output is independent. Both satisfy the rules by construction. |

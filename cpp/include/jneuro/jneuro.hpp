@@ -12,5 +12,6 @@
 #include <jneuro/profile.hpp>
 #include <jneuro/removal.hpp>
 #include <jneuro/mutate.hpp>
+#include <jneuro/modify.hpp>
 #include <jneuro/population.hpp>
 #include <jneuro/sha256.hpp>

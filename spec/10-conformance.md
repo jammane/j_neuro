@@ -63,6 +63,18 @@ The result MUST serialize to exactly `expected_jnet`.
 `inject_diversity(net, pct, seed(seed), sigma_reset)` MUST serialize to exactly
 `expected_jnet`.
 
+### `modify`
+
+```json
+{"kind": "modify", "op": "add_input", "args": {"position": 0, "active": false, "generation": 30},
+ "jnet": "4a4e4554…", "expected_jnet": "4a4e4554…"}
+```
+
+`op` is one of the operations of [12](12-modification.md), called on `jnet` with `args`:
+`add_input(position, active, generation)`, `add_output_clone(source, position, generation)`,
+`add_output_fresh(seed(seed), position, generation)`, `remove_input(index)` or
+`remove_output(index)`. The result MUST serialize to exactly `expected_jnet`.
+
 ### `population`
 
 ```json
@@ -109,6 +121,8 @@ The golden set SHOULD include at least:
 - Infinite and overflowing intermediates clamped to ±MAX; v/s rewiring including the orphan
   and path-rule skips; inversions on new v_neurons; the node cap; `get_warmup_steps()`;
   `inject_diversity`.
+- Every modification operation of [12](12-modification.md), at the first and last position,
+  including `add_input` both ways with median insertion (nets whose m_neurons are all `min`).
 
 ## Generating golden files
 

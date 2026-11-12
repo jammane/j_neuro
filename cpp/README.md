@@ -30,6 +30,7 @@ The build refuses fast-math flags and always uses `-ffp-contract=off`
 | `analysis.hpp`, `net_build.hpp` | path rule, mix rule, immunity, depth ranges; `create`, `validate` |
 | `io.hpp`, `sha256.hpp` | `AnyNet`; `.jnet` files: `to_bytes`, `from_bytes`, `save_net`, `load_net`; `create(n_in, n_out, …)`; SHA-256 |
 | `population.hpp` | `Population<D>`: nets by id, `evaluate`, operations, `save`/`load` (`.jpnet`), `replay` |
+| `modify.hpp` | `add_input`, `add_output_clone`, `add_output_fresh`, `remove_input`, `remove_output` (spec/12) |
 | `profile.hpp`, `mutate.hpp`, `removal.hpp` | mutation profile, `mutate` (with optional `MutationCounts`), `is_growth_generation`, `mutation_operations`; removal, constant folding and compaction |
 
 ## Examples
