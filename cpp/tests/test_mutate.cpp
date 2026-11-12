@@ -544,7 +544,7 @@ TEST_CASE("slot retarget") {
     p.set_overall("edit_max_pct", 100.0);
     p.set_overall("slot_retarget_prob", 1.0);
     p.set_overall("rewire_prob", 0.0);
-    p.apply_patch(json{{"overall", {{"prune", "any"}}}});
+    p.apply_patch(json{{"overall", {{"prune", "any"}, {"link_max_span", 1.0}}}});
     int moved = 0;
     for (std::uint64_t s = 0; s < 60; ++s) {
         Rng r(s);

@@ -249,9 +249,10 @@ private:
             if (rd[*old].size() == 1 && rd[*old][0] == id) return std::nullopt;  // would orphan old
         }
         const D my_depth = net_.nodes[id].depth;
+        const std::uint64_t lo = span_floor(my_depth);
         std::vector<NodeId> cands;
         for (NodeId j : live_nodes())
-            if (net_.nodes[j].depth < my_depth && (!old || j != *old)) cands.push_back(j);
+            if (net_.nodes[j].depth >= lo && net_.nodes[j].depth < my_depth && (!old || j != *old)) cands.push_back(j);
         if (cands.empty()) return std::nullopt;
         input_ref(id) = pick(cands);
         if (!path_rule_ok(net_, &removed_) || !rules_ok()) {
@@ -259,6 +260,13 @@ private:
             return std::nullopt;
         }
         return t;
+    }
+
+    /// Shallowest source depth a link, rewire or retarget may reach from a node at `depth`
+    /// (spec/06 link_max_span).
+    std::uint64_t span_floor(std::uint64_t depth) const {
+        const auto span = static_cast<std::uint64_t>(p_.overall("link_max_span") * static_cast<double>(Net<D>::d_max));
+        return depth > span ? depth - span : 0;
     }
 
     /// The structural rules a mutation may not break besides the path rule (spec/03).
@@ -320,8 +328,9 @@ private:
         slots[i] = std::nullopt;
         if (!path_rule_ok(net_, &removed_)) { slots[i] = old; return std::nullopt; }  // critical
         std::vector<NodeId> cands;
+        const std::uint64_t lo = span_floor(net_.nodes[id].depth);
         for (NodeId j : live_nodes())
-            if (net_.nodes[j].depth <= net_.nodes[*old].depth && j != *old &&
+            if (net_.nodes[j].depth >= lo && net_.nodes[j].depth <= net_.nodes[*old].depth && j != *old &&
                 std::find(slots.begin(), slots.end(), std::optional<NodeId>(j)) == slots.end())
                 cands.push_back(j);
         if (cands.empty()) { slots[i] = old; return std::nullopt; }
@@ -427,11 +436,12 @@ private:
             }
         }
         const std::size_t slot = pick(empties);
+        const std::uint64_t lo_src = span_floor(net_.nodes[r].depth);  // longest link allowed
         std::vector<NodeId> cands;
         {
             const auto& slots = std::get<MNeuron>(*net_.nodes[r].neuron).slots;
             for (NodeId j : live_nodes())
-                if (net_.nodes[j].depth <= hi_src &&
+                if (net_.nodes[j].depth >= lo_src && net_.nodes[j].depth <= hi_src &&
                     std::find(slots.begin(), slots.end(), std::optional<NodeId>(j)) == slots.end())
                     cands.push_back(j);
         }

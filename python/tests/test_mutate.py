@@ -480,7 +480,7 @@ def test_slot_retarget():
     # output m max [3, 4]; 3 and 4 are s_neurons of v 2 (depth 200); slot 0 or 1 alone is not critical
     net = make_net(1, 1, 3, [(D16, M("max", [3, 4, None])), (100, V(0, "mul", 1.0)),
                              (200, S(2, "mean", 1)), (200, S(2, "mean", 1))])
-    p = profile(edit_max_pct=100.0, slot_retarget_prob=1.0, rewire_prob=0.0, prune="any")
+    p = profile(edit_max_pct=100.0, slot_retarget_prob=1.0, rewire_prob=0.0, prune="any", link_max_span=1.0)
     moved = 0
     for s in range(60):
         child = mutate(net, p, 1, Rng(s))
@@ -563,7 +563,8 @@ def test_links_fill_open_m_slots(method):
         others = [s for s in child.nodes[r[0]].neuron.slots if s is not None and s != x]
         assert child.nodes[n.input].depth <= max(child.nodes[s].depth for s in others)
         assert child.nodes[n.input].depth < child.nodes[x].depth < child.nodes[r[0]].depth
-    assert linked >= 10
+        assert child.nodes[r[0]].depth - child.nodes[n.input].depth <= int(0.25 * float(child.d_max))
+    assert linked >= 5
 
 
 

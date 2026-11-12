@@ -44,6 +44,7 @@ DEFAULTS = {
     "width_peak": 0.5,
     "tap_peak": 0.25,
     "prune": "static",
+    "link_max_span": 0.25,
 }
 CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared"),
            "growth_budget": ("up_to", "exact"), "constant_folding": ("off", "on"),
@@ -83,6 +84,8 @@ class Profile:
                 raise ValidationError(f"unknown profile field {k!r}")
             if k in ("width_peak", "tap_peak") and v is not None and not 0.0 < float(v) < 1.0:
                 raise ValidationError(f"{k} must be in (0, 1)")
+            if k == "link_max_span" and v is not None and not 0.0 < float(v) <= 1.0:
+                raise ValidationError("link_max_span must be in (0, 1]")
             if v is None:
                 self.overall[k] = copy.deepcopy(DEFAULTS[k])
             elif k in CHOICES:
@@ -306,8 +309,9 @@ class _Mutation:
         if not path_rule_ok(net, self.removed):           # critical: the only path for some input
             n.slots[i] = old
             return None
+        lo = self.span_floor(net.nodes[nid].depth)
         cands = [j for j in self.live_nodes()
-                 if net.nodes[j].depth <= net.nodes[old].depth and j != old and j not in n.slots]
+                 if lo <= net.nodes[j].depth <= net.nodes[old].depth and j != old and j not in n.slots]
         if not cands:
             n.slots[i] = old
             return None
@@ -323,7 +327,8 @@ class _Mutation:
         if old is not None and readers(net, self.removed)[old] == [nid]:
             return None                                   # old input would be orphaned
         my_depth = net.nodes[nid].depth
-        cands = [j for j in self.live_nodes() if net.nodes[j].depth < my_depth and j != old]
+        lo = self.span_floor(my_depth)
+        cands = [j for j in self.live_nodes() if lo <= net.nodes[j].depth < my_depth and j != old]
         if not cands:
             return None
         n.input = cands[rng.below(len(cands))]
@@ -331,6 +336,12 @@ class _Mutation:
             n.input = old
             return None
         return t
+
+    def span_floor(self, depth):
+        """Shallowest source depth a link, rewire or retarget may reach from a node at `depth`
+        (spec/06 link_max_span)."""
+        span = int(float(self.p.overall["link_max_span"]) * float(self.net.d_max))
+        return depth - span if depth > span else 0
 
     def rules_ok(self):
         """The structural rules a mutation may not break besides the path rule (spec/03)."""
@@ -447,7 +458,9 @@ class _Mutation:
         empties = [s for s, x in enumerate(rn.slots) if x is None]
         slot = empties[rng.below(len(empties))]
         hi_src = max(net.nodes[s].depth for s in rn.slots if s is not None)   # no deeper than R's reads
-        cands = [j for j in self.live_nodes() if net.nodes[j].depth <= hi_src and j not in rn.slots]
+        lo_src = self.span_floor(net.nodes[r].depth)       # longest link allowed
+        cands = [j for j in self.live_nodes()
+                 if lo_src <= net.nodes[j].depth <= hi_src and j not in rn.slots]
         if not cands:
             return None
         src = cands[rng.below(len(cands))]

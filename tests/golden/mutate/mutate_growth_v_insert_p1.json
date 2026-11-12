@@ -39,7 +39,8 @@
    "width_bias": "deficit",
    "width_peak": 0.5,
    "tap_peak": 0.25,
-   "prune": "static"
+   "prune": "static",
+   "link_max_span": 0.25
   },
   "v": {},
   "s": {},

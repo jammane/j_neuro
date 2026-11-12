@@ -55,6 +55,7 @@ A per-type value overrides the overall value for neurons of that type.
 | `width_bias` | `deficit` | no | `none`, `center` or `deficit`: how growth chooses the m_neuron that receives a new branch ([receivers](#choosing-a-receiver)) |
 | `width_peak` | 0.5 | no | Depth fraction in (0, 1) where receivers are favored most (slot fill, m_clone, links) |
 | `tap_peak` | 0.25 | no | The same, for input taps |
+| `link_max_span` | 0.25 | no | Longest connection a link, rewire or retarget may make, as a fraction of `D_MAX`: the new source is at most `floor(link_max_span × D_MAX)` shallower than the neuron that reads it |
 | `prune` | `static` | no | `any` or `static`: with `static`, edits never cut a live branch — an m slot is emptied only if its source is constant ([07](07-removal.md#constant-folding)), and a retarget never leaves its old source without readers |
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
@@ -132,7 +133,7 @@ edits the parameter as described below.
 rewire:
     old = current input (may be missing)
     if old is connected and this neuron is old's only reader: skip   # would orphan old
-    C = live nodes with depth < depth(this node), ≠ old, ascending id
+    C = live nodes with span_floor(depth(this node)) <= depth < depth(this node), ≠ old, ascending id
     if C is empty: skip
     input = C[below(len(C))]
     if the path rule or a structural rule is now broken: restore old; skip
@@ -176,8 +177,8 @@ retarget:
     i = S[below(len(S))]; old = slot i
     if prune == static and slot i is the only connection to old: skip   # would strand old
     if emptying slot i would break the path rule: skip        # slot i is on a critical path
-    C = live nodes with depth <= depth(old), ≠ old, not connected to any slot of this neuron,
-        ascending id
+    C = live nodes with span_floor(depth(this node)) <= depth <= depth(old), ≠ old, not connected
+        to any slot of this neuron, ascending id
     if C is empty: skip
     slot i = C[below(len(C))]
     if a structural rule is now broken: slot i = old; skip
@@ -221,6 +222,10 @@ has reached its cap (m for m_clone and m_insert, v for v_link, s for s_link), or
 unavailable. Every method ends by checking the structural rules; if one is broken, the attempt
 is undone completely (new nodes removed, connections and depths restored, `next_birth`
 restored) and skipped. The draws already made stay drawn.
+
+**Span floor.** `span_floor(d) = d − floor(link_max_span × D_MAX)`, or 0 if that would be
+negative (binary64 product, truncated): the shallowest source a link, rewire or retarget may use
+for a neuron at depth `d`.
 
 **New node depth.** Where a method below places a new node "in `[lo, hi]`":
 
@@ -373,9 +378,10 @@ slots m_insert leaves are the main targets.
    ascending id. None → skip. R is chosen as in [choosing a receiver](#choosing-a-receiver),
    each weight multiplied by R's number of empty slots.
 2. **Choose slot.** `s = empty_slots(R)[below(count)]`.
-3. **Choose the source.** `hi` = largest depth among the nodes R reads.
-   `C` = live nodes with depth ≤ `hi` not connected to any slot of R, ascending id (inputs
-   included). None → skip. `src = C[below(len(C))]`.
+3. **Choose the source.** `hi` = largest depth among the nodes R reads;
+   `span = floor(link_max_span × D_MAX)` (binary64 product, truncated); `lo = depth(R) − span`, or
+   0 if `depth(R) ≤ span`. `C` = live nodes with `lo ≤ depth ≤ hi` not connected to any slot of R,
+   ascending id (inputs included). None → skip. `src = C[below(len(C))]`.
 4. **Depth.** `lo = depth(src) + 1`, `hi2 = depth(R) − 1`; if `lo > hi2` → skip.
    `depth(X) = place(lo, hi2)`.
 5. **Build X.** `v_link`: v_neuron, input `src`, `op = choice(4)`, inversion as for new v_neurons,
