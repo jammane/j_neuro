@@ -13,8 +13,12 @@
 // (SIGINT / SIGTERM), then saves the population.
 //
 // Usage: highlow_trainer [--out DIR] [--seed N] [--resume FILE.jpnet] [--shoes N]
-//                        [--path-mix N] [--edit PCT] [--op PCT] [--grow-gen PCT] [--grow-net PCT]
-//                        [--console-every SECONDS]
+//                        [--path-mix N] [--in-qty-max N] [--edit PCT] [--op PCT] [--grow-gen PCT]
+//                        [--grow-net PCT] [--stop-at GENERATIONS] [--console-every SECONDS]
+//
+// --in-qty-max (odd, >= 3; default 3) is the m_neuron slot count and the longest s_neuron
+// history, so it also sets how far back a lag s_neuron can look. --stop-at N stops and saves
+// once N generations have been played.
 
 #include <jneuro/jneuro.hpp>
 
@@ -53,7 +57,6 @@ constexpr int kUnit = 1;
 constexpr int kSuitPoints = 3 * kUnit, kHighLowPoints = 1 * kUnit, kEqualPoints = 6 * kUnit;
 
 enum class Rel { Lower = -1, Equal = 0, Higher = 1 };
-constexpr std::uint32_t kInQtyMax = 3;
 constexpr int kMaxSuddenDeath = 10;  // then remaining tied nets are picked at random
 
 std::atomic<bool> g_stop{false};
@@ -176,7 +179,8 @@ int main(int argc, char** argv) {
     std::optional<std::uint64_t> seed;
     std::optional<fs::path> resume;
     int shoes = 4;
-    std::uint32_t path_mix = 2;
+    std::uint32_t path_mix = 2, in_qty_max = 3;
+    std::optional<std::uint64_t> stop_at;
     double edit_pct = 20.0, op_pct = 1.0, grow_gen = 10.0, grow_net = 10.0, console_every = 2.0;
     for (int i = 1; i + 1 < argc; i += 2) {
         const std::string a = argv[i], v = argv[i + 1];
@@ -185,6 +189,8 @@ int main(int argc, char** argv) {
         else if (a == "--resume") resume = v;
         else if (a == "--shoes") shoes = std::stoi(v);
         else if (a == "--path-mix") path_mix = static_cast<std::uint32_t>(std::stoul(v));
+        else if (a == "--in-qty-max") in_qty_max = static_cast<std::uint32_t>(std::stoul(v));
+        else if (a == "--stop-at") stop_at = std::stoull(v);
         else if (a == "--edit") edit_pct = std::stod(v);
         else if (a == "--op") op_pct = std::stod(v);
         else if (a == "--grow-gen") grow_gen = std::stod(v);
@@ -197,7 +203,7 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
 
-    Pop pop = resume ? Pop::load(*resume) : Pop(kInQtyMax, 2, 2, Priority::Speed, std::nullopt, path_mix);
+    Pop pop = resume ? Pop::load(*resume) : Pop(in_qty_max, 2, 2, Priority::Speed, std::nullopt, path_mix);
     if (!resume) pop.create(kPopulation);
     const Profile steady = make_profile(edit_pct, op_pct, false), grow_one = make_profile(edit_pct, op_pct, true);
     const std::uint64_t deal_seed = seed ? *seed : fresh_seed();
@@ -216,7 +222,8 @@ int main(int argc, char** argv) {
         info << "start " << timestamp() << " deal_seed " << deal_seed << " population_seed " << pop.seed()
              << " shoes " << shoes << " path_mix " << pop.path_mix() << " edit_pct " << edit_pct << " op_pct "
              << op_pct << " grow_gen_pct " << grow_gen << " grow_net_pct " << grow_net << " constant_folding on"
-             << " in_qty_max " << kInQtyMax << (resume ? " resumed_from " + resume->string() : std::string())
+             << " in_qty_max " << pop.get(pop.ids().front()).in_qty_max
+             << (stop_at ? " stop_at " + std::to_string(*stop_at) : std::string()) << (resume ? " resumed_from " + resume->string() : std::string())
              << "\n";
     }
     std::cout << "high/low trainer: output in " << out.string() << " (deal seed " << deal_seed
@@ -229,7 +236,7 @@ int main(int argc, char** argv) {
     auto last_print = t0 - std::chrono::hours(1);
     const unsigned threads = std::max(1u, std::thread::hardware_concurrency());
 
-    while (!g_stop) {
+    while (!g_stop && !(stop_at && pop.generation() >= *stop_at)) {
         const bool growth_gen = growth_rng.u() * 100.0 < grow_gen;
         int growth_children = 0;
 

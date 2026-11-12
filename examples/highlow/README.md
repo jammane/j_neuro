@@ -11,7 +11,9 @@ build/highlow_trainer --resume runs/highlow-<timestamp>/population.jpnet
 ```
 
 Options: `--out DIR`, `--seed N` (shoe stream), `--resume FILE.jpnet`, `--shoes N` (default 4),
-`--path-mix N` (default 2), `--edit PCT`, `--op PCT`, `--grow-gen PCT`, `--grow-net PCT`
+`--path-mix N` (default 2), `--in-qty-max N` (odd, ≥ 3, default 3: m_neuron slots and the
+longest s_neuron history, so how far back a `lag` s_neuron can look), `--stop-at N` (stop and
+save after N generations), `--edit PCT`, `--op PCT`, `--grow-gen PCT`, `--grow-net PCT`
 (defaults 20, 1, 10, 10, as in the blackjack trainer's new rules), `--console-every SECONDS`.
 
 ## Game
