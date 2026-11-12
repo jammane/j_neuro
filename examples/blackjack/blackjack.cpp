@@ -6,14 +6,14 @@
 //
 // Usage: blackjack_trainer [--out DIR] [--seed N] [--resume FILE.jpnet] [--rules new|old]
 //                          [--console-every SECONDS]
-//   new rules (default):   [--edit PCT] [--op PCT] [--grow-gen PCT] [--grow-net PCT] [--tap-weight W]
+//   new rules (default):   [--profile FILE] [--edit PCT] [--op PCT] [--grow-gen PCT] [--grow-net PCT]
+//                          [--tap-weight W]
 //   old rules:             [--alter PCT] [--grow PCT] [--big-alter PCT] [--big-grow PCT]
 //
-// New rules: every child gets parameter edits on up to --edit % of its neurons (default 20)
-// and operation changes on up to --op % (default 1, i.e. 5% of the 20%). Growth is rare: each
-// generation has a --grow-gen % chance (default 10) of being a growth generation, and then
-// each child has a --grow-net % chance (default 10) of exactly one addition attempt. No
-// quota-based removal; constant neurons are folded away (spec/07).
+// New rules: mutation uses the profile file (default profiles/expansion.json: edits on up to
+// 20% of neurons, op changes up to 1%, exactly one growth attempt in 50% of generations for 80%
+// of nets, constant folding); --edit, --op, --grow-gen, --grow-net (in %) and --tap-weight
+// override its values when given.
 //
 // Old rules: up to --alter % edited and op-changed, --grow % added and removed; nets over 50
 // neurons use the --big-* caps instead.
@@ -31,7 +31,9 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -230,16 +232,23 @@ std::string timestamp() {
     return buf;
 }
 
-/// New rules: edits and op changes "up to", optional exactly-one growth attempt, folding.
-Profile make_new_profile(double edit_pct, double op_pct, bool grow, double tap_weight) {
-    Profile p = Profile::defaults();
-    p.set_overall("edit_max_pct", edit_pct);
-    p.set_overall("op_change_max_pct", op_pct);
-    p.set_overall("growth_max_pct", grow ? 1e-9 : 0.0);  // exact: max(1, ~0) = 1 attempt
-    p.set_overall("removal_max_pct", 0.0);
-    p.apply_patch(nlohmann::json{{"overall", {{"growth_budget", "exact"}, {"constant_folding", "on"},
-        {"add_method_weights", {{"v_tap", tap_weight}, {"s_tap", tap_weight}, {"m_tap", tap_weight}}}}}});
-    return p;
+/// New rules: a saved profile file (spec/09 JSON).
+Profile load_profile(const fs::path& file) {
+    std::ifstream in(file);
+    if (!in) throw std::runtime_error("cannot read profile " + file.string());
+    std::stringstream text;
+    text << in.rdbuf();
+    return profile_from_json(text.str());
+}
+
+/// Neurons added by growth so far (sum of the growth methods' mutation counts).
+std::uint64_t growth_added(const Pop& pop) {
+    static const char* const kGrowth[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap",
+                                          "m_tap",     "m_clone",  "m_insert", "v_link",    "s_link"};
+    const auto counts = pop.mutation_counts();
+    std::uint64_t n = 0;
+    for (const char* m : kGrowth) n += counts.at(m);
+    return n;
 }
 
 Profile make_profile(double alter_pct, double grow_pct) {
@@ -258,7 +267,8 @@ int main(int argc, char** argv) {
     std::optional<std::uint64_t> seed;
     std::optional<fs::path> resume;
     double alter = 22.0, grow = 12.0, big_alter = 5.0, big_grow = 1.5, console_every = 2.0;
-    double edit_pct = 20.0, op_pct = 1.0, grow_gen = 10.0, grow_net = 10.0, tap_weight = 25.0;
+    fs::path profile_file = "profiles/expansion.json";
+    std::optional<double> edit_pct, op_pct, grow_gen, grow_net, tap_weight;  // overrides of the profile
     std::string rules = "new";
     for (int i = 1; i + 1 < argc; i += 2) {
         const std::string a = argv[i], v = argv[i + 1];
@@ -276,6 +286,7 @@ int main(int argc, char** argv) {
         else if (a == "--grow-gen") grow_gen = std::stod(v);
         else if (a == "--grow-net") grow_net = std::stod(v);
         else if (a == "--tap-weight") tap_weight = std::stod(v);
+        else if (a == "--profile") profile_file = v;
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
     }
     if (rules != "new" && rules != "old") { std::cerr << "--rules must be new or old\n"; return 2; }
@@ -288,25 +299,29 @@ int main(int argc, char** argv) {
     if (!resume) pop.create(kPopulation);
     const Profile profile = make_profile(alter, grow);
     const Profile big_profile = make_profile(big_alter, big_grow);  // nets over kBigNet neurons
-    const Profile steady = make_new_profile(edit_pct, op_pct, false, tap_weight),
-                  grow_one = make_new_profile(edit_pct, op_pct, true, tap_weight);
+    Profile new_profile = new_rules ? load_profile(profile_file) : Profile::defaults();
+    if (edit_pct) new_profile.set_overall("edit_max_pct", *edit_pct);
+    if (op_pct) new_profile.set_overall("op_change_max_pct", *op_pct);
+    if (grow_gen) new_profile.set_overall("growth_gen_prob", *grow_gen / 100.0);
+    if (grow_net) new_profile.set_overall("growth_net_prob", *grow_net / 100.0);
+    if (tap_weight)
+        new_profile.apply_patch(nlohmann::json{{"overall", {{"add_method_weights",
+            {{"v_tap", *tap_weight}, {"s_tap", *tap_weight}, {"m_tap", *tap_weight}}}}}});
     const std::uint64_t deal_seed = seed ? *seed : fresh_seed();
     Rng deals(deal_seed);
-    Rng growth_rng(deal_seed ^ 0x9E3779B97F4A7C15ull);  // growth-generation and growth-child draws
 
     const bool new_csv = !fs::exists(out / "log.csv");
     std::ofstream csv(out / "log.csv", std::ios::app);
     if (new_csv)
         csv << "generation,top10_avg_score,best_score,all_avg_score,top10_avg_nodes,top10_avg_neurons,"
                "top10_avg_v,top10_avg_s,top10_avg_m,unwinnable,best_win_pct_winnable,top10_win_pct_winnable,"
-               "sudden_death_deals,growth_children,elapsed_s\n";
+               "sudden_death_deals,growth_added,elapsed_s\n";
     {
         std::ofstream info(out / "run_info.txt", std::ios::app);
         info << "start " << timestamp() << " deal_seed " << deal_seed << " population_seed " << pop.seed()
              << " rules " << rules;
         if (new_rules)
-            info << " edit_pct " << edit_pct << " op_pct " << op_pct << " grow_gen_pct " << grow_gen
-                 << " grow_net_pct " << grow_net << " tap_weight " << tap_weight << " constant_folding on";
+            info << " profile " << profile_file.string() << " effective_profile " << profile_to_json(new_profile);
         else
             info << " alter_pct " << alter << " grow_pct " << grow << " big_alter_pct " << big_alter
                  << " big_grow_pct " << big_grow << " big_net_neurons " << kBigNet;
@@ -326,8 +341,6 @@ int main(int argc, char** argv) {
 
     while (!g_stop) {
         // new rules: is this a growth generation? (decided up front so the log row can report it)
-        const bool growth_gen = new_rules && growth_rng.u() * 100.0 < grow_gen;
-        int growth_children = 0;
 
         // the same 200 deals for every net this generation
         std::vector<Deal> gen_deals;
@@ -424,7 +437,7 @@ int main(int argc, char** argv) {
         row << std::fixed << std::setprecision(2) << gen << ',' << top_score / n << ',' << scores[order[0]] << ','
             << all_score / ids.size() << ',' << sum.nodes / n << ',' << sum.neurons / n << ',' << sum.v / n << ','
             << sum.s / n << ',' << sum.m / n << ',' << kHandsPerNet - n_winnable << ',' << best_pct << ','
-            << top_pct << ',' << sudden_death << ',';  // growth_children and elapsed added after mutation
+            << top_pct << ',' << sudden_death << ',';  // growth_added and elapsed added after mutation
 
         const auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration<double>(now - last_print).count() >= console_every) {
@@ -439,18 +452,17 @@ int main(int argc, char** argv) {
 
         // cull the bottom 30, refill with 3 mutated offspring of each of the top 10
         for (std::size_t r = kKeep; r < order.size(); ++r) pop.remove(ids[order[r]]);
+        const std::uint64_t added_before = growth_added(pop);
         for (int r = 0; r < kKeep; ++r) {
             const std::uint64_t parent = ids[order[r]];
             const bool big = count(pop.get(parent)).neurons > kBigNet;
             for (int c = 0; c < kChildrenPerSurvivor; ++c) {
                 if (!new_rules) { pop.mutate(parent, big ? big_profile : profile); continue; }
-                const bool grows = growth_gen && growth_rng.u() * 100.0 < grow_net;
-                growth_children += grows;
-                pop.mutate(parent, grows ? grow_one : steady);
+                pop.mutate(parent, new_profile);  // growth gating: spec/06
             }
         }
         pop.next_generation();
-        row << growth_children << ',' << elapsed << '\n';  // same fixed formatting as the rest of the row
+        row << growth_added(pop) - added_before << ',' << elapsed << '\n';  // same fixed formatting as the rest of the row
         csv << row.str();
         csv.flush();
 

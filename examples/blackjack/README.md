@@ -15,8 +15,8 @@ build/blackjack_trainer --resume runs/blackjack-…/population.jpnet --out runs/
 Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules new|old`
 (default new), `--alter PCT`
 (default 22), `--grow PCT` (default 12), `--big-alter PCT` (default 5), `--big-grow PCT`
-(default 1.5) for `--rules old`; `--edit`, `--op`, `--grow-gen`, `--grow-net`, `--tap-weight`
-(defaults 20, 1, 10, 10, 25) for `--rules new`; `--console-every SECONDS` (default 2).
+(default 1.5) for `--rules old`; `--profile FILE` and the overrides `--edit`, `--op`, `--grow-gen`,
+`--grow-net`, `--tap-weight` for `--rules new`; `--console-every SECONDS` (default 2).
 
 ## Game
 
@@ -51,16 +51,11 @@ Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules 
   picked at random.
 - Nets start from the library's minimal net with `path_mix` 2: every input-to-output path
   passes through at least 2 v, 2 s and 2 m neurons, and mutation keeps it that way.
-- **Mutation, new rules (default, `--rules new`):** each child gets parameter edits on up to
-  20% of its neurons (`--edit`) and operation changes on up to 1% (`--op`, i.e. 5% of the
-  20%). Growth is rare: each generation has a 10% chance (`--grow-gen`) of being a growth
-  generation, and then each child has a 10% chance (`--grow-net`) of exactly one addition
-  attempt (`growth_budget = exact`). Besides the four usual addition methods, the three input
-  taps (spec/06: a new v, s or m neuron reading the inputs, feeding an empty m slot) can be
-  chosen, each with weight `--tap-weight` (default 25) against slot fill 40, v_insert 30,
-  s_insert 20, m_after_m 10. There is no quota-based removal; neurons that can only
-  output a constant are replaced by constants and whatever fed them is deleted
-  (`constant_folding = on`, after the usual 5-generation grace period).
+- **Mutation, new rules (default, `--rules new`):** the profile file `--profile` (default
+  `profiles/expansion.json`: parameter edits on up to 20% of neurons, op changes up to 1%,
+  exactly one growth attempt in 50% of generations for 80% of nets, no removal phase, constant
+  folding, the library's default growth weights). `--edit`, `--op`, `--grow-gen`, `--grow-net`
+  (in %) and `--tap-weight` override its values when given.
 - **Mutation, old rules (`--rules old`):** up to 22% of neurons altered (edits and operation
   changes), up to 12% added and removed; once a net has more than 50 neurons, its offspring
   use 5% and 1.5% instead (`--alter`, `--grow`, `--big-alter`, `--big-grow`).
@@ -72,7 +67,7 @@ Options: `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules 
 
 | File | Contents |
 |---|---|
-| `log.csv` | One row per generation: top-10 average score, best score, population average, and top-10 averages of nodes, neurons, v/s/m neurons; `unwinnable` (deals of the 200 where no line of play wins a hand, found by trying every decision sequence); `best_win_pct_winnable` and `top10_win_pct_winnable` (deals with at least one winning hand ÷ winnable deals, for the best net and the top-10 average); `sudden_death_deals` (tiebreak deals played that generation); `growth_children` (children given a growth attempt); elapsed seconds |
+| `log.csv` | One row per generation: top-10 average score, best score, population average, and top-10 averages of nodes, neurons, v/s/m neurons; `unwinnable` (deals of the 200 where no line of play wins a hand, found by trying every decision sequence); `best_win_pct_winnable` and `top10_win_pct_winnable` (deals with at least one winning hand ÷ winnable deals, for the best net and the top-10 average); `sudden_death_deals` (tiebreak deals played that generation); `growth_added` (neurons added by growth); elapsed seconds |
 | `best.jnet` | Best net of the most recent console update |
 | `population.jpnet` + `population_nets/` | Saved every 1000 generations and on exit; resume with `--resume` |
 | `run_info.txt` | Seeds and settings of each start |

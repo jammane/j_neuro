@@ -13,9 +13,12 @@
 // (SIGINT / SIGTERM), then saves the population.
 //
 // Usage: highlow_trainer [--out DIR] [--seed N] [--resume FILE.jpnet] [--shoes N]
-//                        [--path-mix N] [--in-qty-max N] [--edit PCT] [--op PCT] [--grow-gen PCT]
-//                        [--grow-net PCT] [--tap-weight W] [--stop-at GENERATIONS]
+//                        [--path-mix N] [--in-qty-max N] [--profile FILE] [--edit PCT] [--op PCT]
+//                        [--grow-gen PCT] [--grow-net PCT] [--tap-weight W] [--stop-at GENERATIONS]
 //                        [--console-every SECONDS]
+//
+// Mutation uses the profile file (default profiles/expansion.json); --edit, --op, --grow-gen,
+// --grow-net (in %) and --tap-weight override its values when given.
 //
 // --in-qty-max (odd, >= 3; default 3) is the m_neuron slot count and the longest s_neuron
 // history, so it also sets how far back a lag s_neuron can look. --stop-at N stops and saves
@@ -33,7 +36,9 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -162,17 +167,23 @@ std::string timestamp() {
     return buf;
 }
 
-/// Edits and op changes "up to"; optional exactly-one growth attempt; constant folding.
-/// Input taps (spec/06) join the four other addition methods with weight tap_weight each.
-Profile make_profile(double edit_pct, double op_pct, bool grow, double tap_weight) {
-    Profile p = Profile::defaults();
-    p.set_overall("edit_max_pct", edit_pct);
-    p.set_overall("op_change_max_pct", op_pct);
-    p.set_overall("growth_max_pct", grow ? 1e-9 : 0.0);  // exact: max(1, ~0) = 1 attempt
-    p.set_overall("removal_max_pct", 0.0);
-    p.apply_patch(nlohmann::json{{"overall", {{"growth_budget", "exact"}, {"constant_folding", "on"},
-        {"add_method_weights", {{"v_tap", tap_weight}, {"s_tap", tap_weight}, {"m_tap", tap_weight}}}}}});
-    return p;
+/// The mutation profile: a saved profile file (spec/09 JSON), with optional flag overrides.
+Profile load_profile(const fs::path& file) {
+    std::ifstream in(file);
+    if (!in) throw std::runtime_error("cannot read profile " + file.string());
+    std::stringstream text;
+    text << in.rdbuf();
+    return profile_from_json(text.str());
+}
+
+/// Neurons added by growth so far (sum of the growth methods' mutation counts).
+std::uint64_t growth_added(const Pop& pop) {
+    static const char* const kGrowth[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap",
+                                          "m_tap",     "m_clone",  "m_insert", "v_link",    "s_link"};
+    const auto counts = pop.mutation_counts();
+    std::uint64_t n = 0;
+    for (const char* m : kGrowth) n += counts.at(m);
+    return n;
 }
 
 }  // namespace
@@ -184,7 +195,9 @@ int main(int argc, char** argv) {
     int shoes = 4;
     std::uint32_t path_mix = 2, in_qty_max = 3;
     std::optional<std::uint64_t> stop_at;
-    double edit_pct = 20.0, op_pct = 1.0, grow_gen = 10.0, grow_net = 10.0, tap_weight = 25.0, console_every = 2.0;
+    fs::path profile_file = "profiles/expansion.json";
+    std::optional<double> edit_pct, op_pct, grow_gen, grow_net, tap_weight;  // overrides of the profile
+    double console_every = 2.0;
     for (int i = 1; i + 1 < argc; i += 2) {
         const std::string a = argv[i], v = argv[i + 1];
         if (a == "--out") out = v;
@@ -200,6 +213,7 @@ int main(int argc, char** argv) {
         else if (a == "--grow-net") grow_net = std::stod(v);
         else if (a == "--tap-weight") tap_weight = std::stod(v);
         else if (a == "--console-every") console_every = std::stod(v);
+        else if (a == "--profile") profile_file = v;
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
     }
     if (shoes < 1) { std::cerr << "--shoes must be >= 1\n"; return 2; }
@@ -209,11 +223,16 @@ int main(int argc, char** argv) {
 
     Pop pop = resume ? Pop::load(*resume) : Pop(in_qty_max, 2, 2, Priority::Speed, std::nullopt, path_mix);
     if (!resume) pop.create(kPopulation);
-    const Profile steady = make_profile(edit_pct, op_pct, false, tap_weight),
-                  grow_one = make_profile(edit_pct, op_pct, true, tap_weight);
+    Profile profile = load_profile(profile_file);
+    if (edit_pct) profile.set_overall("edit_max_pct", *edit_pct);
+    if (op_pct) profile.set_overall("op_change_max_pct", *op_pct);
+    if (grow_gen) profile.set_overall("growth_gen_prob", *grow_gen / 100.0);
+    if (grow_net) profile.set_overall("growth_net_prob", *grow_net / 100.0);
+    if (tap_weight)
+        profile.apply_patch(nlohmann::json{{"overall", {{"add_method_weights",
+            {{"v_tap", *tap_weight}, {"s_tap", *tap_weight}, {"m_tap", *tap_weight}}}}}});
     const std::uint64_t deal_seed = seed ? *seed : fresh_seed();
     Rng deals(deal_seed);
-    Rng growth_rng(deal_seed ^ 0x9E3779B97F4A7C15ull);
 
     const bool new_csv = !fs::exists(out / "log.csv");
     std::ofstream csv(out / "log.csv", std::ios::app);
@@ -221,12 +240,12 @@ int main(int argc, char** argv) {
         csv << "generation,top10_avg_points,best_points,all_avg_points,baseline_points,best_suit_pct,"
                "best_rel_pct,best_equal_guess_pct,best_equal_hit_pct,top10_suit_pct,top10_rel_pct,"
                "top10_equal_guess_pct,top10_avg_neurons,top10_avg_v,top10_avg_s,top10_avg_m,"
-               "sudden_death_shoes,growth_children,elapsed_s\n";
+               "sudden_death_shoes,growth_added,elapsed_s\n";
     {
         std::ofstream info(out / "run_info.txt", std::ios::app);
         info << "start " << timestamp() << " deal_seed " << deal_seed << " population_seed " << pop.seed()
-             << " shoes " << shoes << " path_mix " << pop.path_mix() << " edit_pct " << edit_pct << " op_pct "
-             << op_pct << " grow_gen_pct " << grow_gen << " grow_net_pct " << grow_net << " tap_weight " << tap_weight << " constant_folding on"
+             << " shoes " << shoes << " path_mix " << pop.path_mix() << " max_run " << pop.max_run() << " profile "
+             << profile_file.string() << " effective_profile " << profile_to_json(profile)
              << " in_qty_max " << pop.get(pop.ids().front()).in_qty_max
              << (stop_at ? " stop_at " + std::to_string(*stop_at) : std::string()) << (resume ? " resumed_from " + resume->string() : std::string())
              << "\n";
@@ -242,8 +261,6 @@ int main(int argc, char** argv) {
     const unsigned threads = std::max(1u, std::thread::hardware_concurrency());
 
     while (!g_stop && !(stop_at && pop.generation() >= *stop_at)) {
-        const bool growth_gen = growth_rng.u() * 100.0 < grow_gen;
-        int growth_children = 0;
 
         // the same shoes for every net this generation
         std::vector<Shoe> gen_shoes;
@@ -353,14 +370,11 @@ int main(int argc, char** argv) {
 
         // cull the bottom 30, refill with 3 mutated offspring of each of the top 10
         for (std::size_t r = kKeep; r < order.size(); ++r) pop.remove(ids[order[r]]);
+        const std::uint64_t added_before = growth_added(pop);
         for (int r = 0; r < kKeep; ++r)
-            for (int c = 0; c < kChildrenPerSurvivor; ++c) {
-                const bool grows = growth_gen && growth_rng.u() * 100.0 < grow_net;
-                growth_children += grows;
-                pop.mutate(ids[order[r]], grows ? grow_one : steady);
-            }
+            for (int c = 0; c < kChildrenPerSurvivor; ++c) pop.mutate(ids[order[r]], profile);  // gating: spec/06
         pop.next_generation();
-        row << growth_children << ',' << elapsed << '\n';
+        row << growth_added(pop) - added_before << ',' << elapsed << '\n';
         csv << row.str();
         csv.flush();
 
