@@ -29,7 +29,7 @@ to this section in the same change.
 | [NumPy](https://numpy.org) | Python | float64 arrays, bit-level views of doubles | BSD-3-Clause |
 | [pytest](https://pytest.org) | Python (tests only) | test runner | MIT |
 | [Catch2](https://github.com/catchorg/Catch2) | C++ (tests only) | test framework | BSL-1.0 |
-| [nlohmann/json](https://github.com/nlohmann/json) | C++ | genome / profile parsing | MIT |
+| [nlohmann/json](https://github.com/nlohmann/json) | C++ | profile and run-log JSON | MIT |
 
 None of these are bundled with j_neuro; they are installed by the user's package manager.
 (NumPy's own binary wheels bundle further libraries under their own licenses; j_neuro does not
@@ -166,6 +166,7 @@ SOFTWARE.
 | Improved Kahan–Babuška summation (1974) | Arnold Neumaier, after William Kahan | Compensated mean ([spec/04](spec/04-neurons.md)) |
 | Irwin–Hall distribution | Joseph Oscar Irwin, Philip Hall | Transcendental-free Gaussian approximation ([spec/08](spec/08-rng.md)) |
 | Dominator analysis (e.g. "A Simple, Fast Dominance Algorithm", 2001; Lengauer–Tarjan, 1979) | Keith D. Cooper, Timothy J. Harvey, Ken Kennedy; Thomas Lengauer, Robert E. Tarjan | Computing deletion immunity ([spec/07](spec/07-removal.md)) |
+| SHA-256, FIPS 180-4 | NIST | `.jnet` / `.jpnet` checksums and hashes ([spec/09](spec/09-serialization.md)); implemented in-house for C++, Python's `hashlib` |
 | NEAT — NeuroEvolution of Augmenting Topologies (2002) | Kenneth O. Stanley, Risto Miikkulainen | Inspiration for neutral structural insertion |
 
 ## Licenses and standards

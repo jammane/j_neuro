@@ -5,7 +5,7 @@ import pytest
 from helpers import M, S, V, bits, from_hex, load_golden, make_net, sample_inputs
 
 from jneuro import AggOp, DepthType, Net, Priority, ValidationError, VNeuron
-from jneuro.io import genome_from_json, genome_to_json
+from jneuro.jnet import net_from_bytes, net_to_bytes
 from jneuro.mutate import Profile, mutate
 from jneuro.population import Population
 from jneuro.rng import Rng
@@ -28,7 +28,7 @@ def heavy(mode="fresh"):
 
 
 def genomes(p):
-    return [genome_to_json(p.get(i)) for i in p.ids()]
+    return [net_to_bytes(p.get(i)) for i in p.ids()]
 
 
 def warm_net():
@@ -62,7 +62,7 @@ def test_add_rejects_mismatch_and_copies():
     net = Net.create(3, 2, DepthType.U32, 5)
     i = p.add(net)
     net.nodes[3].neuron.op = AggOp((net.nodes[3].neuron.op + 1) % 4)
-    assert genome_to_json(p.get(i)) != genome_to_json(net)
+    assert net_to_bytes(p.get(i)) != net_to_bytes(net)
 
 
 def test_ids_never_reused_and_unknown_ids():
@@ -71,7 +71,7 @@ def test_ids_never_reused_and_unknown_ids():
     p.remove(1)
     assert p.ids() == [0, 2]
     assert p.clone(0) == 3
-    assert genome_to_json(p.get(3)) == genome_to_json(p.get(0))
+    assert net_to_bytes(p.get(3)) == net_to_bytes(p.get(0))
     for call in (lambda: p.get(1), lambda: p.remove(1), lambda: p.clone(1),
                  lambda: p.mutate(1, heavy()), lambda: p.inject_diversity(1, 10.0)):
         with pytest.raises(KeyError):
@@ -108,9 +108,9 @@ def test_evaluate_priority_invariance():
 def test_mutate_offspring_keeps_parent():
     p = pop()
     [a] = p.create(1)
-    before = genome_to_json(p.get(a))
+    before = net_to_bytes(p.get(a))
     b = p.mutate(a, heavy(), times=3)
-    assert b == 1 and genome_to_json(p.get(a)) == before
+    assert b == 1 and net_to_bytes(p.get(a)) == before
     p.get(b).validate()
 
 
@@ -122,7 +122,7 @@ def test_shared_mutate_equals_manual():
     r = Rng(7)
     net = Net.create(3, 2, DepthType.U32, 5, Priority.BALANCED, r)
     manual = mutate(mutate(net, prof, 0, r), prof, 0, r)
-    assert genome_to_json(p.get(b)) == genome_to_json(manual)
+    assert net_to_bytes(p.get(b)) == net_to_bytes(manual)
 
 
 def test_shared_reproducible_fresh_varies():
@@ -189,8 +189,8 @@ def test_replay_reproduces_exactly():
     assert genomes(q) == genomes(p)
     assert q.run_log() == log
     # the shared stream continues identically after replay
-    assert genome_to_json(p.get(p.mutate(0, heavy("shared")))) == \
-           genome_to_json(q.get(q.mutate(0, heavy("shared"))))
+    assert net_to_bytes(p.get(p.mutate(0, heavy("shared")))) == \
+           net_to_bytes(q.get(q.mutate(0, heavy("shared"))))
 
 
 def test_profiles_deduplicated_in_log():
@@ -209,15 +209,19 @@ GOLD = load_golden("population")
 
 
 @pytest.mark.parametrize("name,case", GOLD, ids=[c[0] for c in GOLD])
-def test_population_golden(name, case):
+def test_population_golden(name, case, tmp_path):
     q = Population.replay(json.dumps(case["log"]))
     exp = case["expected"]
     assert q.ids() == exp["ids"] and q.generation == exp["generation"]
     for i in q.ids():
-        assert genome_to_json(q.get(i)) == genome_to_json(genome_from_json(json.dumps(exp["genomes"][str(i)])))
+        assert net_to_bytes(q.get(i)) == bytes.fromhex(exp["jnets"][str(i)])
     ev = case["evaluate"]
     res = q.evaluate([[from_hex(h) for h in row] for row in ev["inputs"]])
     assert {str(i): [[bits(y) for y in r] for r in rows] for i, rows in res.items()} == ev["outputs"]
+    q.save(tmp_path / "pop.jpnet")
+    assert (tmp_path / "pop.jpnet").read_bytes().hex() == case["save"]["jpnet"]
+    for i in q.ids():
+        assert (tmp_path / "pop_nets" / f"{i}.jnet").read_bytes().hex() == exp["jnets"][str(i)]
 
 
 def test_returned_ids_do_not_alias_the_log():
@@ -225,3 +229,75 @@ def test_returned_ids_do_not_alias_the_log():
     ids = p.create(2)
     ids += [99]
     assert json.loads(p.run_log())["ops"][0]["ids"] == [0, 1]
+
+
+# ------------------------------------------------------------------ .jpnet files
+
+def test_save_load_roundtrip(tmp_path):
+    p = session_with_everything(seed=21)
+    p.save(tmp_path / "run.jpnet")
+    assert sorted(f.name for f in (tmp_path / "run_nets").iterdir()) == sorted(f"{i}.jnet" for i in p.ids())
+    q = Population.load(tmp_path / "run.jpnet")
+    assert q.ids() == p.ids() and q.generation == p.generation and genomes(q) == genomes(p)
+    # shared stream and id counter continue exactly
+    assert net_to_bytes(p.get(p.mutate(0, heavy("shared")))) == net_to_bytes(q.get(q.mutate(0, heavy("shared"))))
+    assert p.create(1) == q.create(1)
+
+
+def test_save_is_byte_identical(tmp_path):
+    p = session_with_everything(seed=4)
+    (tmp_path / "x").mkdir()
+    (tmp_path / "y").mkdir()
+    p.save(tmp_path / "x" / "pop.jpnet")
+    p.save(tmp_path / "y" / "pop.jpnet")
+    assert (tmp_path / "x" / "pop.jpnet").read_bytes() == (tmp_path / "y" / "pop.jpnet").read_bytes()
+
+
+def test_load_rejects_tampering(tmp_path):
+    p = session_with_everything(seed=5)
+    p.save(tmp_path / "run.jpnet")
+    victim = tmp_path / "run_nets" / f"{p.ids()[0]}.jnet"
+    good = victim.read_bytes()
+    victim.write_bytes(good[:-1] + bytes([good[-1] ^ 1]))
+    with pytest.raises(ValidationError):
+        Population.load(tmp_path / "run.jpnet")
+    victim.unlink()
+    with pytest.raises(ValidationError):
+        Population.load(tmp_path / "run.jpnet")
+    victim.write_bytes(good)
+    jp = (tmp_path / "run.jpnet").read_bytes()
+    (tmp_path / "run.jpnet").write_bytes(jp[:-1] + bytes([jp[-1] ^ 1]))
+    with pytest.raises(ValidationError):
+        Population.load(tmp_path / "run.jpnet")
+
+
+def test_embedded_log_replays_from_scratch(tmp_path):
+    p = session_with_everything()
+    p.save(tmp_path / "run.jpnet", include_log=True)
+    q = Population.load(tmp_path / "run.jpnet")
+    assert q.run_log() == p.run_log()
+    q.mutate(0, heavy())
+    r = Population.replay(q.run_log())
+    assert genomes(r) == genomes(q)
+
+
+def test_resumed_log_needs_base(tmp_path):
+    p = session_with_everything()
+    p.save(tmp_path / "run.jpnet")
+    q = Population.load(tmp_path / "run.jpnet")
+    log0 = json.loads(q.run_log())
+    import hashlib
+    assert log0["resumed_from"] == hashlib.sha256((tmp_path / "run.jpnet").read_bytes()).hexdigest()
+    assert log0["ops"] == []
+    q.mutate(0, heavy())
+    q.remove(1)
+    q.next_generation()
+    with pytest.raises(ValidationError):
+        Population.replay(q.run_log())
+    base = Population.load(tmp_path / "run.jpnet")
+    r = Population.replay(q.run_log(), base=base)
+    assert r.ids() == q.ids() and genomes(r) == genomes(q) and r.run_log() == q.run_log()
+    other = session_with_everything(seed=3)
+    other.save(tmp_path / "other.jpnet")
+    with pytest.raises(ValidationError):
+        Population.replay(q.run_log(), base=Population.load(tmp_path / "other.jpnet"))

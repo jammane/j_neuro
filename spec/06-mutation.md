@@ -45,7 +45,7 @@ A per-type value overrides the overall value for neurons of that type.
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
 changed between generations; every change is recorded in the run log
-([09](09-serialization.md#run-log)).
+([09](09-serialization.md#run-log-json)).
 
 ## Phases
 
@@ -274,4 +274,4 @@ repeat count times:
 ```
 
 Only weights change: operations, inversions, inputs and structure are untouched. Each call is
-recorded in the run log ([09](09-serialization.md#run-log)).
+recorded in the run log ([09](09-serialization.md#run-log-json)).

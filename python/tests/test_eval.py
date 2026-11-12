@@ -2,7 +2,7 @@ import pytest
 from helpers import INF, M, S, V, bits, from_hex, load_golden, make_net, outputs_for, same
 
 from jneuro import Priority
-from jneuro.io import genome_from_json
+from jneuro.jnet import net_from_bytes
 
 import json
 
@@ -13,7 +13,7 @@ EVAL_CASES = load_golden("handmade")
 @pytest.mark.parametrize("name,case", EVAL_CASES, ids=[c[0] for c in EVAL_CASES])
 def test_eval_golden(name, case):
     for prio in case["priorities"]:
-        net = genome_from_json(json.dumps(case["genome"]))
+        net = net_from_bytes(bytes.fromhex(case["jnet"]))
         net.priority = Priority[prio]
         net.reset()
         for st in case["steps"]:

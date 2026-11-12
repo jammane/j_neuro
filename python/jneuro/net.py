@@ -73,6 +73,26 @@ class Net:
         return Net(self.priority, self.depth_type, self.in_qty_max, self.n_inputs,
                    self.n_outputs, _copy.deepcopy(self.nodes), self.next_birth)
 
+    # ------------------------------------------------------------ .jnet files (spec/09)
+
+    def to_bytes(self) -> bytes:
+        from .jnet import net_to_bytes
+        return net_to_bytes(self)
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "Net":
+        from .jnet import net_from_bytes
+        return net_from_bytes(data)
+
+    def save(self, path):
+        from .jnet import save_net
+        save_net(self, path)
+
+    @classmethod
+    def load(cls, path) -> "Net":
+        from .jnet import load_net
+        return load_net(path)
+
     def get_warmup_steps(self) -> int:
         """Steps after a reset before every s_neuron history on any path is filled (spec/05)."""
         from .analysis import connections

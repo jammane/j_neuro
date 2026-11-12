@@ -37,7 +37,7 @@ static Net<D> first_changed(const Net<D>& net, const Profile& p, std::uint64_t g
     for (std::uint64_t seed = 0; seed < 300; ++seed) {
         Rng r(seed);
         auto child = mutate(net, p, gen, r);
-        bool ok = pred ? pred(child) : genome_to_json(child) != genome_to_json(net);
+        bool ok = pred ? pred(child) : to_bytes(child) != to_bytes(net);
         if (ok) return child;
     }
     FAIL("no seed produced the expected change");
@@ -78,20 +78,20 @@ TEST_CASE("profile json roundtrip") {
 
 TEST_CASE("parent untouched and deterministic") {
     auto net = base_net();
-    auto text = genome_to_json(net);
+    auto text = to_bytes(net);
     auto p = Profile::defaults();
     for (auto f : PHASES) p.set_overall(f, 50.0);
     Rng a(9), b(9);
     auto x = mutate(net, p, 1, a);
     auto y = mutate(net, p, 1, b);
-    CHECK(genome_to_json(net) == text);
-    CHECK(genome_to_json(x) == genome_to_json(y));
+    CHECK(to_bytes(net) == text);
+    CHECK(to_bytes(x) == to_bytes(y));
 }
 
 TEST_CASE("zero profile is identity") {
     auto net = base_net();
     Rng r(1);
-    CHECK(genome_to_json(mutate(net, zero_profile(), 4, r)) == genome_to_json(net));
+    CHECK(to_bytes(mutate(net, zero_profile(), 4, r)) == to_bytes(net));
 }
 
 TEST_CASE("offspring starts reset") {
@@ -155,7 +155,7 @@ TEST_CASE("slot fill skips min receivers") {
     auto net = make_net<std::uint16_t>(2, 1, 3, {{D16, M(AggOp::Min, {0, 1, none})}});
     for (std::uint64_t seed = 0; seed < 10; ++seed) {
         Rng r(seed);
-        CHECK(genome_to_json(mutate(net, growth_only("slot_fill"), 1, r)) == genome_to_json(net));
+        CHECK(to_bytes(mutate(net, growth_only("slot_fill"), 1, r)) == to_bytes(net));
     }
 }
 
@@ -164,7 +164,7 @@ TEST_CASE("growth cap per type") {
     auto p = growth_only("v_insert");
     p.apply_patch(json{{"v", {{"growth_max_pct", 0.0}}}});
     Rng r(1);
-    CHECK(genome_to_json(mutate(net, p, 1, r)) == genome_to_json(net));
+    CHECK(to_bytes(mutate(net, p, 1, r)) == to_bytes(net));
 }
 
 TEST_CASE("no gap skips or shifts") {
@@ -231,7 +231,7 @@ TEST_CASE("removal of inserted identities after grace") {
     prune.set_overall("removal_max_pct", 100.0);
     for (std::uint64_t seed = 0; seed < 20; ++seed) {
         Rng r(seed);
-        CHECK(genome_to_json(mutate(big, prune, 2, r)) == genome_to_json(big));
+        CHECK(to_bytes(mutate(big, prune, 2, r)) == to_bytes(big));
     }
     auto later = first_changed<std::uint32_t>(big, prune, 10,
                                               [&](const N32& c) { return n_neurons(c) < n_neurons(big); });
@@ -245,19 +245,18 @@ TEST_CASE("immune silenced not removed") {
     auto p = zero_profile();
     p.set_overall("removal_max_pct", 100.0);
     Rng r(1);
-    CHECK(genome_to_json(mutate(net, p, 50, r)) == genome_to_json(net));
+    CHECK(to_bytes(mutate(net, p, 50, r)) == to_bytes(net));
 }
 
 TEST_CASE("mutate golden") {
     for (auto& [name, c] : load_golden("mutate")) {
         INFO(name);
-        AnyNet any = genome_from_json(c["genome"].dump());
+        AnyNet any = from_bytes(hex_to_bytes(c["jnet"].get<std::string>()));
         Profile p = profile_from_json(c["profile"].dump());
-        std::string expected = std::visit([](const auto& n) { return genome_to_json(n); },
-                                          genome_from_json(c["expected_genome"].dump()));
+        Bytes expected = hex_to_bytes(c["expected_jnet"].get<std::string>());
         std::visit([&](auto& net) {
             Rng r(c["seed"].get<std::uint64_t>());
-            CHECK(genome_to_json(mutate(net, p, c["generation"].get<std::uint64_t>(), r)) == expected);
+            CHECK(to_bytes(mutate(net, p, c["generation"].get<std::uint64_t>(), r)) == expected);
         }, any);
     }
 }
@@ -270,9 +269,8 @@ TEST_CASE("create golden") {
                             parse_depth_type(c["depth_type"].get<std::string>()),
                             c["in_qty_max"].get<std::uint32_t>(),
                             parse_priority(c["priority"].get<std::string>()), r);
-        std::string expected = std::visit([](const auto& n) { return genome_to_json(n); },
-                                          genome_from_json(c["expected_genome"].dump()));
-        CHECK(std::visit([](const auto& n) { return genome_to_json(n); }, net) == expected);
+        Bytes expected = hex_to_bytes(c["expected_jnet"].get<std::string>());
+        CHECK(std::visit([](const auto& n) { return to_bytes(n); }, net) == expected);
     }
 }
 

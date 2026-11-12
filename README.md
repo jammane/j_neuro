@@ -6,7 +6,7 @@ An **evolutionary neural-network library**, written twice — once in **C++** an
 **Python** — as exact mirrors of a single language-neutral specification. Networks are not
 trained by gradients; they are **grown, tuned and pruned by mutation**.
 
-> **Status:** spec v0.3.0-draft is implemented in both Python and C++. The two produce
+> **Status:** spec v0.4.0-draft is implemented in both Python and C++. The two produce
 > byte-identical results on every shared golden case, and a run logged in either language
 > replays exactly in the other.
 
@@ -52,8 +52,13 @@ for gen in range(100):
     for i in ranked[25:]:
         pop.mutate(i, profile, times=2)                # offspring get new ids
     pop.next_generation()
-open("run.json", "w").write(pop.run_log())             # replay exactly with Population.replay
+pop.save("run.jpnet")                                  # run.jpnet + run_nets/<id>.jnet, hash-verified
+pop = Population.load("run.jpnet")                     # resumes exactly, in Python or C++
 ```
+
+Nets are stored as binary `.jnet` files and populations as `.jpnet` files
+([spec/09](spec/09-serialization.md)). Both languages write byte-identical files, so a run
+can be exported from one and continued in the other.
 
 Build and test instructions: [cpp/README.md](cpp/README.md), [python/README.md](python/README.md).
 

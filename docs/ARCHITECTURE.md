@@ -35,7 +35,8 @@ Names: C++ namespace `jneuro`, Python package `jneuro`.
 | `analysis` | readers, reachability, path-rule check, immunity, legal depth ranges | 03, 07 |
 | `mutate` | profile, budgets, phases 1–5 | 06 |
 | `removal` | candidates, bypass, cascade, GC, compaction | 07 |
-| `io` | genome / profile / run-log JSON | 09 |
+| `jnet` / `io` | binary `.jnet` files, SHA-256; profile and run-log JSON | 09 |
+| `population` | nets by id, evaluation, operations, `.jpnet` files, replay | 11 |
 
 Keeping the module boundaries identical makes the two code bases easy to compare line by line.
 

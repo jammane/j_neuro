@@ -2,50 +2,105 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <limits>
+
 using namespace th;
 
 TEST_CASE("invalid golden") {
     auto cases = load_golden("invalid");
-    REQUIRE(cases.size() >= 19);
+    REQUIRE(cases.size() >= 25);
     for (auto& [name, c] : cases) {
         INFO(name);
-        CHECK_THROWS_AS(genome_from_json(c["genome"].dump()), ValidationError);
+        CHECK_THROWS_AS(from_bytes(hex_to_bytes(c["jnet"].get<std::string>())), ValidationError);
     }
 }
 
-TEST_CASE("format_double matches Python repr") {
-    std::vector<std::pair<double, std::string>> v = {
-        {1.0, "1.0"}, {0.1, "0.1"}, {-0.0, "-0.0"}, {0.0, "0.0"}, {1e16, "1e+16"},
-        {1.5e-05, "1.5e-05"}, {0.0001, "0.0001"}, {123456789.123, "123456789.123"},
-        {1e22, "1e+22"}, {5e-324, "5e-324"}, {-2.5, "-2.5"},
-        {9999999999999998.0, "9999999999999998.0"},
-        {1.7976931348623157e308, "1.7976931348623157e+308"}, {100.0, "100.0"}, {3e-05, "3e-05"}};
-    for (auto& [x, s] : v) CHECK(format_double(x) == s);
+TEST_CASE("sha256 known vectors") {
+    CHECK(bytes_to_hex(sha256(Bytes{})) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    const std::string abc = "abc";
+    CHECK(bytes_to_hex(sha256(reinterpret_cast<const std::uint8_t*>(abc.data()), abc.size())) ==
+          "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    const std::string two = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    CHECK(bytes_to_hex(sha256(reinterpret_cast<const std::uint8_t*>(two.data()), two.size())) ==
+          "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+    const Bytes million(1000000, 'a');
+    CHECK(bytes_to_hex(sha256(million)) == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
 }
 
-TEST_CASE("canonical text") {
+static void put(Bytes& b, std::uint64_t v, int w) { for (int i = 0; i < w; ++i) b.push_back(static_cast<std::uint8_t>(v >> (8 * i))); }
+
+TEST_CASE("exact layout") {
+    // Bytes built by hand from spec/09, independent of the library's writer.
     auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(0, VOp::Add, 0.5)}});
-    CHECK(genome_to_json(net) ==
-          "{\"format\":\"j_neuro.genome\",\"spec_version\":\"0.3.0\",\"params\":{\"priority\":\"SPEED\","
-          "\"depth_type\":\"U16\",\"in_qty_max\":3,\"n_inputs\":1,\"n_outputs\":1},\"next_birth\":2,"
-          "\"nodes\":[{\"birth\":0,\"born_gen\":0,\"depth\":0},{\"birth\":1,\"born_gen\":0,\"depth\":65535,"
-          "\"neuron\":{\"type\":\"v\",\"input\":0,\"inversion\":\"none\",\"op\":\"add\",\"weight\":0.5}}]}");
+    Bytes b = {'J', 'N', 'E', 'T'};
+    put(b, 1, 2); put(b, 0, 2); put(b, 4, 2); put(b, 0, 2);
+    put(b, 0, 1); put(b, 0, 1); put(b, 3, 4); put(b, 1, 4); put(b, 1, 4); put(b, 2, 8);
+    put(b, 2, 2);
+    put(b, 0, 8); put(b, 0, 8); put(b, 0, 2); put(b, 0, 1);
+    put(b, 1, 8); put(b, 0, 8); put(b, 0xFFFF, 2); put(b, 1, 1);
+    put(b, 0, 2); put(b, 0, 1); put(b, 2, 1); put(b, to_bits(0.5), 8);
+    const Digest h = sha256(b);
+    b.insert(b.end(), h.begin(), h.end());
+    CHECK(to_bytes(net) == b);
+}
+
+TEST_CASE("none sentinel and widths") {
+    auto check = [](auto tag, std::size_t w) {
+        using D = decltype(tag);
+        auto net = make_net<D>(2, 1, 3, {{std::numeric_limits<D>::max(), M(AggOp::Max, {0, 1, none})}});
+        Bytes b = to_bytes(net);
+        for (std::size_t i = 0; i < w; ++i) CHECK(b[b.size() - 32 - w + i] == 0xFF);
+        CHECK(b.size() == 34 + w + 3 * (16 + w + 1) + (1 + 3 * w) + 32);
+    };
+    check(std::uint16_t{}, 2);
+    check(std::uint32_t{}, 4);
+    check(std::uint64_t{}, 8);
 }
 
 TEST_CASE("roundtrip all types") {
     auto net = make_net<std::uint16_t>(2, 1, 5, {{D16, M(AggOp::Median, {3, 4, 1, none, none})},
                                                  {10, V(0, VOp::Div, -1e-07, Inversion::Bitnot)},
                                                  {20, S(0, AggOp::Max, 4)}});
-    auto text = genome_to_json(net);
-    CHECK(std::visit([](const auto& n) { return genome_to_json(n); }, genome_from_json(text)) == text);
+    Bytes data = to_bytes(net);
+    CHECK(std::visit([](const auto& n) { return to_bytes(n); }, from_bytes(data)) == data);
 }
 
 TEST_CASE("u64 depth roundtrip") {
     auto net = make_net<std::uint64_t>(1, 1, 3, {{~std::uint64_t{0}, V(2, VOp::Add, 1.0)},
                                                  {(std::uint64_t{1} << 53) + 1, V(0, VOp::Mul, 3.0)}});
-    auto any = genome_from_json(genome_to_json(net));
-    auto& n2 = std::get<Net<std::uint64_t>>(any);
-    CHECK(n2.nodes[2].depth == (std::uint64_t{1} << 53) + 1);
+    auto any = from_bytes(to_bytes(net));
+    CHECK(std::get<Net<std::uint64_t>>(any).nodes[2].depth == (std::uint64_t{1} << 53) + 1);
+}
+
+TEST_CASE("weights exact") {
+    for (double w : {0.1, -0.0, 5e-324, 1.7976931348623157e308, 1.0 / 3.0}) {
+        auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(0, VOp::Mul, w)}});
+        auto back = std::get<Net<std::uint16_t>>(from_bytes(to_bytes(net)));
+        CHECK(to_bits(std::get<VNeuron>(*back.nodes[1].neuron).weight) == to_bits(w));
+    }
+}
+
+TEST_CASE("save and load file") {
+    auto dir = std::filesystem::temp_directory_path() / ("jneuro_io_" + std::to_string(fresh_seed()));
+    std::filesystem::create_directories(dir);
+    Rng r(3);
+    auto net = Net<std::uint32_t>::create(4, 2, 5, Priority::Memory, r);
+    save_net(dir / "a.jnet", net);
+    CHECK(read_file(dir / "a.jnet") == to_bytes(net));
+    CHECK(std::visit([](const auto& n) { return to_bytes(n); }, load_net(dir / "a.jnet")) == to_bytes(net));
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("damage detected") {
+    Bytes data = std::visit([](const auto& n) { return to_bytes(n); }, create(3, 1));
+    Bytes cut(data.begin(), data.end() - 1);
+    Bytes extra = data;
+    extra.push_back(0);
+    Bytes magic = data;
+    magic[0] = 'X';
+    Bytes flipped = data;
+    flipped[40] ^= 1;
+    for (auto* b : {&cut, &extra, &magic, &flipped}) CHECK_THROWS_AS(from_bytes(*b), ValidationError);
 }
 
 template <class D>
@@ -99,14 +154,14 @@ TEST_CASE("create from counts only") {
     CHECK(net.in_qty_max == 5);
     CHECK(net.priority == Priority::Balanced);
     Rng r(0);
-    CHECK(genome_to_json(net) == genome_to_json(Net<std::uint32_t>::create(4, 2, 5, Priority::Balanced, r)));
+    CHECK(to_bytes(net) == to_bytes(Net<std::uint32_t>::create(4, 2, 5, Priority::Balanced, r)));
     CHECK(net.step({1.0, 2.0, 3.0, 4.0}).size() == 2);
 }
 
 TEST_CASE("create deterministic") {
     Rng a(5), b(5);
-    CHECK(genome_to_json(Net<std::uint32_t>::create(9, 3, 3, Priority::Speed, a)) ==
-          genome_to_json(Net<std::uint32_t>::create(9, 3, 3, Priority::Speed, b)));
+    CHECK(to_bytes(Net<std::uint32_t>::create(9, 3, 3, Priority::Speed, a)) ==
+          to_bytes(Net<std::uint32_t>::create(9, 3, 3, Priority::Speed, b)));
 }
 
 TEST_CASE("create rejects bad params") {

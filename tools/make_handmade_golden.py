@@ -6,6 +6,7 @@ arithmetic; this script does not use the jneuro package. Run from the repository
     python3 tools/make_handmade_golden.py
 """
 import copy
+import hashlib
 import json
 import math
 import os
@@ -56,8 +57,53 @@ def genome(n_in, n_out, q, noninput, depth_type="U16"):
     }
 
 
+# ---- independent .jnet encoder, written from spec/09 (deliberately permissive so that
+# ---- invalid genomes can be encoded too)
+WIDTH = {"U16": 2, "U32": 4, "U64": 8}
+PRI = {"SPEED": 0, "MEMORY": 1, "BALANCED": 2}
+DT = {"U16": 0, "U32": 1, "U64": 2}
+INV = {"none": 0, "bitnot": 1, "recip": 2}
+VOPS = {"mul": 0, "div": 1, "add": 2, "sub": 3}
+AGG = {"mean": 0, "median": 1, "min": 2, "max": 3}
+
+
+def encode(g, magic=b"JNET", fmt=1, ver=(0, 4, 0), dt_byte=None, pri_byte=None,
+           cut=0, extra=b"", bad_hash=False):
+    p = g["params"]
+    w = WIDTH[p["depth_type"]]
+    none = (1 << (8 * w)) - 1
+
+    def u(v):
+        return (none if v is None else v).to_bytes(w, "little")
+
+    b = magic + struct.pack("<HHHH", fmt, *ver)
+    b += bytes([PRI[p["priority"]] if pri_byte is None else pri_byte,
+                DT[p["depth_type"]] if dt_byte is None else dt_byte])
+    b += struct.pack("<IIIQ", p["in_qty_max"], p["n_inputs"], p["n_outputs"], g["next_birth"])
+    b += u(len(g["nodes"]))
+    for n in g["nodes"]:
+        b += struct.pack("<QQ", n["birth"], n["born_gen"]) + n["depth"].to_bytes(w, "little")
+        x = n.get("neuron")
+        if x is None:
+            b += b"\x00"
+        elif x["type"] == "v":
+            b += b"\x01" + u(x["input"]) + bytes([INV.get(x["inversion"], 3), VOPS.get(x["op"], 9)])
+            b += struct.pack("<d", x["weight"])
+        elif x["type"] == "s":
+            b += b"\x02" + u(x["input"]) + bytes([AGG.get(x["op"], 9)]) + struct.pack("<I", x["k"])
+        elif x["type"] == "m":
+            b += b"\x03" + bytes([AGG.get(x["op"], 9)]) + b"".join(u(s) for s in x["slots"])
+        else:
+            b += b"\x04"
+    b = b[:len(b) - cut] + extra
+    digest = hashlib.sha256(b).digest()
+    if bad_hash:
+        digest = bytes([digest[0] ^ 1]) + digest[1:]
+    return (b + digest).hex()
+
+
 def eval_case(g, steps):
-    return {"kind": "eval", "genome": g, "priorities": ALL_PRIORITIES,
+    return {"kind": "eval", "jnet": encode(g), "priorities": ALL_PRIORITIES,
             "steps": [{"inputs": [bits(x) for x in i], "outputs": [bits(y) for y in o]}
                       for i, o in steps]}
 
@@ -134,10 +180,14 @@ cases["eval_u64_depth"] = eval_case(g, [([2.0], [7.0])])
 invalid = {}
 
 
-def bad(name, reason, fn):
+def bad(name, reason, fn, **enc):
     g2 = copy.deepcopy(chain)
     fn(g2)
-    invalid[name] = {"kind": "invalid", "genome": g2, "reason": reason}
+    invalid[name] = {"kind": "invalid", "jnet": encode(g2, **enc), "reason": reason}
+
+
+def same(g):
+    return None
 
 
 bad("even_in_qty_max", "in_qty_max must be odd",
@@ -151,13 +201,19 @@ bad("input_with_neuron", "input node has neuron",
     lambda g: g["nodes"][0].__setitem__("neuron", v(None, "add", 1.0)))
 bad("output_depth", "output depth", lambda g: g["nodes"][2].__setitem__("depth", 300))
 bad("hidden_depth_zero", "hidden depth", lambda g: g["nodes"][3].__setitem__("depth", 0))
-bad("depth_out_of_range", "depth range",
-    lambda g: (g["params"].__setitem__("depth_type", "U16"), None))
 bad("duplicate_birth", "birth", lambda g: g["nodes"][4].__setitem__("birth", 3))
 bad("birth_too_large", "next_birth", lambda g: g.__setitem__("next_birth", 5))
-bad("format", "format", lambda g: g.__setitem__("format", "other"))
-bad("major_version", "spec_version", lambda g: g.__setitem__("spec_version", "1.0.0"))
-bad("minor_version_pre_1", "spec_version 0.x minor", lambda g: g.__setitem__("spec_version", "0.2.0"))
+bad("magic", "magic", same, magic=b"XNET")
+bad("format_version", "format version", same, fmt=2)
+bad("major_version", "spec_version", same, ver=(1, 0, 0))
+bad("minor_version_pre_1", "spec_version 0.x minor", same, ver=(0, 3, 0))
+bad("truncated", "truncated", same, cut=1)
+bad("trailing_bytes", "trailing bytes", same, extra=b"\x00")
+bad("checksum", "checksum", same, bad_hash=True)
+bad("depth_type_byte", "enum range", same, dt_byte=3)
+bad("priority_byte", "enum range", same, pri_byte=3)
+bad("neuron_type_byte", "enum range", lambda g: g["nodes"][3]["neuron"].__setitem__("type", "x"))
+bad("inversion_byte", "enum range", lambda g: g["nodes"][3]["neuron"].__setitem__("inversion", "flip"))
 bad("median_even_k", "median k",
     lambda g: g["nodes"][4].__setitem__("neuron", s(1, "median", 2)))
 bad("k_too_large", "k range", lambda g: g["nodes"][4].__setitem__("neuron", s(1, "mean", 5)))

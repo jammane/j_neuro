@@ -13,3 +13,4 @@
 #include <jneuro/removal.hpp>
 #include <jneuro/mutate.hpp>
 #include <jneuro/population.hpp>
+#include <jneuro/sha256.hpp>

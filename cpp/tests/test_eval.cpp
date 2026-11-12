@@ -13,7 +13,7 @@ TEST_CASE("eval golden") {
     for (auto& [name, c] : cases) {
         for (auto& prio : c["priorities"]) {
             INFO(name << " " << prio.get<std::string>());
-            AnyNet any = genome_from_json(c["genome"].dump());
+            AnyNet any = from_bytes(hex_to_bytes(c["jnet"].get<std::string>()));
             std::visit([&](auto& net) {
                 net.priority = parse_priority(prio.get<std::string>());
                 net.reset();

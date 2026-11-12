@@ -1,68 +1,6 @@
 {
  "kind": "eval",
- "genome": {
-  "format": "j_neuro.genome",
-  "spec_version": "0.3.0",
-  "params": {
-   "priority": "SPEED",
-   "depth_type": "U16",
-   "in_qty_max": 3,
-   "n_inputs": 1,
-   "n_outputs": 4
-  },
-  "next_birth": 5,
-  "nodes": [
-   {
-    "birth": 0,
-    "born_gen": 0,
-    "depth": 0
-   },
-   {
-    "birth": 1,
-    "born_gen": 0,
-    "depth": 65535,
-    "neuron": {
-     "type": "s",
-     "input": 0,
-     "op": "mean",
-     "k": 3
-    }
-   },
-   {
-    "birth": 2,
-    "born_gen": 0,
-    "depth": 65535,
-    "neuron": {
-     "type": "s",
-     "input": 0,
-     "op": "median",
-     "k": 3
-    }
-   },
-   {
-    "birth": 3,
-    "born_gen": 0,
-    "depth": 65535,
-    "neuron": {
-     "type": "s",
-     "input": 0,
-     "op": "min",
-     "k": 3
-    }
-   },
-   {
-    "birth": 4,
-    "born_gen": 0,
-    "depth": 65535,
-    "neuron": {
-     "type": "s",
-     "input": 0,
-     "op": "max",
-     "k": 1
-    }
-   }
-  ]
- },
+ "jnet": "4a4e455401000000040000000000030000000100000004000000050000000000000005000000000000000000000000000000000000000001000000000000000000000000000000ffff020000000300000002000000000000000000000000000000ffff020000010300000003000000000000000000000000000000ffff020000020300000004000000000000000000000000000000ffff0200000301000000ee3bcff136b861a2f7045f800616989ddb15da7acdd9f48a5a9ee115bfcaf0fc",
  "priorities": [
   "SPEED",
   "MEMORY",

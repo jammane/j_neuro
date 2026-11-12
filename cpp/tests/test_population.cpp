@@ -21,9 +21,9 @@ static Profile heavy(const std::string& mode = "fresh") {
     return p;
 }
 
-static std::vector<std::string> genomes(const Pop& p) {
-    std::vector<std::string> out;
-    for (auto i : p.ids()) out.push_back(genome_to_json(p.get(i)));
+static std::vector<Bytes> genomes(const Pop& p) {
+    std::vector<Bytes> out;
+    for (auto i : p.ids()) out.push_back(to_bytes(p.get(i)));
     return out;
 }
 
@@ -54,7 +54,7 @@ TEST_CASE("pop: add rejects mismatch and copies") {
     auto i = p.add(net);
     auto& m = std::get<MNeuron>(*net.nodes[3].neuron);
     m.op = static_cast<AggOp>((static_cast<int>(m.op) + 1) % 4);
-    CHECK(genome_to_json(p.get(i)) != genome_to_json(net));
+    CHECK(to_bytes(p.get(i)) != to_bytes(net));
 }
 
 TEST_CASE("pop: ids never reused and unknown ids") {
@@ -63,7 +63,7 @@ TEST_CASE("pop: ids never reused and unknown ids") {
     p.remove(1);
     CHECK(p.ids() == std::vector<std::uint64_t>{0, 2});
     CHECK(p.clone(0) == 3);
-    CHECK(genome_to_json(p.get(3)) == genome_to_json(p.get(0)));
+    CHECK(to_bytes(p.get(3)) == to_bytes(p.get(0)));
     CHECK_THROWS_AS(p.get(1), std::out_of_range);
     CHECK_THROWS_AS(p.remove(1), std::out_of_range);
     CHECK_THROWS_AS(p.clone(1), std::out_of_range);
@@ -113,10 +113,10 @@ TEST_CASE("pop: evaluate priority invariance") {
 TEST_CASE("pop: mutate offspring keeps parent") {
     auto p = pop();
     auto a = p.create(1)[0];
-    auto before = genome_to_json(p.get(a));
+    auto before = to_bytes(p.get(a));
     auto b = p.mutate(a, heavy(), 3);
     CHECK(b == 1);
-    CHECK(genome_to_json(p.get(a)) == before);
+    CHECK(to_bytes(p.get(a)) == before);
     p.get(b).validate();
 }
 
@@ -129,7 +129,7 @@ TEST_CASE("pop: shared mutate equals manual") {
     auto net = N32::create(3, 2, 5, Priority::Balanced, r);
     auto m1 = mutate(net, prof, 0, r);
     auto manual = mutate(m1, prof, 0, r);
-    CHECK(genome_to_json(p.get(b)) == genome_to_json(manual));
+    CHECK(to_bytes(p.get(b)) == to_bytes(manual));
 }
 
 TEST_CASE("pop: shared reproducible, fresh varies") {
@@ -199,7 +199,7 @@ TEST_CASE("pop: replay reproduces exactly") {
     CHECK(q.run_log() == log);
     auto x = p.mutate(0, heavy("shared"));
     auto y = q.mutate(0, heavy("shared"));
-    CHECK(genome_to_json(p.get(x)) == genome_to_json(q.get(y)));
+    CHECK(to_bytes(p.get(x)) == to_bytes(q.get(y)));
 }
 
 TEST_CASE("pop: profiles deduplicated in log") {
@@ -224,9 +224,8 @@ static void check_population_case(const json& c) {
     CHECK(q.ids() == exp["ids"].get<std::vector<std::uint64_t>>());
     CHECK(q.generation() == exp["generation"].get<std::uint64_t>());
     for (auto i : q.ids()) {
-        std::string want = std::visit([](const auto& n) { return genome_to_json(n); },
-                                      genome_from_json(exp["genomes"][std::to_string(i)].dump()));
-        CHECK(genome_to_json(q.get(i)) == want);
+        Bytes want = hex_to_bytes(exp["jnets"][std::to_string(i)].template get<std::string>());
+        CHECK(to_bytes(q.get(i)) == want);
     }
     std::vector<std::vector<double>> in;
     for (auto& row : c["evaluate"]["inputs"]) {
@@ -240,6 +239,14 @@ static void check_population_case(const json& c) {
         for (std::size_t s = 0; s < rows.size(); ++s)
             for (std::size_t o = 0; o < rows[s].size(); ++o) CHECK(bits(rows[s][o]) == want[s][o].template get<std::string>());
     }
+    auto dir = std::filesystem::temp_directory_path() / ("jneuro_pg_" + std::to_string(fresh_seed()));
+    std::filesystem::create_directories(dir);
+    q.save(dir / "pop.jpnet");
+    CHECK(bytes_to_hex(read_file(dir / "pop.jpnet")) == c["save"]["jpnet"].template get<std::string>());
+    for (auto i : q.ids())
+        CHECK(bytes_to_hex(read_file(dir / "pop_nets" / (std::to_string(i) + ".jnet"))) ==
+              exp["jnets"][std::to_string(i)].template get<std::string>());
+    std::filesystem::remove_all(dir);
 }
 
 TEST_CASE("pop: population golden") {
@@ -253,4 +260,107 @@ TEST_CASE("pop: population golden") {
             case DepthType::U64: check_population_case<std::uint64_t>(c); break;
         }
     }
+}
+
+// ------------------------------------------------------------------ .jpnet files
+
+namespace {
+struct TempDir {
+    std::filesystem::path path;
+    TempDir() : path(std::filesystem::temp_directory_path() / ("jneuro_pop_" + std::to_string(fresh_seed()))) {
+        std::filesystem::create_directories(path);
+    }
+    ~TempDir() { std::filesystem::remove_all(path); }
+};
+
+Pop seeded_session(std::uint64_t seed) {
+    Pop p(5, 3, 2, Priority::Speed, seed);
+    auto ids = p.create(3);
+    auto a = p.mutate(ids[0], heavy("fresh"), 2);
+    p.next_generation();
+    auto c = p.clone(a);
+    p.inject_diversity(c, 50.0, 2.0);
+    p.add(warm_net());
+    p.remove(ids[2]);
+    p.mutate(c, heavy("shared"), 3);
+    return p;
+}
+}  // namespace
+
+TEST_CASE("pop: save load roundtrip") {
+    TempDir d;
+    auto p = seeded_session(21);
+    p.save(d.path / "run.jpnet");
+    for (auto i : p.ids()) CHECK(std::filesystem::is_regular_file(d.path / "run_nets" / (std::to_string(i) + ".jnet")));
+    auto q = Pop::load(d.path / "run.jpnet");
+    CHECK(q.ids() == p.ids());
+    CHECK(q.generation() == p.generation());
+    CHECK(genomes(q) == genomes(p));
+    auto x = p.mutate(0, heavy("shared"));
+    auto y = q.mutate(0, heavy("shared"));
+    CHECK(to_bytes(p.get(x)) == to_bytes(q.get(y)));
+    CHECK(p.create(1) == q.create(1));
+}
+
+TEST_CASE("pop: save is byte identical") {
+    TempDir d;
+    auto p = seeded_session(4);
+    std::filesystem::create_directories(d.path / "x");
+    std::filesystem::create_directories(d.path / "y");
+    p.save(d.path / "x" / "pop.jpnet");
+    p.save(d.path / "y" / "pop.jpnet");
+    CHECK(read_file(d.path / "x" / "pop.jpnet") == read_file(d.path / "y" / "pop.jpnet"));
+}
+
+TEST_CASE("pop: load rejects tampering") {
+    TempDir d;
+    auto p = seeded_session(5);
+    p.save(d.path / "run.jpnet");
+    auto victim = d.path / "run_nets" / (std::to_string(p.ids()[0]) + ".jnet");
+    Bytes good = read_file(victim);
+    Bytes bad = good;
+    bad.back() ^= 1;
+    write_file(victim, bad);
+    CHECK_THROWS_AS(Pop::load(d.path / "run.jpnet"), ValidationError);
+    std::filesystem::remove(victim);
+    CHECK_THROWS_AS(Pop::load(d.path / "run.jpnet"), ValidationError);
+    write_file(victim, good);
+    Bytes jp = read_file(d.path / "run.jpnet");
+    jp.back() ^= 1;
+    write_file(d.path / "run.jpnet", jp);
+    CHECK_THROWS_AS(Pop::load(d.path / "run.jpnet"), ValidationError);
+}
+
+TEST_CASE("pop: embedded log replays from scratch") {
+    TempDir d;
+    auto p = session_with_everything();
+    p.save(d.path / "run.jpnet", true);
+    auto q = Pop::load(d.path / "run.jpnet");
+    CHECK(q.run_log() == p.run_log());
+    q.mutate(0, heavy());
+    auto r = Pop::replay(q.run_log());
+    CHECK(genomes(r) == genomes(q));
+}
+
+TEST_CASE("pop: resumed log needs base") {
+    TempDir d;
+    auto p = session_with_everything();
+    p.save(d.path / "run.jpnet");
+    auto q = Pop::load(d.path / "run.jpnet");
+    auto log0 = json::parse(q.run_log());
+    CHECK(log0["resumed_from"].get<std::string>() == bytes_to_hex(sha256(read_file(d.path / "run.jpnet"))));
+    CHECK(log0["ops"].empty());
+    q.mutate(0, heavy());
+    q.remove(1);
+    q.next_generation();
+    CHECK_THROWS_AS(Pop::replay(q.run_log()), ValidationError);
+    auto base = Pop::load(d.path / "run.jpnet");
+    auto r = Pop::replay(q.run_log(), &base);
+    CHECK(r.ids() == q.ids());
+    CHECK(genomes(r) == genomes(q));
+    CHECK(r.run_log() == q.run_log());
+    auto other = seeded_session(3);
+    other.save(d.path / "other.jpnet");
+    auto wrong = Pop::load(d.path / "other.jpnet");
+    CHECK_THROWS_AS(Pop::replay(q.run_log(), &wrong), ValidationError);
 }

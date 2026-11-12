@@ -28,5 +28,6 @@ The build refuses fast-math flags and always uses `-ffp-contract=off`
 | `types.hpp`, `numerics.hpp`, `rng.hpp`, `aggregate.hpp` | enums, exact float helpers, shared RNG, aggregation |
 | `net.hpp` | `Net<D>` (D = `uint16_t`/`uint32_t`/`uint64_t`), neurons, evaluation |
 | `analysis.hpp`, `net_build.hpp` | path rule, immunity, depth ranges; `create`, `validate` |
-| `io.hpp` | `AnyNet`, genome JSON, `create(n_in, n_out, …)` |
+| `io.hpp`, `sha256.hpp` | `AnyNet`; `.jnet` files: `to_bytes`, `from_bytes`, `save_net`, `load_net`; `create(n_in, n_out, …)`; SHA-256 |
+| `population.hpp` | `Population<D>`: nets by id, `evaluate`, operations, `save`/`load` (`.jpnet`), `replay` |
 | `profile.hpp`, `mutate.hpp`, `removal.hpp` | mutation profile, `mutate`, removal and compaction |

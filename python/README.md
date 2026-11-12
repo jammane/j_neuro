@@ -21,7 +21,9 @@ python3 -m venv .venv
 | `jneuro.net` | `Net`, `Node`, `VNeuron`, `SNeuron`, `MNeuron`; `Net.create`, `step`, `reset`, `validate` |
 | `jneuro.analysis` | path rule, immunity, depth ranges |
 | `jneuro.mutate`, `jneuro.removal` | `Profile`, `mutate`; removal and compaction |
-| `jneuro.io` | genome / profile / run-log JSON |
+| `jneuro.jnet` | `.jnet` files: `net_to_bytes`, `net_from_bytes`, `save_net`, `load_net` (also `net.save`, `Net.load`) |
+| `jneuro.population` | `Population`: nets by id, `evaluate`, operations, `save`/`load` (`.jpnet`), `replay` |
+| `jneuro.io` | profile and run-log JSON helpers |
 
 Regenerate implementation-produced golden cases (from the repository root):
 `python/.venv/bin/python tools/make_impl_golden.py`.

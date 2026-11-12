@@ -7,7 +7,7 @@ from helpers import INF, M, S, V, load_golden, make_net, outputs_for, sample_inp
 
 from jneuro import DepthType, Inversion, Net, Node, Priority, SNeuron, ValidationError, VNeuron, VOp
 from jneuro.analysis import path_rule_ok
-from jneuro.io import genome_to_json
+from jneuro.jnet import net_from_bytes, net_to_bytes
 from jneuro.mutate import Profile, inject_diversity, mutate
 from jneuro.rng import Rng
 
@@ -100,7 +100,7 @@ def test_rewire_never_orphans():
     net = make_net(2, 1, 3, [(D16, M("mean", [3, 4, None])), (10, V(0)), (20, V(1))])
     p = rewire_profile()
     for seed in range(30):
-        assert genome_to_json(mutate(net, p, 1, Rng(seed))) == genome_to_json(net)
+        assert net_to_bytes(mutate(net, p, 1, Rng(seed))) == net_to_bytes(net)
 
 
 def test_rewire_prob_zero_never_rewires():
@@ -146,9 +146,9 @@ def diversity_net():
 
 def test_diversity_changes_only_weights():
     net = diversity_net()
-    before = genome_to_json(net)
+    before = net_to_bytes(net)
     child = inject_diversity(net, 100.0, Rng(4))
-    assert genome_to_json(net) == before
+    assert net_to_bytes(net) == before
     for a, b in zip(net.nodes, child.nodes):
         if isinstance(a.neuron, VNeuron):
             assert (a.neuron.input, a.neuron.inversion, a.neuron.op) == \
@@ -160,14 +160,14 @@ def test_diversity_changes_only_weights():
 
 def test_diversity_counts():
     net = diversity_net()
-    assert genome_to_json(inject_diversity(net, 0.0, Rng(1))) == genome_to_json(net)
+    assert net_to_bytes(inject_diversity(net, 0.0, Rng(1))) == net_to_bytes(net)
     for seed in range(20):
         child = inject_diversity(net, 50.0, Rng(seed))          # prob_round(1.5) -> 1 or 2
         changed = sum(1 for a, b in zip(net.nodes, child.nodes)
                       if isinstance(a.neuron, VNeuron) and a.neuron.weight != b.neuron.weight)
         assert changed in (1, 2)
-    a = genome_to_json(inject_diversity(net, 70.0, Rng(9), sigma_reset=3.0))
-    assert a == genome_to_json(inject_diversity(net, 70.0, Rng(9), sigma_reset=3.0))
+    a = net_to_bytes(inject_diversity(net, 70.0, Rng(9), sigma_reset=3.0))
+    assert a == net_to_bytes(inject_diversity(net, 70.0, Rng(9), sigma_reset=3.0))
 
 
 DIV = load_golden("diversity")
@@ -175,7 +175,6 @@ DIV = load_golden("diversity")
 
 @pytest.mark.parametrize("name,case", DIV, ids=[c[0] for c in DIV])
 def test_diversity_golden(name, case):
-    from jneuro.io import genome_from_json
-    net = genome_from_json(json.dumps(case["genome"]))
+    net = net_from_bytes(bytes.fromhex(case["jnet"]))
     child = inject_diversity(net, case["pct"], Rng(case["seed"]), case["sigma_reset"])
-    assert genome_to_json(child) == genome_to_json(genome_from_json(json.dumps(case["expected_genome"])))
+    assert net_to_bytes(child) == bytes.fromhex(case["expected_jnet"])

@@ -97,7 +97,7 @@ TEST_CASE("v02: rewire never orphans") {
     auto p = rewire_profile();
     for (std::uint64_t seed = 0; seed < 30; ++seed) {
         Rng r(seed);
-        CHECK(genome_to_json(mutate(net, p, 1, r)) == genome_to_json(net));
+        CHECK(to_bytes(mutate(net, p, 1, r)) == to_bytes(net));
     }
 }
 
@@ -148,10 +148,10 @@ static N16 diversity_net() {
 
 TEST_CASE("v02: diversity changes only weights") {
     auto net = diversity_net();
-    auto before = genome_to_json(net);
+    auto before = to_bytes(net);
     Rng r(4);
     auto child = inject_diversity(net, 100.0, r);
-    CHECK(genome_to_json(net) == before);
+    CHECK(to_bytes(net) == before);
     for (std::size_t i = 0; i < net.nodes.size(); ++i) {
         if (!net.nodes[i].neuron || !std::holds_alternative<VNeuron>(*net.nodes[i].neuron)) continue;
         auto& a = std::get<VNeuron>(*net.nodes[i].neuron);
@@ -166,7 +166,7 @@ TEST_CASE("v02: diversity changes only weights") {
 TEST_CASE("v02: diversity counts") {
     auto net = diversity_net();
     Rng r0(1);
-    CHECK(genome_to_json(inject_diversity(net, 0.0, r0)) == genome_to_json(net));
+    CHECK(to_bytes(inject_diversity(net, 0.0, r0)) == to_bytes(net));
     for (std::uint64_t seed = 0; seed < 20; ++seed) {
         Rng r(seed);
         auto child = inject_diversity(net, 50.0, r);
@@ -178,7 +178,7 @@ TEST_CASE("v02: diversity counts") {
         CHECK((changed == 1 || changed == 2));
     }
     Rng a(9), b(9);
-    CHECK(genome_to_json(inject_diversity(net, 70.0, a, 3.0)) == genome_to_json(inject_diversity(net, 70.0, b, 3.0)));
+    CHECK(to_bytes(inject_diversity(net, 70.0, a, 3.0)) == to_bytes(inject_diversity(net, 70.0, b, 3.0)));
 }
 
 TEST_CASE("v02: diversity golden") {
@@ -186,12 +186,11 @@ TEST_CASE("v02: diversity golden") {
     REQUIRE(cases.size() >= 4);
     for (auto& [name, c] : cases) {
         INFO(name);
-        AnyNet any = genome_from_json(c["genome"].dump());
-        std::string expected = std::visit([](const auto& n) { return genome_to_json(n); },
-                                          genome_from_json(c["expected_genome"].dump()));
+        AnyNet any = from_bytes(hex_to_bytes(c["jnet"].get<std::string>()));
+        Bytes expected = hex_to_bytes(c["expected_jnet"].get<std::string>());
         std::visit([&](const auto& net) {
             Rng r(c["seed"].get<std::uint64_t>());
-            CHECK(genome_to_json(inject_diversity(net, c["pct"].get<double>(), r, c["sigma_reset"].get<double>())) == expected);
+            CHECK(to_bytes(inject_diversity(net, c["pct"].get<double>(), r, c["sigma_reset"].get<double>())) == expected);
         }, any);
     }
 }

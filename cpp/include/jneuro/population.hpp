@@ -50,8 +50,7 @@ public:
             throw ValidationError("net parameters differ from the population's");
         net.validate();
         const std::uint64_t id = store(net.copy_genome());
-        ops_.push_back(nlohmann::json{{"op", "add"}, {"new_id", id},
-                                      {"genome", nlohmann::json::parse(genome_to_json(net))}});
+        ops_.push_back(nlohmann::json{{"op", "add"}, {"new_id", id}, {"jnet", bytes_to_hex(to_bytes(net))}});
         return id;
     }
 
@@ -127,13 +126,120 @@ public:
                                           {"in_qty_max", in_qty_max_}, {"n_inputs", n_inputs_},
                                           {"n_outputs", n_outputs_}, {"priority", to_string(priority_)},
                                           {"seed", seed_}};
+        d["resumed_from"] = resumed_from_ ? nlohmann::json(*resumed_from_) : nlohmann::json(nullptr);
         d["profiles"] = profiles_;
         d["ops"] = ops_;
         return d.dump();
     }
 
-    /// Re-execute a run log; reproduces ids, genomes, generation and shared-stream state.
-    static Population replay(const std::string& text) {
+    // ---------------------------------------------------------------- .jpnet files (spec/09)
+    /// Write <name>.jpnet plus <name>_nets/<id>.jnet beside it.
+    void save(const std::filesystem::path& path, bool include_log = false) const {
+        const std::string name = path.stem().string();
+        const std::filesystem::path net_dir = path.parent_path() / (name + "_nets");
+        std::filesystem::create_directories(net_dir);
+        detail::Writer w;
+        w.header("JPOP");
+        w.u(static_cast<std::uint8_t>(priority_), 1);
+        w.u(static_cast<std::uint8_t>(Net<D>::depth_type), 1);
+        w.u(in_qty_max_, 4);
+        w.u(n_inputs_, 4);
+        w.u(n_outputs_, 4);
+        w.u(seed_, 8);
+        for (std::uint64_t s : rng_.get_state()) w.u(s, 8);
+        w.u(generation_, 8);
+        w.u(next_id_, 8);
+        w.u(nets_.size(), 8);
+        for (const auto& [id, net] : nets_) {
+            const Bytes data = to_bytes(net);
+            write_file(net_dir / (std::to_string(id) + ".jnet"), data);
+            const std::string rel = name + "_nets/" + std::to_string(id) + ".jnet";
+            w.u(id, 8);
+            w.u(rel.size(), 2);
+            w.raw(rel);
+            const Digest h = sha256(data);
+            w.raw(h.data(), h.size());
+        }
+        if (include_log) {
+            const std::string log = run_log();
+            w.u(1, 1);
+            w.u(log.size(), 8);
+            w.raw(log);
+        } else {
+            w.u(0, 1);
+        }
+        write_file(path, w.finish());
+    }
+
+    /// Load a .jpnet, verifying every .jnet hash; continues exactly where it was saved.
+    static Population load(const std::filesystem::path& path) {
+        const Bytes data = read_file(path);
+        detail::Reader r(data, "jpnet");
+        r.header("JPOP");
+        const auto priority = static_cast<Priority>(r.enum_byte(3, "priority"));
+        if (static_cast<DepthType>(r.enum_byte(3, "depth_type")) != Net<D>::depth_type)
+            throw ValidationError("jpnet: depth_type differs from this population type");
+        const auto q = static_cast<std::uint32_t>(r.u(4));
+        const auto n_in = static_cast<std::uint32_t>(r.u(4));
+        const auto n_out = static_cast<std::uint32_t>(r.u(4));
+        const std::uint64_t seed = r.u(8);
+        std::array<std::uint64_t, 4> state;
+        for (auto& s : state) s = r.u(8);
+        const std::uint64_t generation = r.u(8), next_id = r.u(8), count = r.u(8);
+        Population pop(q, n_in, n_out, priority, seed);
+        pop.rng_.set_state(state);
+        pop.generation_ = generation;
+        pop.next_id_ = next_id;
+        std::optional<std::uint64_t> last;
+        for (std::uint64_t k = 0; k < count; ++k) {
+            const std::uint64_t id = r.u(8);
+            const auto len = static_cast<std::size_t>(r.u(2));
+            const std::uint8_t* p = r.take(len);
+            const std::string rel(reinterpret_cast<const char*>(p), len);
+            const std::uint8_t* digest = r.take(32);
+            if ((last && id <= *last) || id >= next_id)
+                throw ValidationError("jpnet: net ids must ascend and be below next_id");
+            last = id;
+            const std::filesystem::path file = path.parent_path() / rel;
+            if (!std::filesystem::is_regular_file(file)) throw ValidationError("jpnet: missing net file " + rel);
+            const Bytes raw = read_file(file);
+            const Digest h = sha256(raw);
+            if (!std::equal(h.begin(), h.end(), digest)) throw ValidationError("jpnet: hash mismatch for " + rel);
+            AnyNet any = from_bytes(raw);
+            auto* net = std::get_if<Net<D>>(&any);
+            if (!net || net->in_qty_max != q || net->n_inputs != n_in || net->n_outputs != n_out)
+                throw ValidationError("jpnet: " + rel + " does not match the population's parameters");
+            pop.nets_.emplace(id, std::move(*net));
+        }
+        const std::uint8_t flag = r.enum_byte(2, "log flag");
+        std::optional<nlohmann::json> log;
+        if (flag == 1) {
+            const auto len = static_cast<std::size_t>(r.u(8));
+            const std::uint8_t* p = r.take(len);
+            try {
+                log = nlohmann::json::parse(std::string(reinterpret_cast<const char*>(p), len));
+            } catch (const nlohmann::json::exception& e) {
+                throw ValidationError(std::string("jpnet: invalid run log: ") + e.what());
+            }
+        }
+        r.done();
+        pop.snapshot_hash_ = bytes_to_hex(sha256(data));
+        if (log) {
+            check_format(*log, "j_neuro.runlog");
+            if (log->contains("resumed_from") && !log->at("resumed_from").is_null())
+                pop.resumed_from_ = log->at("resumed_from").get<std::string>();
+            pop.profiles_ = log->at("profiles");
+            for (auto& p : pop.profiles_) pop.profile_keys_.push_back(Profile::from_json(p).to_json().dump());
+            pop.ops_ = log->at("ops");
+        } else {
+            pop.resumed_from_ = pop.snapshot_hash_;
+        }
+        return pop;
+    }
+
+    /// Re-execute a run log; reproduces ids, nets, generation and shared-stream state.
+    /// A log that resumed from a .jpnet needs `base`: the population loaded from that file.
+    static Population replay(const std::string& text, const Population* base = nullptr) {
         nlohmann::json d;
         try {
             d = nlohmann::json::parse(text);
@@ -144,9 +250,17 @@ public:
         const auto& pp = d.at("population");
         if (parse_depth_type(pp.at("depth_type").get<std::string>()) != Net<D>::depth_type)
             throw ValidationError("run log depth_type differs from this population type");
-        Population pop(pp.at("in_qty_max").get<std::uint32_t>(), pp.at("n_inputs").get<std::uint32_t>(),
-                       pp.at("n_outputs").get<std::uint32_t>(), parse_priority(pp.at("priority").get<std::string>()),
-                       pp.at("seed").get<std::uint64_t>());
+        const bool resumed = d.contains("resumed_from") && !d.at("resumed_from").is_null();
+        Population pop = resumed ? Population(3, 1, 1) : Population(pp.at("in_qty_max").get<std::uint32_t>(),
+                       pp.at("n_inputs").get<std::uint32_t>(), pp.at("n_outputs").get<std::uint32_t>(),
+                       parse_priority(pp.at("priority").get<std::string>()), pp.at("seed").get<std::uint64_t>());
+        if (resumed) {
+            const std::string h = d.at("resumed_from").get<std::string>();
+            if (!base || base->snapshot_hash_ != h)
+                throw ValidationError("run log resumes from a .jpnet: pass the population loaded from that file as base");
+            pop = base->copy_state();
+            pop.resumed_from_ = h;
+        }
         std::vector<Profile> profiles;
         for (auto& p : d.at("profiles")) profiles.push_back(Profile::from_json(p));
         auto seed_of = [](const nlohmann::json& op) -> std::optional<std::uint64_t> {
@@ -164,7 +278,7 @@ public:
                 if (got != op.at("ids").get<std::vector<std::uint64_t>>())
                     throw ValidationError("run log: id mismatch during replay");
             } else if (kind == "add") {
-                AnyNet any = genome_from_json(op.at("genome").dump());
+                AnyNet any = from_bytes(hex_to_bytes(op.at("jnet").get<std::string>()));
                 auto* net = std::get_if<Net<D>>(&any);
                 if (!net) throw ValidationError("run log: added genome has a different depth type");
                 expect(pop.add(*net), op.at("new_id"));
@@ -203,6 +317,20 @@ private:
     nlohmann::json profiles_ = nlohmann::json::array();
     std::vector<std::string> profile_keys_;
     nlohmann::json ops_ = nlohmann::json::array();
+    std::optional<std::string> resumed_from_;   // hex SHA-256 of the .jpnet this run resumed from
+    std::optional<std::string> snapshot_hash_;  // hex SHA-256 of the .jpnet this object was loaded from
+
+    /// Same nets, ids, generation and shared-stream state; an empty journal.
+    Population copy_state() const {
+        Population p(in_qty_max_, n_inputs_, n_outputs_, priority_, seed_);
+        p.rng_.set_state(rng_.get_state());
+        p.nets_ = nets_;
+        for (auto& [k, v] : p.nets_) v.reset();
+        p.next_id_ = next_id_;
+        p.generation_ = generation_;
+        p.snapshot_hash_ = snapshot_hash_;
+        return p;
+    }
 
     struct OpRng {
         Rng own;

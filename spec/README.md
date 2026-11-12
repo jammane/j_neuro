@@ -1,6 +1,6 @@
 # j_neuro Specification
 
-**Version:** 0.3.0-draft
+**Version:** 0.4.0-draft
 
 This specification is **normative** for both the C++ and the Python implementation. Where an
 implementation and this document disagree, the implementation is wrong.
@@ -17,7 +17,7 @@ implementation and this document disagree, the implementation is wrong.
 | 06 | [Mutation](06-mutation.md) | Mutation profile, phases, every operator, diversity injection |
 | 07 | [Removal](07-removal.md) | Candidates, cascades, immunity, garbage collection, IDs |
 | 08 | [RNG](08-rng.md) | PRNG and every random distribution, exactly |
-| 09 | [Serialization](09-serialization.md) | Genome, profile and run-log JSON formats |
+| 09 | [Serialization](09-serialization.md) | Binary `.jnet` / `.jpnet` files; profile and run-log JSON |
 | 10 | [Conformance](10-conformance.md) | Shared golden-test format |
 | 11 | [Population](11-population.md) | Container of nets by id, evaluation, operations, RNG modes, replay |
 
@@ -33,7 +33,8 @@ An implementation conforms to a spec version when:
 1. Given the same genome and input sequence, it produces **bit-identical** outputs
    ([05](05-evaluation.md)).
 2. Given the same genome, mutation profile, generation number and RNG seed, mutation produces
-   a **byte-identical** serialized genome ([06](06-mutation.md), [09](09-serialization.md)).
+   a **byte-identical** `.jnet` file ([06](06-mutation.md), [09](09-serialization.md)).
+   Equal populations save to byte-identical `.jpnet` and `.jnet` files.
 3. It passes every golden case of that version ([10](10-conformance.md)).
 4. Results do not depend on the net's `priority` ([03](03-net-structure.md)).
 

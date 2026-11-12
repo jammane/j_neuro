@@ -2,7 +2,7 @@
  "kind": "population",
  "log": {
   "format": "j_neuro.runlog",
-  "spec_version": "0.3.0",
+  "spec_version": "0.4.0",
   "population": {
    "depth_type": "U64",
    "in_qty_max": 3,
@@ -11,10 +11,11 @@
    "priority": "BALANCED",
    "seed": 1002
   },
+  "resumed_from": null,
   "profiles": [
    {
     "format": "j_neuro.profile",
-    "spec_version": "0.3.0",
+    "spec_version": "0.4.0",
     "overall": {
      "op_change_max_pct": 45.0,
      "edit_max_pct": 45.0,
@@ -48,7 +49,7 @@
    },
    {
     "format": "j_neuro.profile",
-    "spec_version": "0.3.0",
+    "spec_version": "0.4.0",
     "overall": {
      "op_change_max_pct": 45.0,
      "edit_max_pct": 45.0,
@@ -91,7 +92,7 @@
      2,
      3
     ],
-    "seed": 17310981322551056337
+    "seed": 14128340273752647344
    },
    {
     "op": "create",
@@ -116,7 +117,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 7,
-    "seed": 9438246826924480712
+    "seed": 5299216897173024347
    },
    {
     "op": "mutate",
@@ -132,7 +133,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 9,
-    "seed": 11779764742462038959
+    "seed": 13578495704227725545
    },
    {
     "op": "mutate",
@@ -148,7 +149,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 11,
-    "seed": 14442025955951703973
+    "seed": 76973687605611866
    },
    {
     "op": "remove",
@@ -190,7 +191,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 12,
-    "seed": 12498959488213480299
+    "seed": 13107465280483346547
    },
    {
     "op": "mutate",
@@ -206,7 +207,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 14,
-    "seed": 8289188132392957396
+    "seed": 17681525073382313092
    },
    {
     "op": "mutate",
@@ -222,7 +223,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 16,
-    "seed": 3960982674085273545
+    "seed": 2281258272562087408
    },
    {
     "op": "mutate",
@@ -280,7 +281,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 19,
-    "seed": 5945937792208105328
+    "seed": 13849502849618170766
    },
    {
     "op": "mutate",
@@ -296,7 +297,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 21,
-    "seed": 17977216101827702937
+    "seed": 9823874319882952691
    },
    {
     "op": "mutate",
@@ -312,7 +313,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 23,
-    "seed": 16579089541482390804
+    "seed": 5049383646889086277
    },
    {
     "op": "remove",
@@ -354,7 +355,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 24,
-    "seed": 4032738195583026009
+    "seed": 277721003238293194
    },
    {
     "op": "mutate",
@@ -370,7 +371,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 26,
-    "seed": 3594453974011926476
+    "seed": 14793638147807435618
    },
    {
     "op": "mutate",
@@ -386,7 +387,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 28,
-    "seed": 13159529276425157330
+    "seed": 15880092130693180235
    },
    {
     "op": "mutate",
@@ -444,7 +445,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 31,
-    "seed": 7725131570232133518
+    "seed": 14254573096814077579
    },
    {
     "op": "mutate",
@@ -460,7 +461,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 33,
-    "seed": 3242694631949368383
+    "seed": 14218067107297699290
    },
    {
     "op": "mutate",
@@ -476,7 +477,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 35,
-    "seed": 10813984573354747545
+    "seed": 10907847745994610197
    },
    {
     "op": "remove",
@@ -518,7 +519,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 36,
-    "seed": 16869899358722476605
+    "seed": 8841616973435538670
    },
    {
     "op": "mutate",
@@ -534,7 +535,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 38,
-    "seed": 8199574862815399576
+    "seed": 8232317397728732004
    },
    {
     "op": "mutate",
@@ -550,7 +551,7 @@
     "times": 1,
     "profile": 1,
     "new_id": 40,
-    "seed": 2122060731297792511
+    "seed": 421251324794198591
    },
    {
     "op": "mutate",
@@ -612,1791 +613,19 @@
    41,
    42
   ],
-  "genomes": {
-   "36": {
-    "format": "j_neuro.genome",
-    "spec_version": "0.3.0",
-    "params": {
-     "priority": "BALANCED",
-     "depth_type": "U64",
-     "in_qty_max": 3,
-     "n_inputs": 4,
-     "n_outputs": 3
-    },
-    "next_birth": 23,
-    "nodes": [
-     {
-      "birth": 0,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 1,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 2,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 3,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 9,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "v",
-       "input": 9,
-       "inversion": "bitnot",
-       "op": "add",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 10,
-      "born_gen": 1,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "s",
-       "input": 10,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 6,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        7,
-        8,
-        16
-       ]
-      }
-     },
-     {
-      "birth": 13,
-      "born_gen": 2,
-      "depth": 9478117403957630653,
-      "neuron": {
-       "type": "s",
-       "input": 13,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 8,
-      "born_gen": 0,
-      "depth": 1821553369370848143,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        3,
-        null,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 4,
-      "born_gen": 0,
-      "depth": 10082029217354202748,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        7,
-        8,
-        22
-       ]
-      }
-     },
-     {
-      "birth": 5,
-      "born_gen": 0,
-      "depth": 11653285792109664280,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        7,
-        8,
-        12
-       ]
-      }
-     },
-     {
-      "birth": 18,
-      "born_gen": 4,
-      "depth": 292536901656876657,
-      "neuron": {
-       "type": "v",
-       "input": 18,
-       "inversion": "none",
-       "op": "sub",
-       "weight": -0.6791232986110183
-      }
-     },
-     {
-      "birth": 20,
-      "born_gen": 5,
-      "depth": 351150201430755798,
-      "neuron": {
-       "type": "v",
-       "input": 20,
-       "inversion": "none",
-       "op": "add",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 7,
-      "born_gen": 0,
-      "depth": 9165037227461957901,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        0,
-        1,
-        2
-       ]
-      }
-     },
-     {
-      "birth": 12,
-      "born_gen": 1,
-      "depth": 296082727279621968,
-      "neuron": {
-       "type": "v",
-       "input": 11,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.8321495516424275
-      }
-     },
-     {
-      "birth": 17,
-      "born_gen": 4,
-      "depth": 5335261176973178088,
-      "neuron": {
-       "type": "v",
-       "input": 17,
-       "inversion": "recip",
-       "op": "mul",
-       "weight": 1.2721143264438264
-      }
-     },
-     {
-      "birth": 16,
-      "born_gen": 2,
-      "depth": 12579190903198377713,
-      "neuron": {
-       "type": "v",
-       "input": 15,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.23456918715379693
-      }
-     },
-     {
-      "birth": 19,
-      "born_gen": 5,
-      "depth": 1243482799765640355,
-      "neuron": {
-       "type": "s",
-       "input": 19,
-       "op": "median",
-       "k": 1
-      }
-     },
-     {
-      "birth": 11,
-      "born_gen": 1,
-      "depth": 248208741302946228,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        1,
-        2,
-        0
-       ]
-      }
-     },
-     {
-      "birth": 15,
-      "born_gen": 2,
-      "depth": 753670154794672940,
-      "neuron": {
-       "type": "s",
-       "input": 1,
-       "op": "median",
-       "k": 1
-      }
-     },
-     {
-      "birth": 14,
-      "born_gen": 2,
-      "depth": 309621533015028940,
-      "neuron": {
-       "type": "s",
-       "input": 14,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 21,
-      "born_gen": 5,
-      "depth": 4104124235227091795,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        8,
-        12,
-        0
-       ]
-      }
-     },
-     {
-      "birth": 22,
-      "born_gen": 5,
-      "depth": 7228397418319621302,
-      "neuron": {
-       "type": "v",
-       "input": 21,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 2.1517178647729405
-      }
-     }
-    ]
-   },
-   "37": {
-    "format": "j_neuro.genome",
-    "spec_version": "0.3.0",
-    "params": {
-     "priority": "BALANCED",
-     "depth_type": "U64",
-     "in_qty_max": 3,
-     "n_inputs": 4,
-     "n_outputs": 3
-    },
-    "next_birth": 24,
-    "nodes": [
-     {
-      "birth": 0,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 1,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 2,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 3,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 4,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        7,
-        8,
-        12
-       ]
-      }
-     },
-     {
-      "birth": 5,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        7,
-        8,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 16,
-      "born_gen": 3,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "v",
-       "input": 13,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 7,
-      "born_gen": 0,
-      "depth": 9223372036854775807,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        0,
-        18,
-        2
-       ]
-      }
-     },
-     {
-      "birth": 20,
-      "born_gen": 5,
-      "depth": 9223372036854775807,
-      "neuron": {
-       "type": "v",
-       "input": 15,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 9,
-      "born_gen": 0,
-      "depth": 1052862576967300769,
-      "neuron": {
-       "type": "s",
-       "input": 1,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 15,
-      "born_gen": 3,
-      "depth": 7267543893664023727,
-      "neuron": {
-       "type": "v",
-       "input": 9,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 21,
-      "born_gen": 5,
-      "depth": 447170757255220734,
-      "neuron": {
-       "type": "v",
-       "input": 16,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 14,
-      "born_gen": 1,
-      "depth": 13047215739390660687,
-      "neuron": {
-       "type": "v",
-       "input": 11,
-       "inversion": "bitnot",
-       "op": "add",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 17,
-      "born_gen": 3,
-      "depth": 16460736378762185724,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        14,
-        null,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 6,
-      "born_gen": 0,
-      "depth": 11904591584251080348,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        7,
-        8,
-        10
-       ]
-      }
-     },
-     {
-      "birth": 8,
-      "born_gen": 0,
-      "depth": 1322720262106960947,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        3,
-        1,
-        0
-       ]
-      }
-     },
-     {
-      "birth": 13,
-      "born_gen": 1,
-      "depth": 36456598726255021,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        3,
-        null,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 22,
-      "born_gen": 5,
-      "depth": 1631012983926386561,
-      "neuron": {
-       "type": "s",
-       "input": 3,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 23,
-      "born_gen": 5,
-      "depth": 4666870861149484814,
-      "neuron": {
-       "type": "v",
-       "input": 17,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     }
-    ]
-   },
-   "38": {
-    "format": "j_neuro.genome",
-    "spec_version": "0.3.0",
-    "params": {
-     "priority": "BALANCED",
-     "depth_type": "U64",
-     "in_qty_max": 3,
-     "n_inputs": 4,
-     "n_outputs": 3
-    },
-    "next_birth": 31,
-    "nodes": [
-     {
-      "birth": 0,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 1,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 2,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 3,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 16,
-      "born_gen": 2,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "v",
-       "input": 11,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 5,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        7,
-        8,
-        23
-       ]
-      }
-     },
-     {
-      "birth": 6,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        7,
-        16,
-        15
-       ]
-      }
-     },
-     {
-      "birth": 19,
-      "born_gen": 3,
-      "depth": 5083204037523125065,
-      "neuron": {
-       "type": "v",
-       "input": 13,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 15,
-      "born_gen": 2,
-      "depth": 4586977668895468902,
-      "neuron": {
-       "type": "s",
-       "input": 10,
-       "op": "max",
-       "k": 1
-      }
-     },
-     {
-      "birth": 22,
-      "born_gen": 3,
-      "depth": 295160182842368777,
-      "neuron": {
-       "type": "v",
-       "input": 16,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 8,
-      "born_gen": 0,
-      "depth": 446535408455024314,
-      "neuron": {
-       "type": "m",
-       "op": "min",
-       "slots": [
-        3,
-        9,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 4,
-      "born_gen": 0,
-      "depth": 16620463364416708159,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        7,
-        8,
-        20
-       ]
-      }
-     },
-     {
-      "birth": 11,
-      "born_gen": 1,
-      "depth": 752851440759039,
-      "neuron": {
-       "type": "s",
-       "input": 0,
-       "op": "mean",
-       "k": 1
-      }
-     },
-     {
-      "birth": 30,
-      "born_gen": 5,
-      "depth": 1285310813368531549,
-      "neuron": {
-       "type": "v",
-       "input": 24,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 20,
-      "born_gen": 3,
-      "depth": 2117469577585938752,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        10,
-        9,
-        18
-       ]
-      }
-     },
-     {
-      "birth": 21,
-      "born_gen": 3,
-      "depth": 5640425175314661693,
-      "neuron": {
-       "type": "v",
-       "input": 14,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 17,
-      "born_gen": 2,
-      "depth": 3818312121325049,
-      "neuron": {
-       "type": "v",
-       "input": 12,
-       "inversion": "bitnot",
-       "op": "mul",
-       "weight": 1.1925009396381658
-      }
-     },
-     {
-      "birth": 23,
-      "born_gen": 4,
-      "depth": 354416829639463491,
-      "neuron": {
-       "type": "v",
-       "input": 16,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 24,
-      "born_gen": 4,
-      "depth": 2050303329531574253,
-      "neuron": {
-       "type": "v",
-       "input": 17,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 25,
-      "born_gen": 5,
-      "depth": 8131097252626534024,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        12,
-        13,
-        15
-       ]
-      }
-     },
-     {
-      "birth": 27,
-      "born_gen": 5,
-      "depth": 12182084721835771443,
-      "neuron": {
-       "type": "v",
-       "input": 21,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 26,
-      "born_gen": 5,
-      "depth": 11388087366326214768,
-      "neuron": {
-       "type": "v",
-       "input": 19,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 28,
-      "born_gen": 5,
-      "depth": 8935046524544454876,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        3,
-        null,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 29,
-      "born_gen": 5,
-      "depth": 18388136766777866528,
-      "neuron": {
-       "type": "v",
-       "input": 22,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 7,
-      "born_gen": 0,
-      "depth": 328646629306521662,
-      "neuron": {
-       "type": "m",
-       "op": "min",
-       "slots": [
-        0,
-        1,
-        2
-       ]
-      }
-     }
-    ]
-   },
-   "39": {
-    "format": "j_neuro.genome",
-    "spec_version": "0.3.0",
-    "params": {
-     "priority": "BALANCED",
-     "depth_type": "U64",
-     "in_qty_max": 3,
-     "n_inputs": 4,
-     "n_outputs": 3
-    },
-    "next_birth": 22,
-    "nodes": [
-     {
-      "birth": 0,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 1,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 2,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 3,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 9,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        9,
-        10,
-        12
-       ]
-      }
-     },
-     {
-      "birth": 5,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "min",
-       "slots": [
-        7,
-        8,
-        2
-       ]
-      }
-     },
-     {
-      "birth": 6,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        7,
-        8,
-        16
-       ]
-      }
-     },
-     {
-      "birth": 7,
-      "born_gen": 0,
-      "depth": 9223372036854775807,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        0,
-        1,
-        2
-       ]
-      }
-     },
-     {
-      "birth": 8,
-      "born_gen": 0,
-      "depth": 6855373106865453797,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        3,
-        18,
-        14
-       ]
-      }
-     },
-     {
-      "birth": 4,
-      "born_gen": 0,
-      "depth": 14329631947340856828,
-      "neuron": {
-       "type": "m",
-       "op": "min",
-       "slots": [
-        7,
-        8,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 11,
-      "born_gen": 2,
-      "depth": 3184177800588018474,
-      "neuron": {
-       "type": "v",
-       "input": 1,
-       "inversion": "recip",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 12,
-      "born_gen": 3,
-      "depth": 9925102493680656821,
-      "neuron": {
-       "type": "s",
-       "input": 7,
-       "op": "max",
-       "k": 1
-      }
-     },
-     {
-      "birth": 13,
-      "born_gen": 3,
-      "depth": 15339024965194826923,
-      "neuron": {
-       "type": "v",
-       "input": 11,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 14,
-      "born_gen": 4,
-      "depth": 3845356216833467630,
-      "neuron": {
-       "type": "s",
-       "input": 1,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 15,
-      "born_gen": 4,
-      "depth": 6457680701639696923,
-      "neuron": {
-       "type": "v",
-       "input": 13,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 16,
-      "born_gen": 4,
-      "depth": 2927152705915896951,
-      "neuron": {
-       "type": "s",
-       "input": 0,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 17,
-      "born_gen": 4,
-      "depth": 16436759666794129726,
-      "neuron": {
-       "type": "v",
-       "input": 15,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 18,
-      "born_gen": 5,
-      "depth": 129903148093471226,
-      "neuron": {
-       "type": "v",
-       "input": 2,
-       "inversion": "none",
-       "op": "add",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 20,
-      "born_gen": 5,
-      "depth": 3312807277921566047,
-      "neuron": {
-       "type": "v",
-       "input": 19,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 21,
-      "born_gen": 5,
-      "depth": 979218794631028728,
-      "neuron": {
-       "type": "v",
-       "input": 20,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 19,
-      "born_gen": 5,
-      "depth": 870045396442746576,
-      "neuron": {
-       "type": "v",
-       "input": 17,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     }
-    ]
-   },
-   "40": {
-    "format": "j_neuro.genome",
-    "spec_version": "0.3.0",
-    "params": {
-     "priority": "BALANCED",
-     "depth_type": "U64",
-     "in_qty_max": 3,
-     "n_inputs": 4,
-     "n_outputs": 3
-    },
-    "next_birth": 25,
-    "nodes": [
-     {
-      "birth": 0,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 1,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 2,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 3,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 4,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "min",
-       "slots": [
-        7,
-        8,
-        10
-       ]
-      }
-     },
-     {
-      "birth": 5,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "min",
-       "slots": [
-        7,
-        8,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 15,
-      "born_gen": 2,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "v",
-       "input": 13,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 7,
-      "born_gen": 0,
-      "depth": 14266094152664248772,
-      "neuron": {
-       "type": "m",
-       "op": "min",
-       "slots": [
-        0,
-        1,
-        2
-       ]
-      }
-     },
-     {
-      "birth": 8,
-      "born_gen": 0,
-      "depth": 16806233848080060133,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        3,
-        null,
-        16
-       ]
-      }
-     },
-     {
-      "birth": 9,
-      "born_gen": 0,
-      "depth": 755477940558577242,
-      "neuron": {
-       "type": "s",
-       "input": 3,
-       "op": "max",
-       "k": 1
-      }
-     },
-     {
-      "birth": 10,
-      "born_gen": 0,
-      "depth": 5874941639191319473,
-      "neuron": {
-       "type": "v",
-       "input": 9,
-       "inversion": "recip",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 11,
-      "born_gen": 1,
-      "depth": 1203176002784273832,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        9,
-        0,
-        2
-       ]
-      }
-     },
-     {
-      "birth": 12,
-      "born_gen": 1,
-      "depth": 1788022177717706049,
-      "neuron": {
-       "type": "v",
-       "input": 11,
-       "inversion": "none",
-       "op": "add",
-       "weight": 0.05527001171727397
-      }
-     },
-     {
-      "birth": 16,
-      "born_gen": 2,
-      "depth": 17897914410301042559,
-      "neuron": {
-       "type": "s",
-       "input": 14,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 19,
-      "born_gen": 5,
-      "depth": 16849751103336756576,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        17,
-        20,
-        22
-       ]
-      }
-     },
-     {
-      "birth": 20,
-      "born_gen": 5,
-      "depth": 9134320731596389773,
-      "neuron": {
-       "type": "s",
-       "input": 18,
-       "op": "mean",
-       "k": 1
-      }
-     },
-     {
-      "birth": 18,
-      "born_gen": 4,
-      "depth": 11552281541828500217,
-      "neuron": {
-       "type": "v",
-       "input": 15,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 6,
-      "born_gen": 0,
-      "depth": 16832155739735473732,
-      "neuron": {
-       "type": "m",
-       "op": "min",
-       "slots": [
-        7,
-        8,
-        12
-       ]
-      }
-     },
-     {
-      "birth": 17,
-      "born_gen": 4,
-      "depth": 7318487291286756987,
-      "neuron": {
-       "type": "v",
-       "input": 11,
-       "inversion": "none",
-       "op": "add",
-       "weight": 0.12029302494045338
-      }
-     },
-     {
-      "birth": 21,
-      "born_gen": 5,
-      "depth": 5198369403583303245,
-      "neuron": {
-       "type": "v",
-       "input": 11,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 22,
-      "born_gen": 5,
-      "depth": 13468212671403082987,
-      "neuron": {
-       "type": "v",
-       "input": 19,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 23,
-      "born_gen": 5,
-      "depth": 14110138139530989806,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        9,
-        null,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 24,
-      "born_gen": 5,
-      "depth": 16534604596944424499,
-      "neuron": {
-       "type": "v",
-       "input": 21,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     }
-    ]
-   },
-   "41": {
-    "format": "j_neuro.genome",
-    "spec_version": "0.3.0",
-    "params": {
-     "priority": "BALANCED",
-     "depth_type": "U64",
-     "in_qty_max": 3,
-     "n_inputs": 4,
-     "n_outputs": 3
-    },
-    "next_birth": 28,
-    "nodes": [
-     {
-      "birth": 0,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 1,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 2,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 3,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 24,
-      "born_gen": 5,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "v",
-       "input": 16,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 21,
-      "born_gen": 3,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "v",
-       "input": 13,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 6,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        7,
-        8,
-        10
-       ]
-      }
-     },
-     {
-      "birth": 18,
-      "born_gen": 3,
-      "depth": 15540161086982619517,
-      "neuron": {
-       "type": "v",
-       "input": 12,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 17,
-      "born_gen": 2,
-      "depth": 14249203419049531190,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        11,
-        null,
-        18
-       ]
-      }
-     },
-     {
-      "birth": 15,
-      "born_gen": 2,
-      "depth": 211753126472725441,
-      "neuron": {
-       "type": "s",
-       "input": 2,
-       "op": "max",
-       "k": 1
-      }
-     },
-     {
-      "birth": 16,
-      "born_gen": 2,
-      "depth": 18063184328199752523,
-      "neuron": {
-       "type": "v",
-       "input": 9,
-       "inversion": "none",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 8,
-      "born_gen": 0,
-      "depth": 3544622190601574571,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        3,
-        15,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 7,
-      "born_gen": 0,
-      "depth": 12840806558680145508,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        0,
-        1,
-        2
-       ]
-      }
-     },
-     {
-      "birth": 5,
-      "born_gen": 0,
-      "depth": 17190655944349656841,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        7,
-        8,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 22,
-      "born_gen": 4,
-      "depth": 111484552683401898,
-      "neuron": {
-       "type": "v",
-       "input": 0,
-       "inversion": "recip",
-       "op": "div",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 23,
-      "born_gen": 4,
-      "depth": 1103145721111398154,
-      "neuron": {
-       "type": "v",
-       "input": 14,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 27,
-      "born_gen": 5,
-      "depth": 15730906348031926689,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        19,
-        null,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 25,
-      "born_gen": 5,
-      "depth": 3630122293800539417,
-      "neuron": {
-       "type": "s",
-       "input": 9,
-       "op": "mean",
-       "k": 1
-      }
-     },
-     {
-      "birth": 26,
-      "born_gen": 5,
-      "depth": 6684061181069727120,
-      "neuron": {
-       "type": "v",
-       "input": 17,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 4,
-      "born_gen": 0,
-      "depth": 15620104155686190425,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        7,
-        8,
-        null
-       ]
-      }
-     }
-    ]
-   },
-   "42": {
-    "format": "j_neuro.genome",
-    "spec_version": "0.3.0",
-    "params": {
-     "priority": "BALANCED",
-     "depth_type": "U64",
-     "in_qty_max": 3,
-     "n_inputs": 4,
-     "n_outputs": 3
-    },
-    "next_birth": 24,
-    "nodes": [
-     {
-      "birth": 0,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 1,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 2,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 3,
-      "born_gen": 0,
-      "depth": 0
-     },
-     {
-      "birth": 4,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        7,
-        8,
-        12
-       ]
-      }
-     },
-     {
-      "birth": 5,
-      "born_gen": 0,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        7,
-        8,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 16,
-      "born_gen": 3,
-      "depth": 18446744073709551615,
-      "neuron": {
-       "type": "v",
-       "input": 13,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 7,
-      "born_gen": 0,
-      "depth": 9223372036854775807,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        0,
-        18,
-        2
-       ]
-      }
-     },
-     {
-      "birth": 20,
-      "born_gen": 5,
-      "depth": 9223372036854775807,
-      "neuron": {
-       "type": "v",
-       "input": 15,
-       "inversion": "none",
-       "op": "sub",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 9,
-      "born_gen": 0,
-      "depth": 1052862576967300769,
-      "neuron": {
-       "type": "s",
-       "input": 1,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 15,
-      "born_gen": 3,
-      "depth": 7267543893664023727,
-      "neuron": {
-       "type": "v",
-       "input": 9,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 21,
-      "born_gen": 5,
-      "depth": 447170757255220734,
-      "neuron": {
-       "type": "v",
-       "input": 16,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 1.0
-      }
-     },
-     {
-      "birth": 14,
-      "born_gen": 1,
-      "depth": 13047215739390660687,
-      "neuron": {
-       "type": "v",
-       "input": 11,
-       "inversion": "bitnot",
-       "op": "add",
-       "weight": 0.0
-      }
-     },
-     {
-      "birth": 17,
-      "born_gen": 3,
-      "depth": 16460736378762185724,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        14,
-        null,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 6,
-      "born_gen": 0,
-      "depth": 11904591584251080348,
-      "neuron": {
-       "type": "m",
-       "op": "median",
-       "slots": [
-        7,
-        8,
-        10
-       ]
-      }
-     },
-     {
-      "birth": 8,
-      "born_gen": 0,
-      "depth": 1322720262106960947,
-      "neuron": {
-       "type": "m",
-       "op": "max",
-       "slots": [
-        3,
-        1,
-        0
-       ]
-      }
-     },
-     {
-      "birth": 13,
-      "born_gen": 1,
-      "depth": 36456598726255021,
-      "neuron": {
-       "type": "m",
-       "op": "mean",
-       "slots": [
-        3,
-        null,
-        null
-       ]
-      }
-     },
-     {
-      "birth": 22,
-      "born_gen": 5,
-      "depth": 1631012983926386561,
-      "neuron": {
-       "type": "s",
-       "input": 3,
-       "op": "min",
-       "k": 1
-      }
-     },
-     {
-      "birth": 23,
-      "born_gen": 5,
-      "depth": 4666870861149484814,
-      "neuron": {
-       "type": "v",
-       "input": 17,
-       "inversion": "none",
-       "op": "mul",
-       "weight": 0.0
-      }
-     }
-    ]
-   }
+  "jnets": {
+   "36": "4a4e455401000000040000000202030000000400000003000000220000000000000019000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000018000000000000000500000000000000ffffffffffffffff0112000000000000000001000000000000f03f10000000000000000300000000000000ffffffffffffffff010e000000000000000203a81a341c43e1e6bf06000000000000000000000000000000ffffffffffffffff030307000000000000000800000000000000ffffffffffffffff0a00000000000000010000000000000002b338944e2ed49103030a00000000000000ffffffffffffffffffffffffffffffff08000000000000000000000000000000dab4ff30d8dc47600303030000000000000018000000000000000c000000000000000400000000000000000000000000000017ef7c6f660e56a10300070000000000000008000000000000001000000000000000070000000000000000000000000000009c611afb5180a00503020000000000000000010000000000000002000000000000000b000000000000000200000000000000b9b165d9aa3ec71f010a00000000000000020050974d87fa97e43f0c00000000000000020000000000000090e8ef983457a039010b0000000000000000002c36eadc1f81f43f090000000000000000000000000000005dc376ed0d7387de0109000000000000000201f6407f55ace6f83f15000000000000000400000000000000246a9804660e85fc03031100000000000000ffffffffffffffffffffffffffffffff1a000000000000000500000000000000361343c3c54ef84d01140000000000000000020000000000000000120000000000000004000000000000009f4343065f43e466010f000000000000000103000000000000000005000000000000000000000000000000aabb8e0bd72c70fc03000700000000000000080000000000000016000000000000000d00000000000000020000000000000033ae4fa4a49a13e4010d00000000000000000118a1551e633b0940110000000000000004000000000000009e2843f555305941020b000000000000000203000000190000000000000005000000000000003affef66aaae484302130000000000000001010000001b000000000000000500000000000000a13c4fff7631bd0802010000000000000002010000001c000000000000000500000000000000c19a4cefa9487a1a011500000000000000000000000000000000001f000000000000000500000000000000e70c25c0bb0e051a0201000000000000000001000000200000000000000005000000000000006d319c2511efe65a01170000000000000000000000000000000000984eed766af5d8fb308afff39712438901e03892afb58136368d0347f3221870",
+   "37": "4a4e4554010000000400000002020300000004000000030000001e000000000000001b00000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000001a000000000000000400000000000000ffffffffffffffff021700000000000000000100000005000000000000000000000000000000ffffffffffffffff030007000000000000000800000000000000190000000000000011000000000000000300000000000000ffffffffffffffff011100000000000000000300000000000000000c000000000000000200000000000000fb244d3ee296916203030c00000000000000160000000000000014000000000000000d000000000000000200000000000000ffffffffffffff7f010d0000000000000000027367bb0d7915a03f10000000000000000300000000000000db1a607d889a35d0011000000000000000000007893425f742ea3f0a000000000000000100000000000000393a1ee1c1bf950802020000000000000001010000000b000000000000000100000000000000d7028445cf7fe10a010a0000000000000000000000000000000000070000000000000000000000000000008162639bdd32e7500300ffffffffffffffff0100000000000000020000000000000008000000000000000000000000000000851236d94277196a03020300000000000000070000000000000000000000000000000e000000000000000200000000000000e12ad5d7c567ba1e020a000000000000000003000000190000000000000004000000000000001faf46ae3c44f62d010e0000000000000000020000000000000000060000000000000000000000000000002d83f3295ad6769b0303070000000000000008000000000000000b0000000000000012000000000000000300000000000000982630479b6194ff0112000000000000000001000000000000f03f09000000000000000100000000000000d430455cb1f4adf001090000000000000000018e1665bdfeb6ef3f13000000000000000300000000000000c3b808151fc81356020b0000000000000000010000001400000000000000030000000000000024e46f59e7d33e620113000000000000000201000000000000f03f1500000000000000030000000000000063b47b0661d8ee1003010b00000000000000010000000000000002000000000000001d0000000000000005000000000000007a88db18450c825c021a000000000000000101000000040000000000000000000000000000000af791f69c19648e0300070000000000000008000000000000000f000000000000001b0000000000000005000000000000002643e0c087be428903020b00000000000000ffffffffffffffffffffffffffffffff1c00000000000000050000000000000046ee00402eb703a901180000000000000000000000000000000000160000000000000003000000000000009bb45d2445f8a93101150000000000000002020000000000000000824b5b0d105a504f22c5a6cca17d3e36d35cab2765de236242da5e1d74113074",
+   "38": "4a4e4554010000000400000002020300000004000000030000001b0000000000000016000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000010000000000000000400000000000000ffffffffffffffff03030b000000000000000d00000000000000120000000000000005000000000000000000000000000000ffffffffffffffff030207000000000000000800000000000000ffffffffffffffff06000000000000000000000000000000ffffffffffffffff030007000000000000000800000000000000ffffffffffffffff070000000000000000000000000000003ee859f64eac12ce03010f00000000000000ffffffffffffffff0200000000000000080000000000000000000000000000007d0227b39d657f4f0300030000000000000001000000000000000900000000000000150000000000000005000000000000005c3ad13599cc59200110000000000000000001000000000000f03f0e0000000000000004000000000000007e931b970b850e0f030001000000000000000000000000000000000000000000000018000000000000000500000000000000a91ac986716d33f80213000000000000000101000000110000000000000004000000000000008d26253b25f52a19030300000000000000000a000000000000000100000000000000120000000000000004000000000000004112359eb3c5084a010c000000000000000000000000000000000013000000000000000400000000000000d5a0ee88e677282203030c00000000000000000000000000000015000000000000001400000000000000040000000000000080926cdea5f08927010e00000000000000000200000000000000000d000000000000000200000000000000a8d40cf0551308050100000000000000000000000000000000000016000000000000000500000000000000d1544c7c1cdaebf7030001000000000000000000000000000000030000000000000017000000000000000500000000000000d2cdc22910e6b5ff0111000000000000000000000000000000000004000000000000000000000000000000a66b452eec460bf6030007000000000000000800000000000000ffffffffffffffff19000000000000000500000000000000ea74bdaa8a9b4413030000000000000000000300000000000000ffffffffffffffff1a0000000000000005000000000000004a36a2a671fdb31501140000000000000000000000000000000000e91943f9d099e1c0649ef525c6374bea04fd315918a0e76af1f1c442874abbf6",
+   "39": "4a4e45540100000004000000020203000000040000000300000014000000000000000f000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000004000000000000000000000000000000ffffffffffffffff03020700000000000000080000000000000000000000000000000a000000000000000000000000000000ffffffffffffffff020a00000000000000020100000006000000000000000000000000000000ffffffffffffffff03020700000000000000ffffffffffffffff030000000000000012000000000000000400000000000000baa1833a309bb926020e00000000000000020100000008000000000000000000000000000000ffffffffffffff7f03010300000000000000ffffffffffffffff0d000000000000000b000000000000000200000000000000dec9c81ad4b8df0a010b000000000000000000a22d88d3726eec3f05000000000000000000000000000000238f4d3e0c6cc9d6030207000000000000000800000000000000ffffffffffffffff07000000000000000000000000000000a166759fb06b890403000000000000000000010000000000000002000000000000000e000000000000000400000000000000e873d575ff27e82e010100000000000000020260d16dd738c8c2bf0f00000000000000040000000000000060f9d681c5a36754010c000000000000000200000000000000f03f09000000000000000000000000000000b90e2fd71ebd761203030900000000000000ffffffffffffffffffffffffffffffff07c68929ce8a6618327d0e00abdbfa5bad294b8d0d9a211aa23b603270b86aad",
+   "40": "4a4e455401000000040000000202030000000400000003000000180000000000000015000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000017000000000000000500000000000000ffffffffffffffff021400000000000000000100000005000000000000000000000000000000ffffffffffffffff03010700000000000000080000000000000012000000000000000e000000000000000200000000000000ffffffffffffffff010b0000000000000000001d0465cc6375f03f0700000000000000000000000000000017445da1d13e174a03000000000000000000010000000000000002000000000000001300000000000000030000000000000047feec536b48fa68021000000000000000000100000016000000000000000500000000000000c3a6be2740ddea010113000000000000000001000000000000f03f0f000000000000000200000000000000a49147331018b74c020c000000000000000301000000060000000000000000000000000000005d918ff7f666eacf030207000000000000000800000000000000ffffffffffffffff1000000000000000030000000000000060d359d25ce62a31010d00000000000000000200000000000000000a000000000000000000000000000000523c24c5f09cfe030109000000000000000000000000000000000011000000000000000300000000000000cd6c20c732d14120030301000000000000000d00000000000000000000000000000012000000000000000300000000000000ea473dacae783543010e00000000000000010300000000000000000800000000000000000000000000000056c67413d958495b0303030000000000000001000000000000000f0000000000000014000000000000000500000000000000370097a243d36a8f020900000000000000020100000015000000000000000500000000000000e19bbe20b188b4dc01110000000000000000000000000000000000090000000000000000000000000000000707a5ddd5d05f0002030000000000000003030000000400000000000000000000000000000007604a4dfaeb00b80301070000000000000008000000000000000a00000000000000552095e40bedf662eb3e5a17f3dc59eb993f27ef05ca5bd5dcae2ce9929e35c2",
+   "41": "4a4e45540100000004000000020203000000040000000300000019000000000000001600000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000b000000000000000000000000000000ffffffffffffffff0109000000000000000002f380f9176712a73f17000000000000000500000000000000ffffffffffffffff02140000000000000003010000000f000000000000000400000000000000ffffffffffffffff020c0000000000000002010000001200000000000000040000000000000065ec72d4f7ea184703030f00000000000000ffffffffffffffff130000000000000008000000000000000000000000000000c07e504cf4320d780303030000000000000001000000000000000e000000000000000e000000000000000200000000000000f04426b631e0c4ed010b000000000000000200000000000000f03f0d000000000000000100000000000000b378e82f9de3f04e01030000000000000002036d800f756766b33f040000000000000000000000000000007a2aac16cf976499030307000000000000000800000000000000ffffffffffffffff18000000000000000500000000000000132e432d84dc8bff021500000000000000030100000010000000000000000400000000000000579ed720ca9c640501010000000000000002020000000000000000110000000000000004000000000000005f22166b430ee928010d000000000000000003000000000000000007000000000000000000000000000000ad3ec2e46c0e481f030200000000000000000d000000000000000200000000000000130000000000000005000000000000000544592543b1345b030001000000000000000a00000000000000000000000000000014000000000000000500000000000000c51672be9730f5a2011000000000000000000000000000000000001500000000000000050000000000000075314298d908bc12020300000000000000000100000016000000000000000500000000000000314e5de0c316d83801120000000000000000000000000000000000050000000000000000000000000000000c7e27d38cdd8fd90303070000000000000008000000000000001100000000000000060000000000000000000000000000003bde8e7896fef3d90300070000000000000008000000000000000a000000000000005153e00e690b61f1c66b27672abb1fa25759b9536a63749f383d1470ae9f2500",
+   "42": "4a4e4554010000000400000002020300000004000000030000001e000000000000001b00000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000001a000000000000000400000000000000ffffffffffffffff021700000000000000000100000005000000000000000000000000000000ffffffffffffffff030007000000000000000800000000000000190000000000000011000000000000000300000000000000ffffffffffffffff011100000000000000000300000000000000000c000000000000000200000000000000fb244d3ee296916203030c00000000000000160000000000000014000000000000000d000000000000000200000000000000ffffffffffffff7f010d0000000000000000027367bb0d7915a03f10000000000000000300000000000000db1a607d889a35d0011000000000000000000007893425f742ea3f0a000000000000000100000000000000393a1ee1c1bf950802020000000000000001010000000b000000000000000100000000000000d7028445cf7fe10a010a0000000000000000000000000000000000070000000000000000000000000000008162639bdd32e7500300ffffffffffffffff0100000000000000020000000000000008000000000000000000000000000000851236d94277196a03020300000000000000070000000000000000000000000000000e000000000000000200000000000000e12ad5d7c567ba1e020a000000000000000003000000190000000000000004000000000000001faf46ae3c44f62d010e0000000000000000020000000000000000060000000000000000000000000000002d83f3295ad6769b0303070000000000000008000000000000000b0000000000000012000000000000000300000000000000982630479b6194ff0112000000000000000001000000000000f03f09000000000000000100000000000000d430455cb1f4adf001090000000000000000018e1665bdfeb6ef3f13000000000000000300000000000000c3b808151fc81356020b0000000000000000010000001400000000000000030000000000000024e46f59e7d33e620113000000000000000201000000000000f03f1500000000000000030000000000000063b47b0661d8ee1003010b00000000000000010000000000000002000000000000001d0000000000000005000000000000007a88db18450c825c021a000000000000000101000000040000000000000000000000000000000af791f69c19648e0300070000000000000008000000000000000f000000000000001b0000000000000005000000000000002643e0c087be428903020b00000000000000ffffffffffffffffffffffffffffffff1c00000000000000050000000000000046ee00402eb703a901180000000000000000000000000000000000160000000000000003000000000000009bb45d2445f8a93101150000000000000002020000000000000000824b5b0d105a504f22c5a6cca17d3e36d35cab2765de236242da5e1d74113074"
   }
+ },
+ "save": {
+  "name": "pop",
+  "jpnet": "4a504f5001000000040000000202030000000400000003000000ea03000000000000c4f86a90a4ab01e4cfe2d9a424e335687ad73de60439383cd58ccef12c08e15e06000000000000002b00000000000000070000000000000024000000000000001000706f705f6e6574732f33362e6a6e65744cea3f762f56f3ef7df622b25e4bf638bfabf7ecdec3d4f4f41d8fb56c97fb5625000000000000001000706f705f6e6574732f33372e6a6e65745a6c577e2de154a21cd95522c5171b9183410d48d425d6d373578a89368bb57a26000000000000001000706f705f6e6574732f33382e6a6e6574497bfb5c5c011e4e591657787f0aebba65c6e21318549a2831235c6bf9fd68fc27000000000000001000706f705f6e6574732f33392e6a6e657450126f42305f08753270ce360078586c03119edd42e6ccad2539d93442105c1328000000000000001000706f705f6e6574732f34302e6a6e65745ee0f58bccbfec86f176a595cbf69d772b26c2a7811ff8e6f717fb9535b9774e29000000000000001000706f705f6e6574732f34312e6a6e65745919f9414b5aaf0c4ab82d6f46b3422f849302712dc3b3001f550d3d2b9df4c72a000000000000001000706f705f6e6574732f34322e6a6e65745a6c577e2de154a21cd95522c5171b9183410d48d425d6d373578a89368bb57a00a2a496fe9dedddfc128bc2cd9fe5bd9c20869258b778c6de4995a17e8131d842"
  },
  "evaluate": {
   "inputs": [
@@ -2476,376 +705,311 @@
   "outputs": {
    "36": [
     [
-     "bffa836d5a01af91",
-     "3fd5555555555556",
-     "3ffc000000000000"
+     "3f92cd09e4dc23d2",
+     "3ff03d6e5ae6da21",
+     "4020000000000000"
     ],
     [
-     "bffa7b9a2e1dd00c",
-     "3fc5555555555554",
-     "4002000000000000"
+     "3fa22d654fab03d5",
+     "3feddc9b8be9a1a4",
+     "4026000000000000"
     ],
     [
-     "bfeec94824e4a670",
-     "0000000000000000",
-     "4002000000000000"
+     "bf79aea21c67287b",
+     "3fec5d9ae1b0726e",
+     "402c000000000000"
     ],
     [
-     "bfe854c332ba64da",
-     "0000000000000000",
-     "4002000000000000"
+     "bf66fde5b505797a",
+     "3feb65c7a0b89f2c",
+     "4031000000000000"
     ],
     [
-     "bfe1e03e40902345",
-     "0000000000000000",
-     "4002000000000000"
+     "bf579d801e22820b",
+     "3feab84d59a4be7f",
+     "4034000000000000"
     ],
     [
-     "bfddb5dca732f0d7",
-     "bcb0000000000000",
-     "4002000000000000"
+     "bf4b693b34177498",
+     "3fea38145cc292dd",
+     "4037000000000000"
     ],
     [
-     "bfda7b9a2e1dd00c",
-     "3cb0000000000000",
-     "4002000000000000"
+     "bf43dcb6e4e2dcd7",
+     "3fe9d5725f2849eb",
+     "403a000000000000"
     ],
     [
-     "bfd74157b508af41",
-     "bcb0000000000000",
-     "4002000000000000"
-    ],
-    [
-     "bfd407153bf38e77",
-     "0000000000000000",
-     "4002000000000000"
-    ],
-    [
-     "bfd0ccd2c2de6dac",
-     "3cc8000000000000",
-     "4002000000000000"
+     "bf387fb80948975c",
+     "3fe98738845e79fe",
+     "403d000000000000"
     ]
    ],
    "37": [
     [
-     "bfd0000000000000",
-     "bfc8e38e38e38e38",
-     "0000000000000000"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "3fe5555555555555",
-     "3fec71c71c71c71c",
-     "3ff8000000000000"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "3ffaaaaaaaaaaaab",
-     "4001c71c71c71c72",
-     "3ffaaaaaaaaaaaab"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "4005555555555555",
-     "400c71c71c71c71c",
-     "4005555555555555"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "400d555555555555",
-     "40138e38e38e38e3",
-     "400d555555555555"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "4012aaaaaaaaaaab",
-     "4018e38e38e38e39",
-     "4012aaaaaaaaaaab"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "4016aaaaaaaaaaab",
-     "401e38e38e38e38f",
-     "4016aaaaaaaaaaab"
-    ],
-    [
-     "401aaaaaaaaaaaab",
-     "4021c71c71c71c72",
-     "401aaaaaaaaaaaab"
-    ],
-    [
-     "401eaaaaaaaaaaab",
-     "402471c71c71c71d",
-     "401eaaaaaaaaaaab"
-    ],
-    [
-     "4021555555555555",
-     "40271c71c71c71c7",
-     "4021555555555555"
-    ],
-    [
-     "4023555555555555",
-     "4029c71c71c71c71",
-     "4023555555555555"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ]
    ],
    "38": [
     [
      "3fe0000000000000",
-     "3fe0000000000000",
-     "c001bf26882dca2c"
+     "bfe0000000000000",
+     "bfc5555555555555"
     ],
     [
-     "3ff4000000000000",
-     "3ff4000000000000",
-     "bfff7e4d105b9458"
+     "3feaaaaaaaaaaaaa",
+     "3ff0000000000000",
+     "3fe5555555555555"
     ],
     [
-     "4000000000000000",
-     "4000000000000000",
-     "bffb7e4d105b9458"
+     "3ff0000000000000",
+     "4004000000000000",
+     "3ffaaaaaaaaaaaab"
     ],
     [
-     "4006000000000000",
-     "4006000000000000",
-     "bff77e4d105b9458"
+     "3feffffffffffffe",
+     "4010000000000000",
+     "4005555555555555"
     ],
     [
-     "400c000000000000",
-     "400c000000000000",
-     "bff37e4d105b9458"
+     "3ff0000000000000",
+     "4016000000000000",
+     "400d555555555555"
     ],
     [
-     "4011000000000000",
-     "4011000000000000",
-     "bfeefc9a20b728b0"
+     "3ff0000000000002",
+     "401c000000000000",
+     "4012aaaaaaaaaaab"
     ],
     [
-     "4014000000000000",
-     "4014000000000000",
-     "bfe6fc9a20b728b0"
+     "3ff0000000000000",
+     "4021000000000000",
+     "4016aaaaaaaaaaab"
     ],
     [
-     "4017000000000000",
-     "4017000000000000",
-     "bfddf934416e5160"
+     "3ff0000000000000",
+     "4024000000000000",
+     "401aaaaaaaaaaaab"
     ],
     [
-     "401a000000000000",
-     "401a000000000000",
-     "bfcbf26882dca2c0"
+     "3ff0000000000000",
+     "4027000000000000",
+     "401eaaaaaaaaaaab"
     ],
     [
-     "401d000000000000",
-     "401d000000000000",
-     "3fa0365df48d7500"
+     "3feffffffffffff8",
+     "402a000000000000",
+     "4021555555555555"
+    ],
+    [
+     "3ff0000000000000",
+     "402d000000000000",
+     "4023555555555555"
     ]
    ],
    "39": [
     [
-     "3ff8000000000000",
-     "bfe8000000000000",
-     "3fc1c71c71c71c71"
+     "3fe0000000000000",
+     "3ff5ab3ce105e741",
+     "3fec6e72d3882da2"
     ],
     [
-     "3ff8000000000000",
-     "3ff0000000000000",
-     "3fef1c71c71c71c8"
+     "3ff4000000000000",
+     "3fdc6e72d3882da0",
+     "3ff552d61ea62239"
     ],
     [
-     "4001555555555555",
-     "4001555555555555",
-     "3ffce38e38e38e38"
+     "3ff552d61ea6223a",
+     "3cb0000000000000",
+     "3ff552d61ea6223a"
     ],
     [
-     "4009555555555555",
-     "4009555555555555",
-     "40051c71c71c71c7"
+     "3ff552d61ea62238",
+     "bcc0000000000000",
+     "3ff552d61ea62238"
     ],
     [
-     "4010aaaaaaaaaaab",
-     "4010aaaaaaaaaaab",
-     "400bc71c71c71c73"
+     "0000000000000000",
+     "bff552d61ea62238",
+     "3ff552d61ea6223c"
     ],
     [
-     "4014aaaaaaaaaaab",
-     "4014aaaaaaaaaaab",
-     "401138e38e38e38f"
+     "0000000000000000",
+     "0000000000000000",
+     "3ff552d61ea62238"
     ],
     [
-     "4018aaaaaaaaaaab",
-     "4018aaaaaaaaaaab",
-     "40148e38e38e38e4"
+     "0000000000000000",
+     "0000000000000000",
+     "3ff552d61ea62238"
     ],
     [
-     "401caaaaaaaaaaab",
-     "401caaaaaaaaaaab",
-     "4017e38e38e38e39"
+     "0000000000000000",
+     "0000000000000000",
+     "3ff552d61ea62238"
     ],
     [
-     "4020555555555555",
-     "4020555555555555",
-     "401b38e38e38e38d"
+     "0000000000000000",
+     "0000000000000000",
+     "3ff552d61ea62240"
     ],
     [
-     "4022555555555555",
-     "4022555555555555",
-     "401e8e38e38e38e3"
-    ],
-    [
-     "4024555555555555",
-     "4024555555555555",
-     "4020f1c71c71c71c"
+     "0000000000000000",
+     "0000000000000000",
+     "3ff552d61ea62238"
     ]
    ],
    "40": [
     [
-     "3fd5555555555555",
-     "3ff4000000000000",
-     "3fe8000000000000"
+     "0000000000000000",
+     "4008000000000000",
+     "4008b015b297862c"
     ],
     [
-     "3fd5555555555555",
-     "4000000000000000",
-     "3fe8000000000000"
+     "0000000000000000",
+     "4008000000000000",
+     "4008b015b297862c"
     ],
     [
-     "3fd5555555555555",
-     "4006000000000000",
-     "3fe8000000000000"
+     "0000000000000000",
+     "4008000000000000",
+     "4008b015b297862c"
     ],
     [
-     "3fd5555555555555",
-     "400c000000000000",
-     "3fe8000000000000"
+     "0000000000000000",
+     "4008000000000000",
+     "4008b015b297862c"
     ],
     [
-     "3fd5555555555555",
-     "4011000000000000",
-     "3fe8000000000000"
+     "0000000000000000",
+     "4008000000000000",
+     "4008b015b297862c"
     ],
     [
-     "3fd5555555555555",
-     "4014000000000000",
-     "3fe8000000000000"
+     "0000000000000000",
+     "4008000000000000",
+     "4008b015b297862c"
     ],
     [
-     "3fd5555555555555",
-     "4017000000000000",
-     "3fe8000000000000"
-    ],
-    [
-     "3fd5555555555555",
-     "401a000000000000",
-     "3fe8000000000000"
-    ],
-    [
-     "3fd5555555555555",
-     "401d000000000000",
-     "3fe8000000000000"
+     "0000000000000000",
+     "4008000000000000",
+     "4008b015b297862c"
     ]
    ],
    "41": [
     [
-     "3ff0000000000000",
-     "4000000000000000",
-     "3ffc000000000000"
+     "3fcf5e335f97f9d7",
+     "4008000000000000",
+     "bfe4444444444443"
     ],
     [
-     "4004000000000000",
-     "4014000000000000",
-     "400a000000000000"
+     "3fc5c499c5fe603d",
+     "4008000000000000",
+     "3faddddddddddd90"
     ],
     [
-     "4010000000000000",
-     "4020000000000000",
-     "4013000000000000"
+     "3fc16782802cebe0",
+     "4008000000000000",
+     "3fa4f2094f209560"
     ],
     [
-     "4016000000000000",
-     "4026000000000000",
-     "4019000000000000"
+     "3fbdd2581e45e50c",
+     "4008000000000000",
+     "3f8dec0d4c77af00"
     ],
     [
-     "401c000000000000",
-     "402c000000000000",
-     "401f000000000000"
+     "3fba98429b0bcf88",
+     "4008000000000000",
+     "3f7c2975ed9dd400"
     ],
     [
-     "4021000000000000",
-     "4031000000000000",
-     "4022800000000000"
+     "3fb8560058c98d46",
+     "4008000000000000",
+     "3f6efa681efa6800"
     ],
     [
-     "4024000000000000",
-     "4034000000000000",
-     "4025800000000000"
+     "3fb6aa97b882512c",
+     "4008000000000000",
+     "3f62db343f60c800"
     ],
     [
-     "4027000000000000",
-     "4037000000000000",
-     "4028800000000000"
+     "3fb561d115d55e04",
+     "4008000000000000",
+     "3f58a87f66922000"
     ],
     [
-     "402a000000000000",
-     "403a000000000000",
-     "402b800000000000"
-    ],
-    [
-     "402d000000000000",
-     "403d000000000000",
-     "402e800000000000"
+     "3fb45d103c89fe44",
+     "4008000000000000",
+     "3f51017258650000"
     ]
    ],
    "42": [
     [
-     "bfd0000000000000",
-     "bfc8e38e38e38e38",
-     "0000000000000000"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "3fe5555555555555",
-     "3fec71c71c71c71c",
-     "3ff8000000000000"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "3ffaaaaaaaaaaaab",
-     "4001c71c71c71c72",
-     "3ffaaaaaaaaaaaab"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "4005555555555555",
-     "400c71c71c71c71c",
-     "4005555555555555"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "400d555555555555",
-     "40138e38e38e38e3",
-     "400d555555555555"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "4012aaaaaaaaaaab",
-     "4018e38e38e38e39",
-     "4012aaaaaaaaaaab"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ],
     [
-     "4016aaaaaaaaaaab",
-     "401e38e38e38e38f",
-     "4016aaaaaaaaaaab"
-    ],
-    [
-     "401aaaaaaaaaaaab",
-     "4021c71c71c71c72",
-     "401aaaaaaaaaaaab"
-    ],
-    [
-     "401eaaaaaaaaaaab",
-     "402471c71c71c71d",
-     "401eaaaaaaaaaaab"
-    ],
-    [
-     "4021555555555555",
-     "40271c71c71c71c7",
-     "4021555555555555"
-    ],
-    [
-     "4023555555555555",
-     "4029c71c71c71c71",
-     "4023555555555555"
+     "0000000000000000",
+     "7fd5555555555555",
+     "7fea7f6adc1d1526"
     ]
    ]
   }

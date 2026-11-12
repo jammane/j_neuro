@@ -1,36 +1,44 @@
-// Genome JSON (spec/09) and convenience creation of any depth type.
+// Binary .jnet files (spec/09), version checks, and creation of any depth type.
+// Profiles and run logs (JSON) live in profile.hpp and population.hpp.
 #pragma once
 
 #include <jneuro/net_build.hpp>
+#include <jneuro/sha256.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <cstring>
+#include <filesystem>
 #include <string>
 #include <variant>
 
 namespace jneuro {
 
-inline constexpr const char* kSpecVersion = "0.3.0";
+inline constexpr const char* kSpecVersion = "0.4.0";
+inline constexpr std::uint16_t kSpecMajor = 0, kSpecMinor = 4, kSpecPatch = 0;
+inline constexpr std::uint16_t kFormatVersion = 1;
 
 /// Same MAJOR; while MAJOR is 0, also the same MINOR (spec/README).
 bool version_compatible(const std::string& v);
-
-using AnyNet = std::variant<Net<std::uint16_t>, Net<std::uint32_t>, Net<std::uint64_t>>;
-
-/// Validate a document's format and spec_version (throws ValidationError).
+bool version_compatible(std::uint16_t major, std::uint16_t minor);
+/// Validate a JSON document's format and spec_version (throws ValidationError).
 void check_format(const nlohmann::json& d, const char* fmt);
 /// A new 64-bit seed from the operating system's entropy source.
 std::uint64_t fresh_seed();
 
-/// Canonical text of a finite binary64 value (Python repr rules, spec/09).
-std::string format_double(double x);
+using AnyNet = std::variant<Net<std::uint16_t>, Net<std::uint32_t>, Net<std::uint64_t>>;
 
-/// Canonical (byte-comparable) genome text.
+/// The canonical .jnet bytes of a net.
 template <class D>
-std::string genome_to_json(const Net<D>& net);
+Bytes to_bytes(const Net<D>& net);
+/// Parse and fully validate .jnet bytes. Throws ValidationError.
+AnyNet from_bytes(const Bytes& data);
+template <class D>
+void save_net(const std::filesystem::path& path, const Net<D>& net);
+AnyNet load_net(const std::filesystem::path& path);
 
-/// Parse and fully validate a genome. Throws ValidationError.
-AnyNet genome_from_json(const std::string& text);
+Bytes read_file(const std::filesystem::path& path);
+void write_file(const std::filesystem::path& path, const Bytes& data);
 
 /// Minimal net from input/output counts (spec/03). Defaults match the Python implementation.
 AnyNet create(std::uint32_t n_inputs, std::uint32_t n_outputs, DepthType depth_type, std::uint32_t in_qty_max,
@@ -38,55 +46,106 @@ AnyNet create(std::uint32_t n_inputs, std::uint32_t n_outputs, DepthType depth_t
 AnyNet create(std::uint32_t n_inputs, std::uint32_t n_outputs, DepthType depth_type = DepthType::U32,
               std::uint32_t in_qty_max = 5, Priority priority = Priority::Balanced);
 
-// ------------------------------------------------------------------ implementation
-
 namespace detail {
-inline void append_ref(std::string& s, const std::optional<NodeId>& r) {
-    s += r ? std::to_string(*r) : "null";
-}
+
+/// Little-endian field writer (spec/09 binary conventions).
+class Writer {
+public:
+    void u(std::uint64_t v, std::size_t width) {
+        for (std::size_t i = 0; i < width; ++i) buf_.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
+    }
+    void f64(double x) {
+        std::uint64_t b;
+        std::memcpy(&b, &x, 8);
+        u(b, 8);
+    }
+    void raw(const std::uint8_t* p, std::size_t n) { buf_.insert(buf_.end(), p, p + n); }
+    void raw(const std::string& s) { raw(reinterpret_cast<const std::uint8_t*>(s.data()), s.size()); }
+    void header(const char magic[4]) {
+        raw(reinterpret_cast<const std::uint8_t*>(magic), 4);
+        u(kFormatVersion, 2);
+        u(kSpecMajor, 2);
+        u(kSpecMinor, 2);
+        u(kSpecPatch, 2);
+    }
+    /// Append the SHA-256 of everything written so far.
+    Bytes finish() {
+        const Digest d = sha256(buf_);
+        Bytes out = buf_;
+        out.insert(out.end(), d.begin(), d.end());
+        return out;
+    }
+
+private:
+    Bytes buf_;
+};
+
+/// Checksum-verified little-endian reader.
+class Reader {
+public:
+    Reader(const Bytes& data, std::string what);
+    std::uint64_t u(std::size_t width);
+    double f64();
+    const std::uint8_t* take(std::size_t n);
+    std::uint8_t enum_byte(std::uint8_t count, const char* field);
+    void header(const char magic[4]);
+    void done() const;
+
+private:
+    const Bytes& data_;
+    std::size_t end_;
+    std::size_t pos_ = 0;
+    std::string what_;
+};
+
 }  // namespace detail
 
+// ------------------------------------------------------------------ implementation
+
 template <class D>
-std::string genome_to_json(const Net<D>& net) {
-    std::string s;
-    s += "{\"format\":\"j_neuro.genome\",\"spec_version\":\"";
-    s += kSpecVersion;
-    s += "\",\"params\":{\"priority\":\"" + to_string(net.priority) + "\",\"depth_type\":\"" +
-         to_string(Net<D>::depth_type) + "\",\"in_qty_max\":" + std::to_string(net.in_qty_max) +
-         ",\"n_inputs\":" + std::to_string(net.n_inputs) + ",\"n_outputs\":" +
-         std::to_string(net.n_outputs) + "},\"next_birth\":" + std::to_string(net.next_birth) +
-         ",\"nodes\":[";
-    for (std::size_t i = 0; i < net.nodes.size(); ++i) {
-        const auto& n = net.nodes[i];
-        if (i) s += ',';
-        s += "{\"birth\":" + std::to_string(n.birth) + ",\"born_gen\":" + std::to_string(n.born_gen) +
-             ",\"depth\":" + std::to_string(static_cast<std::uint64_t>(n.depth));
-        if (n.neuron) {
-            s += ",\"neuron\":{";
-            if (auto* v = std::get_if<VNeuron>(&*n.neuron)) {
-                s += "\"type\":\"v\",\"input\":";
-                detail::append_ref(s, v->input);
-                s += ",\"inversion\":\"" + to_string(v->inversion) + "\",\"op\":\"" + to_string(v->op) +
-                     "\",\"weight\":" + format_double(v->weight);
-            } else if (auto* sn = std::get_if<SNeuron>(&*n.neuron)) {
-                s += "\"type\":\"s\",\"input\":";
-                detail::append_ref(s, sn->input);
-                s += ",\"op\":\"" + to_string(sn->op) + "\",\"k\":" + std::to_string(sn->k);
-            } else {
-                const auto& m = std::get<MNeuron>(*n.neuron);
-                s += "\"type\":\"m\",\"op\":\"" + to_string(m.op) + "\",\"slots\":[";
-                for (std::size_t j = 0; j < m.slots.size(); ++j) {
-                    if (j) s += ',';
-                    detail::append_ref(s, m.slots[j]);
-                }
-                s += ']';
-            }
-            s += '}';
+Bytes to_bytes(const Net<D>& net) {
+    constexpr std::size_t W = sizeof(D);
+    const std::uint64_t none = static_cast<std::uint64_t>(Net<D>::d_max);
+    detail::Writer w;
+    w.header("JNET");
+    w.u(static_cast<std::uint8_t>(net.priority), 1);
+    w.u(static_cast<std::uint8_t>(Net<D>::depth_type), 1);
+    w.u(net.in_qty_max, 4);
+    w.u(net.n_inputs, 4);
+    w.u(net.n_outputs, 4);
+    w.u(net.next_birth, 8);
+    w.u(net.nodes.size(), W);
+    auto ref = [&](const std::optional<NodeId>& r) { w.u(r ? *r : none, W); };
+    for (const auto& node : net.nodes) {
+        w.u(node.birth, 8);
+        w.u(node.born_gen, 8);
+        w.u(node.depth, W);
+        if (!node.neuron) {
+            w.u(0, 1);
+        } else if (auto* v = std::get_if<VNeuron>(&*node.neuron)) {
+            w.u(1, 1);
+            ref(v->input);
+            w.u(static_cast<std::uint8_t>(v->inversion), 1);
+            w.u(static_cast<std::uint8_t>(v->op), 1);
+            w.f64(v->weight);
+        } else if (auto* s = std::get_if<SNeuron>(&*node.neuron)) {
+            w.u(2, 1);
+            ref(s->input);
+            w.u(static_cast<std::uint8_t>(s->op), 1);
+            w.u(s->k, 4);
+        } else {
+            const auto& m = std::get<MNeuron>(*node.neuron);
+            w.u(3, 1);
+            w.u(static_cast<std::uint8_t>(m.op), 1);
+            for (const auto& sl : m.slots) ref(sl);
         }
-        s += '}';
     }
-    s += "]}";
-    return s;
+    return w.finish();
+}
+
+template <class D>
+void save_net(const std::filesystem::path& path, const Net<D>& net) {
+    write_file(path, to_bytes(net));
 }
 
 }  // namespace jneuro

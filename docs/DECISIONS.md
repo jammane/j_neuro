@@ -70,8 +70,18 @@ without an explicit decision by the maintainer and may be revisited.
 
 | # | Decision | Why |
 |---|---|---|
-| I1 | Canonical float text follows Python `repr` exactly; C++ reformats `std::to_chars` output to match (spec/09). | Byte-identical genome files across languages. |
+| I1 | ~~Canonical float text follows Python `repr`.~~ Superseded in v0.4: nets are binary, weights stored as raw IEEE bytes. | — |
 | I2 | Path insertion moves the target node only when that move actually opens a gap; otherwise nothing changes (spec/06). | A skipped attempt must leave the net unchanged. |
 | I3 | `create` needs only input/output counts; defaults `U32`, `in_qty_max 5`, `BALANCED`, seed 0 (spec/03). | User request: no hand-specified layers or starting neurons. |
 | I4 | Immunity is computed by a path-rule check with the node cut out, not by dominator trees. | Same result as the spec definition and simpler; dominators remain an optimization option. |
 | I5 | `BALANCED` currently uses the same execution plan as `SPEED`; `MEMORY` recomputes the order each step and frees values after their last reader. | Results are identical either way; finer tuning can come later. |
+
+## Files (v0.4)
+
+| # | Decision | Why |
+|---|---|---|
+| F1 | Nets are stored only as binary `.jnet` files; the JSON genome format is dropped. Profiles and run logs stay JSON. | Nobody reads nets by hand; binary is exact and compact. Settings and journals are still read and edited. |
+| F2 | Little-endian, field-by-field encoding; depths, node counts and ids use the net's DEPTH width; empty slots and missing inputs are all-ones. | Byte-identical files in both languages; DEPTH also sets file size; the node cap guarantees the sentinel is never a real id. |
+| F3 | Every `.jnet` and `.jpnet` ends with a SHA-256 of its contents; C++ uses an in-house SHA-256. | Corruption detection without a dependency. |
+| F4 | A `.jpnet` holds population state (including the shared RNG state) and a table of separate `.jnet` files with their SHA-256 hashes, saved in `<name>_nets/`. | Nets stay individually usable; hashes verify the set on load. |
+| F5 | Embedding the run log in a `.jpnet` is optional, off by default. Without it, the resumed run's log records `resumed_from` and replays from the loaded snapshot. | Files stay small on long runs; exact replay remains possible. |

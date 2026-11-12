@@ -8,9 +8,11 @@ byte for byte. Run from the repository root with the package installed:
 import json
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 from jneuro import DepthType, Net, Priority
-from jneuro.io import genome_to_obj
+from jneuro.jnet import net_to_bytes
 from jneuro.mutate import Profile, inject_diversity, mutate
 from jneuro.population import Population
 from jneuro.rng import Rng
@@ -38,7 +40,7 @@ def make_create():
             write("create", f"create_{n_in}x{n_out}_{dt}_q{q}_s{seed}",
                   {"kind": "create", "seed": seed, "n_inputs": n_in, "n_outputs": n_out,
                    "depth_type": dt, "in_qty_max": q, "priority": prio,
-                   "expected_genome": genome_to_obj(net)})
+                   "expected_jnet": net_to_bytes(net).hex()})
 
 
 def profile_variants():
@@ -96,8 +98,8 @@ def make_mutate():
             child = mutate(parent, prof, gen, Rng(seed))
             write("mutate", f"mutate_{pname}_p{pi}",
                   {"kind": "mutate", "seed": seed, "generation": gen,
-                   "genome": genome_to_obj(parent), "profile": prof.to_dict(),
-                   "expected_genome": genome_to_obj(child)})
+                   "jnet": net_to_bytes(parent).hex(), "profile": prof.to_dict(),
+                   "expected_jnet": net_to_bytes(child).hex()})
 
 
 def make_diversity():
@@ -112,8 +114,8 @@ def make_diversity():
         seed = 40 + i
         child = inject_diversity(net, pct, Rng(seed), sigma)
         write("diversity", f"diversity_{i}", {"kind": "diversity", "seed": seed, "pct": pct,
-                                              "sigma_reset": sigma, "genome": genome_to_obj(net),
-                                              "expected_genome": genome_to_obj(child)})
+                                              "sigma_reset": sigma, "jnet": net_to_bytes(net).hex(),
+                                              "expected_jnet": net_to_bytes(child).hex()})
 
 
 def make_population():
@@ -143,10 +145,14 @@ def make_population():
         pop.clone(pop.ids()[1])
         rows = [[(r * 0.75 - 1.0) * (k + 1) for k in range(n_in)] for r in range(12)]
         res = pop.evaluate(rows)
+        with tempfile.TemporaryDirectory() as tmp:
+            pop.save(Path(tmp) / "pop.jpnet")
+            jpnet = (Path(tmp) / "pop.jpnet").read_bytes().hex()
         write("population", f"population_{dt}", {
             "kind": "population", "log": json.loads(pop.run_log()),
             "expected": {"generation": pop.generation, "ids": pop.ids(),
-                         "genomes": {str(k): genome_to_obj(pop.get(k)) for k in pop.ids()}},
+                         "jnets": {str(k): net_to_bytes(pop.get(k)).hex() for k in pop.ids()}},
+            "save": {"name": "pop", "jpnet": jpnet},
             "evaluate": {"inputs": [[bits(x) for x in r] for r in rows],
                          "outputs": {str(k): [[bits(y) for y in r] for r in v] for k, v in res.items()}}})
 

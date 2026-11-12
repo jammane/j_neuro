@@ -1,12 +1,14 @@
 """Population: nets by stable id, evaluation, operations, RNG modes, replay (spec/11)."""
 from __future__ import annotations
 
+import copy as _copy
 import json
 import os
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
-from .io import (RUNLOG_FORMAT, SPEC_VERSION, _check_version, _dumps, genome_from_obj,
-                 genome_to_obj)
+from .io import RUNLOG_FORMAT, SPEC_VERSION, _check_version, _dumps
+from .jnet import Reader, Writer, net_from_bytes, net_to_bytes, sha256, write_header
 from .mutate import Profile, inject_diversity, mutate
 from .net import Net, _check_params
 from .rng import Rng
@@ -39,6 +41,8 @@ class Population:
         self._profiles: List[dict] = []
         self._profile_keys: List[str] = []
         self._ops: List[dict] = []
+        self._resumed_from: Optional[str] = None   # hex SHA-256 of the .jpnet this run resumed from
+        self._snapshot_hash: Optional[str] = None  # hex SHA-256 of the .jpnet this object was loaded from
 
     # ------------------------------------------------------------ inspection
 
@@ -96,7 +100,7 @@ class Population:
             raise ValidationError("net parameters differ from the population's")
         net.validate()
         nid = self._store(net.copy())
-        self._ops.append({"op": "add", "new_id": nid, "genome": genome_to_obj(net)})
+        self._ops.append({"op": "add", "new_id": nid, "jnet": net_to_bytes(net).hex()})
         return nid
 
     def mutate(self, net_id: int, profile: Profile, times: int = 1, _seed: Optional[int] = None) -> int:
@@ -158,16 +162,27 @@ class Population:
             "population": {"depth_type": self.depth_type.name, "in_qty_max": self.in_qty_max,
                            "n_inputs": self.n_inputs, "n_outputs": self.n_outputs,
                            "priority": self.priority.name, "seed": self.seed},
+            "resumed_from": self._resumed_from,
             "profiles": self._profiles, "ops": self._ops})
 
     @classmethod
-    def replay(cls, text: str) -> "Population":
-        """Re-execute a run log; reproduces ids, genomes, generation and shared-stream state."""
+    def replay(cls, text: str, base: Optional["Population"] = None) -> "Population":
+        """Re-execute a run log; reproduces ids, nets, generation and shared-stream state.
+
+        A log that resumed from a .jpnet needs `base`: the population loaded from that file."""
         d = json.loads(text)
         _check_version(d, RUNLOG_FORMAT)
         pp = d["population"]
-        pop = cls(DepthType[pp["depth_type"]], pp["in_qty_max"], pp["n_inputs"], pp["n_outputs"],
-                  Priority[pp["priority"]], seed=pp["seed"])
+        resumed = d.get("resumed_from")
+        if resumed is None:
+            pop = cls(DepthType[pp["depth_type"]], pp["in_qty_max"], pp["n_inputs"], pp["n_outputs"],
+                      Priority[pp["priority"]], seed=pp["seed"])
+        else:
+            if base is None or base._snapshot_hash != resumed:
+                raise ValidationError("run log resumes from a .jpnet: pass the population loaded "
+                                      "from that file as base")
+            pop = base._copy_state()
+            pop._resumed_from = resumed
         profiles = [Profile.from_dict(x) for x in d["profiles"]]
 
         def mode(op):
@@ -179,7 +194,7 @@ class Population:
                 got = pop.create(op["count"], mode(op), _seed=op["seed"])
                 expect = op["ids"]
             elif kind == "add":
-                got, expect = pop.add(genome_from_obj(op["genome"])), op["new_id"]
+                got, expect = pop.add(net_from_bytes(bytes.fromhex(op["jnet"]))), op["new_id"]
             elif kind == "mutate":
                 prof = profiles[op["profile"]]
                 if mode(op) != prof.overall["rng_mode"]:
@@ -201,3 +216,108 @@ class Population:
             if got != expect:
                 raise ValidationError(f"run log: {kind} produced id {got}, log says {expect}")
         return pop
+
+    # ------------------------------------------------------------ .jpnet files (spec/09)
+
+    def _copy_state(self) -> "Population":
+        """Same nets, ids, generation and shared-stream state; an empty journal."""
+        p = Population(self.depth_type, self.in_qty_max, self.n_inputs, self.n_outputs,
+                       self.priority, seed=self.seed)
+        p._rng.set_state(self._rng.get_state())
+        p._nets = {k: v.copy() for k, v in self._nets.items()}
+        p._next_id = self._next_id
+        p._generation = self._generation
+        p._snapshot_hash = self._snapshot_hash
+        return p
+
+    def save(self, path: Union[str, Path], include_log: bool = False):
+        """Write <name>.jpnet plus <name>_nets/<id>.jnet beside it (spec/09)."""
+        path = Path(path)
+        name = path.stem
+        net_dir = path.parent / f"{name}_nets"
+        net_dir.mkdir(parents=True, exist_ok=True)
+        w = Writer()
+        write_header(w, JPNET_MAGIC)
+        w.u(self.priority, 1)
+        w.u(self.depth_type, 1)
+        w.u(self.in_qty_max, 4)
+        w.u(self.n_inputs, 4)
+        w.u(self.n_outputs, 4)
+        w.u(self.seed, 8)
+        for s in self._rng.get_state():
+            w.u(s, 8)
+        w.u(self._generation, 8)
+        w.u(self._next_id, 8)
+        w.u(len(self._nets), 8)
+        for nid in self.ids():
+            data = net_to_bytes(self._nets[nid])
+            (net_dir / f"{nid}.jnet").write_bytes(data)
+            rel = f"{name}_nets/{nid}.jnet".encode("utf-8")
+            w.u(nid, 8)
+            w.u(len(rel), 2)
+            w.raw(rel)
+            w.raw(sha256(data))
+        if include_log:
+            log = self.run_log().encode("utf-8")
+            w.u(1, 1)
+            w.u(len(log), 8)
+            w.raw(log)
+        else:
+            w.u(0, 1)
+        path.write_bytes(w.finish())
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> "Population":
+        """Load a .jpnet, verifying every .jnet hash; continues exactly where it was saved."""
+        path = Path(path)
+        data = path.read_bytes()
+        r = Reader(data, "jpnet")
+        r.header(JPNET_MAGIC)
+        priority = r.enum(Priority, "priority")
+        depth_type = r.enum(DepthType, "depth_type")
+        q, n_in, n_out = r.u(4), r.u(4), r.u(4)
+        seed = r.u(8)
+        state = [r.u(8) for _ in range(4)]
+        generation, next_id, count = r.u(8), r.u(8), r.u(8)
+        pop = cls(depth_type, q, n_in, n_out, priority, seed=seed)
+        pop._rng.set_state(state)
+        pop._generation = generation
+        pop._next_id = next_id
+        last = -1
+        for _ in range(count):
+            nid = r.u(8)
+            rel = r.take(r.u(2)).decode("utf-8")
+            digest = r.take(32)
+            if nid <= last or nid >= next_id:
+                raise ValidationError("jpnet: net ids must ascend and be below next_id")
+            last = nid
+            file = path.parent / rel
+            if not file.is_file():
+                raise ValidationError(f"jpnet: missing net file {rel}")
+            raw = file.read_bytes()
+            if sha256(raw) != digest:
+                raise ValidationError(f"jpnet: hash mismatch for {rel}")
+            net = net_from_bytes(raw)
+            if (net.depth_type, net.in_qty_max, net.n_inputs, net.n_outputs) != (depth_type, q, n_in, n_out):
+                raise ValidationError(f"jpnet: {rel} does not match the population's parameters")
+            pop._nets[nid] = net
+        flag = r.u(1)
+        log = None
+        if flag == 1:
+            log = json.loads(r.take(r.u(8)).decode("utf-8"))
+        elif flag != 0:
+            raise ValidationError("jpnet: log flag out of range")
+        r.done()
+        pop._snapshot_hash = sha256(data).hex()
+        if log is not None:
+            _check_version(log, RUNLOG_FORMAT)
+            pop._resumed_from = log.get("resumed_from")
+            pop._profiles = log["profiles"]
+            pop._profile_keys = [_dumps(x) for x in pop._profiles]
+            pop._ops = log["ops"]
+        else:
+            pop._resumed_from = pop._snapshot_hash
+        return pop
+
+
+JPNET_MAGIC = b"JPOP"

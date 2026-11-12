@@ -7,8 +7,8 @@ the C++ and the Python test suites. A case passes only on an **exact** match.
 
 binary64 values that are compared (inputs, outputs) are written as 16-digit lowercase hex
 strings of their bit pattern, e.g. `"3ff0000000000000"` for `1.0`, so that ±inf, signed zero
-and NaN payloads are unambiguous. Weights inside genomes use the normal encoding of
-[09](09-serialization.md).
+and NaN payloads are unambiguous. Nets are stored as the lowercase hex of their `.jnet`
+bytes ([09](09-serialization.md)); "byte-identical" means the `.jnet` bytes are equal.
 
 ## Case kinds
 
@@ -27,7 +27,7 @@ Each list is generated from a fresh `seed(seed)`.
 ### `eval`
 
 ```json
-{"kind": "eval", "genome": { "…": "…" },
+{"kind": "eval", "jnet": "4a4e4554…",
  "steps": [{"inputs": ["…bits…"], "outputs": ["…bits…"]}],
  "priorities": ["SPEED", "MEMORY", "BALANCED"]}
 ```
@@ -40,47 +40,51 @@ listed priority.
 ```json
 {"kind": "create", "seed": 1, "n_inputs": 7, "n_outputs": 2,
  "depth_type": "U16", "in_qty_max": 3, "priority": "MEMORY",
- "expected_genome": { "…": "…" }}
+ "expected_jnet": "4a4e4554…"}
 ```
 
 ### `mutate`
 
 ```json
 {"kind": "mutate", "seed": 9, "generation": 12,
- "genome": { "…": "…" }, "profile": { "…": "…" },
- "expected_genome": { "…": "…" }}
+ "jnet": "4a4e4554…", "profile": { "…": "…" },
+ "expected_jnet": "4a4e4554…"}
 ```
 
-The serialized result MUST be byte-identical to the serialized `expected_genome`.
+The result MUST serialize to exactly `expected_jnet`.
 
 ### `diversity`
 
 ```json
 {"kind": "diversity", "seed": 3, "pct": 40.0, "sigma_reset": 1.0,
- "genome": { "…": "…" }, "expected_genome": { "…": "…" }}
+ "jnet": "4a4e4554…", "expected_jnet": "4a4e4554…"}
 ```
 
-`inject_diversity(genome, pct, seed(seed), sigma_reset)` serialized MUST be byte-identical to
-`expected_genome`.
+`inject_diversity(net, pct, seed(seed), sigma_reset)` MUST serialize to exactly
+`expected_jnet`.
 
 ### `population`
 
 ```json
 {"kind": "population", "log": { "…": "run log" },
- "expected": {"generation": 1, "ids": [1, 2], "genomes": {"1": { "…": "…" }, "2": { "…": "…" }}},
+ "expected": {"generation": 1, "ids": [1, 2], "jnets": {"1": "4a4e…", "2": "4a4e…"}},
+ "save": {"name": "pop", "jpnet": "4a504f50…"},
  "evaluate": {"inputs": [["…bits…"]], "outputs": {"1": [["…bits…"]], "2": [["…bits…"]]}}}
 ```
 
-`Population.replay(log)` MUST yield exactly these ids, generation and genomes (byte-identical),
-and `evaluate` with `skip_warmup = true` MUST yield exactly these outputs.
+`Population.replay(log)` MUST yield exactly these ids, generation and nets (byte-identical),
+`evaluate` with `skip_warmup = true` MUST yield exactly these outputs, and `save` to
+`<dir>/pop.jpnet` MUST write exactly the `jpnet` bytes (and the listed `.jnet` files).
 
 ### `invalid`
 
 ```json
-{"kind": "invalid", "genome": { "…": "…" }, "reason": "path rule"}
+{"kind": "invalid", "jnet": "4a4e4554…", "reason": "path rule"}
 ```
 
-Loading MUST fail.
+Loading MUST fail. Cases cover every structural rule plus binary damage: wrong magic, unknown
+format version, wrong spec version, truncation, trailing bytes, checksum mismatch and
+out-of-range enumeration bytes.
 
 ## Required coverage
 

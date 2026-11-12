@@ -50,6 +50,8 @@ is exactly replayable from its run log (below).
 | `inject_diversity(id, pct, sigma_reset = 1.0, rng_mode)` | Replaces the net at `id` with `inject_diversity(net, pct, rng, sigma_reset)` ([06](06-mutation.md#diversity-injection)). The id is kept. |
 | `remove(id)` | Culls the net. Its id is never reused. |
 | `next_generation()` | `generation += 1`. Neurons created by later mutations record the new generation. |
+| `save(path, include_log = false)` | Writes the `.jpnet` and its `.jnet` files ([09](09-serialization.md#jpnet)). Not journaled. |
+| `Population.load(path)` | Loads a `.jpnet`, verifying every `.jnet` hash; continues exactly where the saved population stopped. |
 
 An unknown id is an error. Operations never change other nets.
 
@@ -69,8 +71,15 @@ CPython with the global interpreter lock).
 
 ## Run log
 
-Every population keeps a run log ([09](09-serialization.md#run-log)) journaling its
+Every population keeps a run log ([09](09-serialization.md#run-log-json)) journaling its
 parameters, shared-stream seed, every profile used, and every operation with its arguments,
-resulting ids and RNG seed (for `fresh` mode). `Population.replay(log)` re-executes the
-journal and MUST reproduce the population exactly: the same ids, genomes, generation and
-shared-stream state, in either language.
+resulting ids and RNG seed (for `fresh` mode). `Population.replay(log, base = none)`
+re-executes the journal and MUST reproduce the population exactly: the same ids, nets,
+generation and shared-stream state, in either language.
+
+- A population built from scratch replays from an empty start (`base` omitted).
+- A population loaded from a `.jpnet` **with** an embedded log continues that log, so it also
+  replays from an empty start.
+- A population loaded **without** an embedded log has a log with `resumed_from` set to the
+  `.jpnet`'s SHA-256. Replaying it requires `base`: the population loaded from that same file
+  (checked by hash); the operations are then applied to a copy of it.

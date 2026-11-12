@@ -26,7 +26,8 @@ add_library(jneuro
   src/types.cpp
   src/aggregate.cpp
   src/profile.cpp
-  src/io.cpp)
+  src/io.cpp
+  src/sha256.cpp)
 target_include_directories(jneuro PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(jneuro PUBLIC nlohmann_json::nlohmann_json Threads::Threads)
 if(MSVC)

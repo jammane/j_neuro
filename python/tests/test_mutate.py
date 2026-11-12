@@ -5,7 +5,8 @@ from helpers import M, S, V, load_golden, make_net, outputs_for, sample_inputs
 
 from jneuro import AggOp, DepthType, MNeuron, Net, Priority, SNeuron, VNeuron
 from jneuro.analysis import path_rule_ok
-from jneuro.io import genome_from_json, genome_to_json, profile_from_json
+from jneuro.io import profile_from_json
+from jneuro.jnet import net_from_bytes, net_to_bytes
 from jneuro.mutate import Profile, mutate
 from jneuro.rng import Rng
 
@@ -40,7 +41,7 @@ def first_changed(net, p, gen, pred=None):
     """Budgets are "up to", so a single draw may change nothing; find a seed that does."""
     for seed in range(300):
         child = mutate(net, p, gen, Rng(seed))
-        ok = pred(child) if pred else genome_to_json(child) != genome_to_json(net)
+        ok = pred(child) if pred else net_to_bytes(child) != net_to_bytes(net)
         if ok:
             return child
     raise AssertionError("no seed produced the expected change")
@@ -80,20 +81,20 @@ def test_profile_json_roundtrip():
 
 def test_parent_untouched_and_deterministic():
     net = base_net()
-    text = genome_to_json(net)
+    text = net_to_bytes(net)
     p = Profile.default()
     for f in PHASE_FIELDS:
         p.overall[f] = 50.0
     a = mutate(net, p, 1, Rng(9))
     b = mutate(net, p, 1, Rng(9))
-    assert genome_to_json(net) == text
-    assert genome_to_json(a) == genome_to_json(b)
+    assert net_to_bytes(net) == text
+    assert net_to_bytes(a) == net_to_bytes(b)
 
 
 def test_zero_profile_is_identity():
     net = base_net()
     out = mutate(net, profile(), 4, Rng(1))
-    assert genome_to_json(out) == genome_to_json(net)
+    assert net_to_bytes(out) == net_to_bytes(net)
 
 
 def test_offspring_starts_reset():
@@ -152,14 +153,14 @@ def test_slot_fill_skips_min_receivers():
     net = make_net(2, 1, 3, [(D16, M("min", [0, 1, None]))])
     p = profile(growth_max_pct=100.0, add_method_weights=only_method("slot_fill"))
     for seed in range(10):
-        assert genome_to_json(mutate(net, p, 1, Rng(seed))) == genome_to_json(net)
+        assert net_to_bytes(mutate(net, p, 1, Rng(seed))) == net_to_bytes(net)
 
 
 def test_growth_cap_per_type():
     net = base_net()
     p = profile(growth_max_pct=100.0, add_method_weights=only_method("v_insert"))
     p.per_type["v"]["growth_max_pct"] = 0.0
-    assert genome_to_json(mutate(net, p, 1, Rng(1))) == genome_to_json(net)
+    assert net_to_bytes(mutate(net, p, 1, Rng(1))) == net_to_bytes(net)
 
 
 def test_no_gap_skips():
@@ -217,7 +218,7 @@ def test_removal_of_inserted_identities_after_grace():
     assert n_neurons(big) > n_neurons(net)
     prune = profile(removal_max_pct=100.0)
     for seed in range(20):                         # inside grace period (min age 5)
-        assert genome_to_json(mutate(big, prune, 2, Rng(seed))) == genome_to_json(big)
+        assert net_to_bytes(mutate(big, prune, 2, Rng(seed))) == net_to_bytes(big)
     later = first_changed(big, prune, 10, lambda c: n_neurons(c) < n_neurons(big))
     later.validate()
     assert outputs_for(later, rows) == outputs_for(net, rows)
@@ -226,7 +227,7 @@ def test_removal_of_inserted_identities_after_grace():
 def test_immune_silenced_not_removed():
     net = make_net(2, 1, 3, [(D16, M("mean", [0, 3, None])), (10, V(1, "mul", 0.0))])
     child = mutate(net, profile(removal_max_pct=100.0), 50, Rng(1))
-    assert genome_to_json(child) == genome_to_json(net)
+    assert net_to_bytes(child) == net_to_bytes(net)
 
 
 # ---------------------------------------------------------------- golden
@@ -236,10 +237,10 @@ GOLD = load_golden("mutate")
 
 @pytest.mark.parametrize("name,case", GOLD, ids=[c[0] for c in GOLD])
 def test_mutate_golden(name, case):
-    net = genome_from_json(json.dumps(case["genome"]))
+    net = net_from_bytes(bytes.fromhex(case["jnet"]))
     p = profile_from_json(json.dumps(case["profile"]))
     child = mutate(net, p, case["generation"], Rng(case["seed"]))
-    assert genome_to_json(child) == genome_to_json(genome_from_json(json.dumps(case["expected_genome"])))
+    assert net_to_bytes(child) == bytes.fromhex(case["expected_jnet"])
 
 
 CREATE = load_golden("create")
@@ -249,7 +250,7 @@ CREATE = load_golden("create")
 def test_create_golden(name, case):
     net = Net.create(case["n_inputs"], case["n_outputs"], DepthType[case["depth_type"]],
                      case["in_qty_max"], Priority[case["priority"]], Rng(case["seed"]))
-    assert genome_to_json(net) == genome_to_json(genome_from_json(json.dumps(case["expected_genome"])))
+    assert net_to_bytes(net) == bytes.fromhex(case["expected_jnet"])
 
 
 # ---------------------------------------------------------------- properties
