@@ -134,10 +134,11 @@ std::uint64_t fold_constants(Net<D>& net, Removed& removed, std::uint64_t genera
     std::stable_sort(cands.begin(), cands.end(),
                      [&](NodeId a, NodeId b) { return net.nodes[a].depth > net.nodes[b].depth; });
     std::uint64_t folded = 0;
+    PathRuleTracker<D> paths;
     for (NodeId i : cands) {
         Neuron old = *net.nodes[i].neuron;
         net.nodes[i].neuron = VNeuron{std::nullopt, Inversion::None, VOp::Add, *c[i]};
-        if (!path_rule_ok(net, &removed)) net.nodes[i].neuron = std::move(old);
+        if (!paths.ok(net, &removed)) net.nodes[i].neuron = std::move(old);
         else ++folded;
     }
     return folded;

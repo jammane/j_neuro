@@ -39,6 +39,21 @@ def test_reset_clears_history():
     assert net.step([5.0]) == [5.0]
 
 
+def test_reset_state_matches_reset():
+    net = make_net(2, 2, 3, [(D16, M("max", [4, 1, None])), (D16, S(4, "median", 3)),
+                             (100, V(0, "div", 2.0, "recip"))])
+    rows = [[1.0, 2.0], [-3.0, 0.5], [0.0, 0.0], [7.0, -1.0]]
+    for prio in Priority:
+        a, b = make_net(2, 2, 3, [(D16, M("max", [4, 1, None])), (D16, S(4, "median", 3)),
+                                  (100, V(0, "div", 2.0, "recip"))]), net
+        a.priority = b.priority = prio
+        for _ in range(3):
+            a.reset()
+            b.reset_state()
+            for r in rows:
+                assert all(same(x, y) for x, y in zip(a.step(r), b.step(r)))
+
+
 def test_missing_input_constants():
     net = make_net(1, 1, 3, [(D16, M("mean", [0, 2, None])), (5, V(None, "add", 3.0))])
     assert net.step([0.0]) == [1.0]  # (0 + 3 + 0) / 3

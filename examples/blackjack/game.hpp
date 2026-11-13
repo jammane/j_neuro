@@ -148,7 +148,7 @@ struct Table {
 template <class Observe>
 double play_deal(Net<D>& net, const Deal& deal, Observe&& observe) {
     Table table(deal);
-    net.reset();  // s_neuron history covers one deal
+    net.reset_state();  // s_neuron history covers one deal (keeps the cached plan: nets are not edited in place)
     std::vector<double> in(9);
     while (!table.finished()) {
         const Hand& hand = table.hands[table.h];

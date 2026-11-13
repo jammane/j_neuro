@@ -68,3 +68,30 @@ TEST_CASE("outputs canonical") {
     auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(0, VOp::Mul, -1.0)}});
     CHECK(same(net.step({0.0})[0], 0.0));
 }
+
+TEST_CASE("reset_state matches reset, and the cached warmup matches the computed one") {
+    using N32 = Net<std::uint32_t>;
+    Profile p = Profile::defaults();
+    p.set_overall("growth_max_pct", 20.0);
+    p.set_overall("growth_gen_prob", 1.0);
+    p.set_overall("growth_net_prob", 1.0);
+    for (Priority pr : {Priority::Speed, Priority::Memory, Priority::Balanced}) {
+        Rng rng(77);
+        N32 net = std::get<N32>(create(6, 3, DepthType::U32, 5, pr, rng));
+        for (std::uint64_t g = 1; g <= 60; ++g) net = mutate(net, p, g, rng);
+        N32 a = net, b = net;
+        const std::uint64_t warm = net.get_warmup_steps();
+        for (int episode = 0; episode < 5; ++episode) {
+            a.reset();
+            b.reset_state();
+            for (int t = 0; t < 12; ++t) {
+                std::vector<double> in(6);
+                for (auto& x : in) x = rng.normal() * 3.0;
+                const auto ya = a.step(in), yb = b.step(in);
+                REQUIRE(ya.size() == yb.size());
+                for (std::size_t o = 0; o < ya.size(); ++o) CHECK(same(ya[o], yb[o]));
+            }
+            CHECK(b.get_warmup_steps() == warm);  // from the plan, after steps
+        }
+    }
+}

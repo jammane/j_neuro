@@ -113,6 +113,12 @@ class Net:
         """Clear all s_neuron state and cached evaluation plans."""
         self._state = None
 
+    def reset_state(self):
+        """Clear all s_neuron state but keep the cached evaluation plan. Same results as reset();
+        only valid if nodes have not been edited since the last step (else call reset())."""
+        if self._state is not None:
+            self._state["rings"] = {}
+
     def _order(self):
         return sorted(range(self.n_inputs, len(self.nodes)), key=lambda i: (self.nodes[i].depth, i))
 

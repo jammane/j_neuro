@@ -114,6 +114,8 @@ private:
     Rng& rng_;
     std::uint32_t q_;
     Removed removed_;
+    PathRuleTracker<D> paths_;
+    std::vector<NodeId> order_;  // depth_order() cache
     bool growth_generation_ = true;
     std::array<std::optional<std::int64_t>, 3> caps_{};
     std::array<std::int64_t, 3> used_{};
@@ -279,7 +281,7 @@ private:
                 if (p_.prune() == "static" && !constant_values(net_, removed_)[*old])
                     continue;  // only static (constant) sources may be cut
                 slots[i] = std::nullopt;
-                if (!path_rule_ok(net_, &removed_)) {
+                if (!path_ok()) {
                     slots[i] = old;
                     continue;
                 }
@@ -308,7 +310,7 @@ private:
             if (net_.nodes[j].depth >= lo && net_.nodes[j].depth < my_depth && (!old || j != *old)) cands.push_back(j);
         if (cands.empty()) return std::nullopt;
         input_ref(id) = pick(cands);
-        if (!path_rule_ok(net_, &removed_) || !rules_ok()) {
+        if (!path_ok() || !rules_ok()) {
             input_ref(id) = old;
             return std::nullopt;
         }
@@ -323,7 +325,32 @@ private:
     }
 
     /// The structural rules a mutation may not break besides the path rule (spec/03).
-    bool rules_ok() const { return mix_ok(net_, &removed_) && run_ok(net_, &removed_); }
+    bool rules_ok() {
+        const auto& order = depth_order();
+        return mix_ok(net_, &removed_, &order) && run_ok(net_, &removed_, &order);
+    }
+
+    /// Every node id (dead ones too) by depth, ties by id. Kept between calls and re-sorted only when
+    /// a scan finds it stale: n ids < n in strictly increasing (depth, id) order are exactly 0..n-1.
+    const std::vector<NodeId>& depth_order() {
+        const std::size_t n = net_.nodes.size();
+        auto before = [&](NodeId a, NodeId b) {
+            return net_.nodes[a].depth != net_.nodes[b].depth ? net_.nodes[a].depth < net_.nodes[b].depth : a < b;
+        };
+        bool fresh = order_.size() == n;
+        for (std::size_t k = 0; fresh && k < n; ++k)
+            fresh = order_[k] < n && (k == 0 || before(order_[k - 1], order_[k]));
+        if (!fresh) {
+            order_.resize(n);
+            for (NodeId i = 0; i < n; ++i) order_[i] = i;
+            std::stable_sort(order_.begin(), order_.end(),
+                             [&](NodeId a, NodeId b) { return net_.nodes[a].depth < net_.nodes[b].depth; });
+        }
+        return order_;
+    }
+
+    /// The path rule on the net as it stands (or with `cut` taken out), from the incremental cache.
+    bool path_ok(std::optional<NodeId> cut = std::nullopt) { return paths_.ok(net_, &removed_, cut); }
 
     /// An m_neuron to receive new width: uniform, or weighted toward mid-depth (spec/06 width_bias).
     NodeId pick_receiver(const std::vector<NodeId>& recv, const char* peak_field = "width_peak",
@@ -379,7 +406,7 @@ private:
             if (rd[*old].size() == 1 && rd[*old][0] == id) return std::nullopt;  // would strand old's branch
         }
         slots[i] = std::nullopt;
-        if (!path_rule_ok(net_, &removed_)) { slots[i] = old; return std::nullopt; }  // critical
+        if (!path_ok()) { slots[i] = old; return std::nullopt; }  // critical
         std::vector<NodeId> cands;
         const std::uint64_t lo = span_floor(net_.nodes[id].depth);
         for (NodeId j : live_nodes())
@@ -742,7 +769,7 @@ private:
             return t;
         }
         if (!is_silenced(net_, *id)) return std::nullopt;
-        if (has_min_reader(net_, *id, removed_) || is_immune(net_, *id, &removed_)) return std::nullopt;
+        if (has_min_reader(net_, *id, removed_) || !path_ok(*id)) return std::nullopt;
         op_ = "remove_silenced";
         remove_silenced(net_, *id, removed_);
         return t;

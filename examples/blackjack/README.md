@@ -12,7 +12,7 @@ build/blackjack_trainer                      # runs until Ctrl+C, then saves
 build/blackjack_trainer --resume runs/blackjack-…/population.jpnet --out runs/blackjack-…
 ```
 
-Options: `--deals N` (deals per generation, default 200), `--out DIR`, `--seed N` (deal stream), `--resume FILE.jpnet`, `--rules new|old`
+Options: `--deals N` (deals per generation, default 200), `--out DIR`, `--seed N` (deal stream), `--pop-seed N` (population seed; with `--seed` it repeats a run exactly only under a profile with `"rng_mode": "shared"`), `--resume FILE.jpnet`, `--rules new|old`
 (default new), `--alter PCT`
 (default 22), `--grow PCT` (default 12), `--big-alter PCT` (default 5), `--big-grow PCT`
 (default 1.5) for `--rules old`; `--stop-at N` (stop and save after N generations); `--profile FILE` and the overrides `--edit`, `--op`, `--grow-gen`,

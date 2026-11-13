@@ -12,7 +12,7 @@
 // kept, the other 30 culled, and each survivor is mutated 3 times. Runs until interrupted
 // (SIGINT / SIGTERM), then saves the population.
 //
-// Usage: highlow_trainer [--out DIR] [--seed N] [--resume FILE.jpnet] [--shoes N]
+// Usage: highlow_trainer [--out DIR] [--seed N] [--pop-seed N] [--resume FILE.jpnet] [--shoes N]
 //                        [--path-mix N] [--in-qty-max N] [--profile FILE] [--edit PCT] [--op PCT]
 //                        [--grow-gen PCT] [--grow-net PCT] [--tap-weight W] [--stop-at GENERATIONS]
 //                        [--console-every SECONDS]
@@ -115,7 +115,7 @@ Result score_shoe(const Shoe& shoe, Guess guess) {
 }
 
 Result play_shoe(Net<D>& net, const Shoe& shoe) {
-    net.reset();  // history spans the whole shoe
+    net.reset_state();  // history spans the whole shoe (keeps the cached plan: nets are not edited in place)
     std::vector<double> in(2);
     return score_shoe(shoe, [&](const Card& c) {
         in[0] = static_cast<double>(c.rank + 2);  // 2..14
@@ -191,6 +191,7 @@ std::uint64_t growth_added(const Pop& pop) {
 int main(int argc, char** argv) {
     fs::path out = fs::path("runs") / ("highlow-" + timestamp());
     std::optional<std::uint64_t> seed;
+    std::optional<std::uint64_t> pop_seed;  // repeat a run: its population_seed from run_info.txt
     std::optional<fs::path> resume;
     int shoes = 4;
     std::uint32_t path_mix = 2, in_qty_max = 3;
@@ -202,6 +203,7 @@ int main(int argc, char** argv) {
         const std::string a = argv[i], v = argv[i + 1];
         if (a == "--out") out = v;
         else if (a == "--seed") seed = std::stoull(v);
+        else if (a == "--pop-seed") pop_seed = std::stoull(v);
         else if (a == "--resume") resume = v;
         else if (a == "--shoes") shoes = std::stoi(v);
         else if (a == "--path-mix") path_mix = static_cast<std::uint32_t>(std::stoul(v));
@@ -221,9 +223,9 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
 
-    Pop pop = resume ? Pop::load(*resume) : Pop(in_qty_max, 2, 2, Priority::Speed, std::nullopt, path_mix);
-    if (!resume) pop.create(kPopulation);
+    Pop pop = resume ? Pop::load(*resume) : Pop(in_qty_max, 2, 2, Priority::Speed, pop_seed, path_mix);
     Profile profile = load_profile(profile_file);
+    if (!resume) pop.create(kPopulation, profile.rng_mode());  // "shared": repeatable from the seeds
     if (edit_pct) profile.set_overall("edit_max_pct", *edit_pct);
     if (op_pct) profile.set_overall("op_change_max_pct", *op_pct);
     if (grow_gen) profile.set_overall("growth_gen_prob", *grow_gen / 100.0);

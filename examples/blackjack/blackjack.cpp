@@ -4,7 +4,7 @@
 // 30 are culled, and each survivor is mutated 3 times to refill the population to 40.
 // Runs until interrupted (Ctrl+C / SIGINT / SIGTERM), then saves the population.
 //
-// Usage: blackjack_trainer [--out DIR] [--seed N] [--resume FILE.jpnet] [--rules new|old]
+// Usage: blackjack_trainer [--out DIR] [--seed N] [--pop-seed N] [--resume FILE.jpnet] [--rules new|old]
 //                          [--deals N] [--stop-at GENERATIONS] [--console-every SECONDS]
 // --deals: deals per generation (default 200). Each generation the log also scores the simple
 // hit rule (hit below 12, or below 17 vs a dealer 7+; never doubles or splits) and the double rule
@@ -121,6 +121,7 @@ Profile make_profile(double alter_pct, double grow_pct) {
 int main(int argc, char** argv) {
     fs::path out = fs::path("runs") / ("blackjack-" + timestamp());
     std::optional<std::uint64_t> seed;
+    std::optional<std::uint64_t> pop_seed;  // population seed (repeatable under rng_mode shared)
     std::optional<fs::path> resume;
     double alter = 22.0, grow = 12.0, big_alter = 5.0, big_grow = 1.5, console_every = 2.0;
     fs::path profile_file = "profiles/expansion.json";
@@ -131,6 +132,7 @@ int main(int argc, char** argv) {
         const std::string a = argv[i], v = argv[i + 1];
         if (a == "--out") out = v;
         else if (a == "--seed") seed = std::stoull(v);
+        else if (a == "--pop-seed") pop_seed = std::stoull(v);
         else if (a == "--resume") resume = v;
         else if (a == "--alter") alter = std::stod(v);
         else if (a == "--grow") grow = std::stod(v);
@@ -154,8 +156,7 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
 
-    Pop pop = resume ? Pop::load(*resume) : Pop(kInQtyMax, 9, 1, Priority::Speed);
-    if (!resume) pop.create(kPopulation);
+    Pop pop = resume ? Pop::load(*resume) : Pop(kInQtyMax, 9, 1, Priority::Speed, pop_seed);
     const Profile profile = make_profile(alter, grow);
     const Profile big_profile = make_profile(big_alter, big_grow);  // nets over kBigNet neurons
     Profile new_profile = new_rules ? load_profile(profile_file) : Profile::defaults();
@@ -166,6 +167,7 @@ int main(int argc, char** argv) {
     if (tap_weight)
         new_profile.apply_patch(nlohmann::json{{"overall", {{"add_method_weights",
             {{"v_tap", *tap_weight}, {"s_tap", *tap_weight}, {"m_tap", *tap_weight}}}}}});
+    if (!resume) pop.create(kPopulation, new_profile.rng_mode());  // "shared": repeatable from the seeds
     const std::uint64_t deal_seed = seed ? *seed : fresh_seed();
     Rng deals(deal_seed);
 

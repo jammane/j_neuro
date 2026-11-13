@@ -90,6 +90,15 @@ public:
     std::vector<double> step(const std::vector<double>& inputs);
     /// Clear all s_neuron state and cached evaluation plans.
     void reset() { state_ = State{}; }
+    /// Clear all s_neuron state but keep the cached evaluation plan and warmup. Same results as
+    /// reset(), faster; only valid if nodes have not been edited since the last step (else reset()).
+    void reset_state() {
+        for (Ring& r : state_.rings) {
+            std::fill(r.buf.begin(), r.buf.end(), 0.0);
+            r.head = 0;
+            r.filled = 0;
+        }
+    }
 
     /// Copy of the genome in the reset state.
     Net copy_genome() const {
@@ -103,11 +112,15 @@ private:
         bool ready = false;
         std::vector<NodeId> order;                 // SPEED / BALANCED: cached evaluation order
         std::vector<double> values;                // SPEED / BALANCED: all node values
-        std::unordered_map<NodeId, Ring> rings;    // s_neuron histories
+        std::uint64_t warmup = 0;                  // get_warmup_steps(), valid when ready
+        std::vector<Ring> rings;                   // s_neuron histories, by node id
+        std::vector<double> vals, scratch;         // reused per neuron: no allocation per step
+        std::vector<bool> present;
     };
     State state_;
 
     std::vector<NodeId> evaluation_order() const;
+    std::uint64_t warmup_of(const std::vector<NodeId>& order) const;
     double eval_node(NodeId id, const Neuron& n, auto&& value_of);
 };
 
@@ -142,8 +155,13 @@ std::vector<NodeId> Net<D>::evaluation_order() const {
 
 template <class D>
 std::uint64_t Net<D>::get_warmup_steps() const {
+    return state_.ready ? state_.warmup : warmup_of(evaluation_order());
+}
+
+template <class D>
+std::uint64_t Net<D>::warmup_of(const std::vector<NodeId>& order) const {
     std::vector<std::uint64_t> w(nodes.size(), 0);
-    for (NodeId id : evaluation_order()) {
+    for (NodeId id : order) {
         const Neuron& n = *nodes[id].neuron;
         std::uint64_t best = 0;
         auto see = [&](const std::optional<NodeId>& r) { if (r && w[*r] > best) best = w[*r]; };
@@ -162,31 +180,36 @@ template <class D>
 double Net<D>::eval_node(NodeId id, const Neuron& neuron, auto&& value_of) {
     auto in = [&](const std::optional<NodeId>& r) { return r ? value_of(*r) : 0.0; };
     if (auto* v = std::get_if<VNeuron>(&neuron)) return eval_v(*v, in(v->input));
+    auto& vals = state_.vals;
+    auto& present = state_.present;
     if (auto* s = std::get_if<SNeuron>(&neuron)) {
+        if (state_.rings.size() <= id) state_.rings.resize(nodes.size());
         Ring& ring = state_.rings[id];
         if (ring.buf.size() != s->k) ring = Ring{std::vector<double>(s->k, 0.0), 0, 0};
         const double x = in(s->input);
-        std::vector<double> h(s->k);
-        std::vector<bool> present(s->k);
+        auto& h = vals;
+        h.resize(s->k);
+        present.resize(s->k);
         for (std::uint32_t i = 0; i < s->k; ++i) {
             h[i] = ring.buf[(ring.head + i) % s->k];
             present[i] = i >= s->k - ring.filled;
         }
         // lag: the input from k steps ago (+0.0 if unfilled); otherwise x minus the aggregate
-        const double out = s->op == AggOp::Lag ? canon(h[0]) : canon(x - aggregate(s->op, h, present));
+        const double out =
+            s->op == AggOp::Lag ? canon(h[0]) : canon(x - aggregate(s->op, h, present, state_.scratch));
         ring.buf[ring.head] = x;
         ring.head = (ring.head + 1) % s->k;
         ring.filled = std::min(ring.filled + 1, s->k);
         return out;
     }
     const auto& m = std::get<MNeuron>(neuron);
-    std::vector<double> vals(m.slots.size());
-    std::vector<bool> present(m.slots.size());
+    vals.resize(m.slots.size());
+    present.resize(m.slots.size());
     for (std::size_t i = 0; i < m.slots.size(); ++i) {
         present[i] = m.slots[i].has_value();
         vals[i] = in(m.slots[i]);
     }
-    return canon(aggregate(m.op, vals, present));
+    return canon(aggregate(m.op, vals, present, state_.scratch));
 }
 
 template <class D>
@@ -232,6 +255,7 @@ std::vector<double> Net<D>::step(const std::vector<double>& inputs) {
     if (!state_.ready) {
         state_.order = evaluation_order();
         state_.values.assign(nodes.size(), 0.0);
+        state_.warmup = warmup_of(state_.order);
         state_.ready = true;
     }
     auto& values = state_.values;

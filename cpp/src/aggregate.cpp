@@ -6,13 +6,19 @@
 namespace jneuro {
 
 double aggregate(AggOp op, const std::vector<double>& values, const std::vector<bool>& present) {
+    std::vector<double> scratch;
+    return aggregate(op, values, present, scratch);
+}
+
+double aggregate(AggOp op, const std::vector<double>& values, const std::vector<bool>& present,
+                 std::vector<double>& scratch) {
     switch (op) {
         case AggOp::Mean:
             return compensated_mean(values);
         case AggOp::Median: {
-            std::vector<double> v = values;
-            std::sort(v.begin(), v.end());
-            return v[v.size() / 2];
+            scratch.assign(values.begin(), values.end());
+            std::sort(scratch.begin(), scratch.end());
+            return scratch[scratch.size() / 2];
         }
         case AggOp::Min: {
             bool any = false;
