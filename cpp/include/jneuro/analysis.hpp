@@ -45,11 +45,85 @@ void for_each_connection(const Neuron& n, F&& f) {
     }
 }
 
+/// Calls f(id, position) for each connection of a neuron, in slot order (spec/03 connections).
+template <class F>
+void for_each_conn(const Neuron& n, F&& f) {
+    if (auto* m = std::get_if<MNeuron>(&n)) {
+        for (std::size_t i = 0; i < m->slots.size(); ++i) if (m->slots[i]) f(*m->slots[i], m->slot_pos(i));
+    } else if (auto* v = std::get_if<VNeuron>(&n)) {
+        if (v->input) f(*v->input, v->input_pos);
+    } else if (auto& s = std::get<SNeuron>(n); s.input) {
+        f(*s.input, s.input_pos);
+    }
+}
+
+/// Structural depth (spec/03 structural order): the depth, or for an s_neuron the bottom of its
+/// gap, depth - (in_qty_max + 1). Its input is shallower and every reader of it or of its length and
+/// history nodes is deeper, so ascending structural depth visits each node after what it reads.
+template <class D>
+std::uint64_t struct_depth(const Net<D>& net, NodeId i) {
+    const std::uint64_t d = net.nodes[i].depth;
+    const auto& n = net.nodes[i].neuron;
+    if (!n || !std::holds_alternative<SNeuron>(*n)) return d;
+    const std::uint64_t g = std::uint64_t{net.in_qty_max} + 1;
+    return d > g ? d - g : 0;
+}
+
 namespace detail {
 inline bool alive(const Removed* removed, NodeId i) {
     return !removed || i >= removed->size() || !(*removed)[i];
 }
 }  // namespace detail
+
+/// Depth of a connection: depth(node) - position (spec/03).
+template <class D>
+std::uint64_t conn_depth(const Net<D>& net, NodeId node, std::uint32_t pos) {
+    return static_cast<std::uint64_t>(net.nodes[node].depth) - pos;
+}
+
+/// The first broken depth rule of spec/03 (connections shallower than their reader, the s gap,
+/// history positions within k of a hidden s_neuron), or nullptr. Live nodes only.
+template <class D>
+const char* depth_rule_error(const Net<D>& net, const Removed* removed = nullptr) {
+    const std::uint64_t q = net.in_qty_max;
+    for (NodeId i = net.n_inputs; i < net.nodes.size(); ++i) {
+        if (!detail::alive(removed, i) || !net.nodes[i].neuron) continue;
+        const std::uint64_t d = net.nodes[i].depth;
+        const char* err = nullptr;
+        for_each_conn(*net.nodes[i].neuron, [&](NodeId c, std::uint32_t p) {
+            if (err) return;
+            if (c >= net.nodes.size()) { err = "bad reference"; return; }
+            if (p > 0) {
+                const auto& src = net.nodes[c];
+                const auto* s = src.neuron ? std::get_if<SNeuron>(&*src.neuron) : nullptr;
+                if (!net.is_hidden(c) || !s || p > s->k + 1 || p > src.depth) {
+                    err = "history connection: no such history node";
+                    return;
+                }
+            }
+            if (conn_depth(net, c, p) >= d) err = "connection depth must be smaller";
+        });
+        if (err) return err;
+        if (const auto* s = std::get_if<SNeuron>(&*net.nodes[i].neuron)) {
+            const std::uint64_t in = s->input ? conn_depth(net, *s->input, s->input_pos) : 0;
+            if (in + q + 1 >= d) return "s gap: an s_neuron's input must be shallower than its depth - (in_qty_max + 1)";
+        }
+    }
+    return nullptr;
+}
+
+/// Largest history position read from each node (spec/03 history floor), by node id.
+template <class D>
+std::vector<std::uint32_t> history_floors(const Net<D>& net, const Removed* removed = nullptr) {
+    std::vector<std::uint32_t> hf(net.nodes.size(), 0);
+    for (NodeId i = 0; i < net.nodes.size(); ++i) {
+        if (!detail::alive(removed, i) || !net.nodes[i].neuron) continue;
+        for_each_conn(*net.nodes[i].neuron, [&](NodeId c, std::uint32_t p) {
+            if (c < hf.size()) hf[c] = std::max(hf[c], p);
+        });
+    }
+    return hf;
+}
 
 /// For each node: ascending ids of live neurons connected to it (each once).
 template <class D>
@@ -117,7 +191,7 @@ bool path_rule_ok(const Net<D>& net, const Removed* removed = nullptr,
     for (NodeId i = net.n_inputs; i < n; ++i)
         if (ok(i)) order.push_back(i);
     std::stable_sort(order.begin(), order.end(),
-                     [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
+                     [&](NodeId a, NodeId b) { return struct_depth(net, a) < struct_depth(net, b); });
     std::vector<std::uint64_t> bits(n * words, 0);  // dead and cut nodes stay empty
     for (NodeId i = 0; i < net.n_inputs; ++i) bits[i * words + i / 64] |= 1ull << (i % 64);
     for (NodeId x : order) {
@@ -166,7 +240,7 @@ private:
     std::vector<char> alive_;                   // liveness as last seen
     std::vector<std::vector<NodeId>> readers_;  // superset of each node's readers (stale ids harmless)
     std::vector<char> queued_;
-    std::vector<std::pair<D, NodeId>> heap_;    // min-heap on (depth, id)
+    std::vector<std::pair<std::uint64_t, NodeId>> heap_;  // min-heap on (structural depth, id)
     std::vector<NodeId> scratch_;
     std::vector<std::uint64_t> tmp_;
     std::optional<NodeId> cut_;
@@ -180,7 +254,7 @@ private:
     void push(const Net<D>& net, NodeId x) {
         if (queued_[x]) return;
         queued_[x] = 1;
-        heap_.emplace_back(net.nodes[x].depth, x);
+        heap_.emplace_back(struct_depth(net, x), x);
         std::push_heap(heap_.begin(), heap_.end(), std::greater<>{});
     }
 
@@ -248,14 +322,14 @@ private:
 };
 
 namespace detail {
-/// Live node ids in evaluation order: by depth, ties by id (the same order as a stable sort by depth).
+/// Live node ids in structural order: by structural depth, ties by id (spec/03).
 template <class D>
 std::vector<NodeId> live_depth_order(const Net<D>& net, const Removed* removed) {
     std::vector<NodeId> order;
     for (NodeId i = 0; i < net.nodes.size(); ++i)
         if (alive(removed, i)) order.push_back(i);
     std::stable_sort(order.begin(), order.end(),
-                     [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
+                     [&](NodeId a, NodeId b) { return struct_depth(net, a) < struct_depth(net, b); });
     return order;
 }
 }  // namespace detail
@@ -331,27 +405,45 @@ bool is_immune(const Net<D>& net, NodeId id, const Removed* removed = nullptr) {
     return !path_rule_ok(net, removed, id);
 }
 
+/// gap(X) of spec/06: in_qty_max + 1 for an s_neuron (length node and longest history), else 0.
+template <class D>
+std::uint64_t s_gap(const Net<D>& net, const Neuron& n) {
+    return std::holds_alternative<SNeuron>(n) ? std::uint64_t{net.in_qty_max} + 1 : 0;
+}
+
+/// floor(X) of spec/06: the shallowest depth node `id` may have, given what its neuron reads
+/// (live connections; a missing s input counts as depth 0) and its own s gap.
+template <class D>
+std::uint64_t depth_floor(const Net<D>& net, NodeId id, const Removed* removed = nullptr) {
+    const Neuron& n = *net.nodes[id].neuron;
+    std::uint64_t f = 1;
+    for_each_conn(n, [&](NodeId c, std::uint32_t p) {
+        if (detail::alive(removed, c)) f = std::max(f, conn_depth(net, c, p) + 1);
+    });
+    return f + s_gap(net, n);
+}
+
+/// ceil(X) of spec/06: the deepest depth node `id` may have, given every live connection (id, j)
+/// and its reader's s gap: depth(r) - gap(r) + j - 1; D_MAX - 1 if nothing reads it.
+template <class D>
+std::uint64_t depth_ceil(const Net<D>& net, NodeId id, const Removed* removed = nullptr) {
+    std::uint64_t hi = static_cast<std::uint64_t>(Net<D>::d_max) - 1;
+    for (NodeId r = 0; r < net.nodes.size(); ++r) {
+        if (!detail::alive(removed, r) || !net.nodes[r].neuron) continue;
+        const Neuron& n = *net.nodes[r].neuron;
+        for_each_conn(n, [&](NodeId c, std::uint32_t j) {
+            if (c != id) return;
+            const std::uint64_t lim = static_cast<std::uint64_t>(net.nodes[r].depth) - s_gap(net, n) + j - 1;
+            hi = std::min(hi, lim);
+        });
+    }
+    return hi;
+}
+
 /// [lo, hi] depths `id` may take without breaking any neuron (spec/06).
 template <class D>
 std::pair<D, D> legal_depth_range(const Net<D>& net, NodeId id, const Removed* removed = nullptr) {
-    D lo = 1;
-    bool any = false;
-    for (NodeId c : connections(net.nodes[id].neuron)) {
-        if (!detail::alive(removed, c)) continue;
-        D d = static_cast<D>(net.nodes[c].depth + 1);
-        if (!any || d > lo) lo = d;
-        any = true;
-    }
-    D hi = static_cast<D>(Net<D>::d_max - 1);
-    for (NodeId r = 0; r < net.nodes.size(); ++r) {  // live readers of id
-        if (!detail::alive(removed, r) || !net.nodes[r].neuron) continue;
-        bool reads = false;
-        for_each_connection(*net.nodes[r].neuron, [&](NodeId c) { reads = reads || c == id; });
-        if (!reads) continue;
-        D d = static_cast<D>(net.nodes[r].depth - 1);
-        if (d < hi) hi = d;
-    }
-    return {lo, hi};
+    return {static_cast<D>(depth_floor(net, id, removed)), static_cast<D>(depth_ceil(net, id, removed))};
 }
 
 }  // namespace jneuro

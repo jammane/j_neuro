@@ -27,12 +27,12 @@ def test_invalid_present():
 def test_exact_layout():
     """Bytes built by hand from spec/09, independent of the library's writer."""
     net = make_net(1, 1, 3, [(D16, V(0, "add", 0.5))])
-    body = b"JNET" + struct.pack("<HHHH", 1, 0, 5, 0)
+    body = b"JNET" + struct.pack("<HHHH", 2, 0, 6, 0)
     body += struct.pack("<BBIIIBBQ", 0, 0, 3, 1, 1, 0, 0, 2)  # SPEED, U16, q, n_in, n_out, path_mix, max_run, next_birth
     body += struct.pack("<H", 2)                               # node_count (W = 2)
     body += struct.pack("<QQHB", 0, 0, 0, 0)                   # input node
     body += struct.pack("<QQHB", 1, 0, 0xFFFF, 1)              # output node, v neuron
-    body += struct.pack("<HBBd", 0, 0, 2, 0.5)                 # input 0, none, add, 0.5
+    body += struct.pack("<HIBBd", 0, 0, 0, 2, 0.5)             # input (node 0, position 0), none, add, 0.5
     assert net_to_bytes(net) == body + hashlib.sha256(body).digest()
 
 
@@ -41,9 +41,10 @@ def test_none_sentinel_and_widths():
         dmax = (1 << (8 * w)) - 1
         net = make_net(2, 1, 3, [(dmax, M("max", [0, 1, None])), ], depth_type=dt)
         b = net_to_bytes(net)
-        assert b[-32 - w:-32] == none                          # last slot of the m neuron is empty
+        assert b[-32 - 4 - w:-32 - 4] == none                  # last slot of the m neuron is empty
+        assert b[-32 - 4:-32] == b"\0" * 4                     # ... with position 0
         header = 4 + 8 + 2 + 12 + 1 + 1 + 8
-        nodes = 3 * (16 + w + 1) + (1 + 3 * w)
+        nodes = 3 * (16 + w + 1) + (1 + 3 * (w + 4))           # a conn is id + u32 position
         assert len(b) == header + w + nodes + 32
 
 

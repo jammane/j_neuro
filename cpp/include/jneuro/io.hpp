@@ -14,15 +14,19 @@
 
 namespace jneuro {
 
-inline constexpr const char* kSpecVersion = "0.5.0";
-inline constexpr std::uint16_t kSpecMajor = 0, kSpecMinor = 5, kSpecPatch = 0;
-inline constexpr std::uint16_t kFormatVersion = 1;
+inline constexpr const char* kSpecVersion = "0.6.0";
+inline constexpr std::uint16_t kSpecMajor = 0, kSpecMinor = 6, kSpecPatch = 0;
+inline constexpr std::uint16_t kNetFormatVersion = 2;  ///< .jnet; 1 = spec 0.5 (read and converted)
+inline constexpr std::uint16_t kPopFormatVersion = 1;  ///< .jpnet
+
+/// Spec 0.5 genomes are still read: nets are converted on load (spec/09 reading 0.5 nets).
+inline bool is_legacy_05(std::uint16_t major, std::uint16_t minor) { return major == 0 && minor == 5; }
 
 /// Same MAJOR; while MAJOR is 0, also the same MINOR (spec/README).
 bool version_compatible(const std::string& v);
 bool version_compatible(std::uint16_t major, std::uint16_t minor);
 /// Validate a JSON document's format and spec_version (throws ValidationError).
-void check_format(const nlohmann::json& d, const char* fmt);
+void check_format(const nlohmann::json& d, const char* fmt, bool accept_05 = false);
 /// A new 64-bit seed from the operating system's entropy source.
 std::uint64_t fresh_seed();
 
@@ -64,7 +68,7 @@ public:
     void raw(const std::string& s) { raw(reinterpret_cast<const std::uint8_t*>(s.data()), s.size()); }
     void header(const char magic[4]) {
         raw(reinterpret_cast<const std::uint8_t*>(magic), 4);
-        u(kFormatVersion, 2);
+        u(std::memcmp(magic, "JNET", 4) == 0 ? kNetFormatVersion : kPopFormatVersion, 2);
         u(kSpecMajor, 2);
         u(kSpecMinor, 2);
         u(kSpecPatch, 2);
@@ -89,7 +93,8 @@ public:
     double f64();
     const std::uint8_t* take(std::size_t n);
     std::uint8_t enum_byte(std::uint8_t count, const char* field);
-    void header(const char magic[4]);
+    /// Checks magic, format and spec version; returns true for a spec 0.5 file (to convert).
+    bool header(const char magic[4]);
     void done() const;
 
 private:
@@ -118,7 +123,10 @@ Bytes to_bytes(const Net<D>& net) {
     w.u(net.max_run, 1);
     w.u(net.next_birth, 8);
     w.u(net.nodes.size(), W);
-    auto ref = [&](const std::optional<NodeId>& r) { w.u(r ? *r : none, W); };
+    auto ref = [&](const std::optional<NodeId>& r, std::uint32_t pos) {  // a conn: id, position
+        w.u(r ? *r : none, W);
+        w.u(r ? pos : 0, 4);
+    };
     for (const auto& node : net.nodes) {
         w.u(node.birth, 8);
         w.u(node.born_gen, 8);
@@ -127,20 +135,20 @@ Bytes to_bytes(const Net<D>& net) {
             w.u(0, 1);
         } else if (auto* v = std::get_if<VNeuron>(&*node.neuron)) {
             w.u(1, 1);
-            ref(v->input);
+            ref(v->input, v->input_pos);
             w.u(static_cast<std::uint8_t>(v->inversion), 1);
             w.u(static_cast<std::uint8_t>(v->op), 1);
             w.f64(v->weight);
         } else if (auto* s = std::get_if<SNeuron>(&*node.neuron)) {
             w.u(2, 1);
-            ref(s->input);
+            ref(s->input, s->input_pos);
             w.u(static_cast<std::uint8_t>(s->op), 1);
             w.u(s->k, 4);
         } else {
             const auto& m = std::get<MNeuron>(*node.neuron);
             w.u(3, 1);
             w.u(static_cast<std::uint8_t>(m.op), 1);
-            for (const auto& sl : m.slots) ref(sl);
+            for (std::size_t i = 0; i < m.slots.size(); ++i) ref(m.slots[i], m.slot_pos(i));
         }
     }
     return w.finish();

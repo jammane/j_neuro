@@ -19,14 +19,22 @@ bool is_identity(const Net<D>& net, NodeId id) {
     return v && v->input && v->inversion == Inversion::None && v->weight == identity_weight(v->op);
 }
 
-/// Output is always +0.0.
+/// Output is always +0.0 (and so is everything a live reader reads from it: an s_neuron whose
+/// length node is read is not silenced, spec/07).
 template <class D>
-bool is_silenced(const Net<D>& net, NodeId id) {
+bool is_silenced(const Net<D>& net, NodeId id, const Removed* removed = nullptr) {
     const Neuron& n = *net.nodes[id].neuron;
     const auto* v = std::get_if<VNeuron>(&n);
     if (v && v->op == VOp::Mul && v->weight == 0.0) return true;
     if (!connections(n).empty()) return false;
     if (v) return eval_v(*v, 0.0) == 0.0;
+    if (std::holds_alternative<SNeuron>(n))
+        for (NodeId r = 0; r < net.nodes.size(); ++r) {
+            if (!detail::alive(removed, r) || !net.nodes[r].neuron) continue;
+            bool length_read = false;
+            for_each_conn(*net.nodes[r].neuron, [&](NodeId c, std::uint32_t p) { length_read = length_read || (c == id && p == 1); });
+            if (length_read) return false;
+        }
     return true;  // connection-less s or m neuron
 }
 
@@ -41,14 +49,18 @@ bool has_min_reader(const Net<D>& net, NodeId id, const Removed& removed) {
 }
 
 namespace detail {
-inline void redirect(Neuron& n, NodeId old, std::optional<NodeId> to) {
+/// Replace every connection to node `old` (any position) by the connection (to, to_pos), or by
+/// an empty slot / missing input when `to` is nullopt.
+inline void redirect(Neuron& n, NodeId old, std::optional<NodeId> to, std::uint32_t to_pos = 0) {
+    if (!to) to_pos = 0;
     if (auto* m = std::get_if<MNeuron>(&n)) {
-        for (auto& s : m->slots) if (s == old) s = to;
+        for (std::size_t i = 0; i < m->slots.size(); ++i)
+            if (m->slots[i] == old) m->set(i, to, to_pos);
     } else if (auto* v = std::get_if<VNeuron>(&n)) {
-        if (v->input == old) v->input = to;
+        if (v->input == old) { v->input = to; v->input_pos = to_pos; }
     } else {
         auto& s = std::get<SNeuron>(n);
-        if (s.input == old) s.input = to;
+        if (s.input == old) { s.input = to; s.input_pos = to_pos; }
     }
 }
 template <class D>
@@ -61,9 +73,11 @@ void fit(const Net<D>& net, Removed& removed) {
 template <class D>
 void bypass(Net<D>& net, NodeId id, Removed& removed) {
     detail::fit(net, removed);
-    const auto src = std::get<VNeuron>(*net.nodes[id].neuron).input;
+    const auto& x = std::get<VNeuron>(*net.nodes[id].neuron);
+    const auto src = x.input;
+    const std::uint32_t src_pos = x.input_pos;  // the input may itself be a history node
     const auto rd = readers(net, &removed);
-    for (NodeId r : rd[id]) detail::redirect(*net.nodes[r].neuron, id, src);
+    for (NodeId r : rd[id]) detail::redirect(*net.nodes[r].neuron, id, src, src_pos);
     removed[id] = true;
 }
 
@@ -79,7 +93,7 @@ void remove_silenced(Net<D>& net, NodeId id, Removed& removed) {
         for (NodeId r : rd) detail::redirect(*net.nodes[r].neuron, y, std::nullopt);
         removed[y] = true;
         for (NodeId r : rd)
-            if (net.is_hidden(r) && connections(*net.nodes[r].neuron).empty() && is_silenced(net, r) &&
+            if (net.is_hidden(r) && connections(*net.nodes[r].neuron).empty() && is_silenced(net, r, &removed) &&
                 !has_min_reader(net, r, removed))
                 queue.push_back(r);
     }
@@ -94,23 +108,39 @@ std::vector<std::optional<double>> constant_values(const Net<D>& net, const Remo
     std::stable_sort(order.begin(), order.end(),
                      [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
     std::vector<std::optional<double>> c(net.nodes.size());
+    // a connection's constant: the node's at position 0; for history node j of S, +0.0 when S's
+    // input is missing or its constant is +0.0 (the history is then always 0), else unknown
+    auto cc = [&](auto&& self, NodeId r, std::uint32_t pos) -> std::optional<double> {
+        if (pos == 0) return c[r];
+        if (pos == 1) return std::nullopt;  // the length node counts up after a reset
+        const auto& s = std::get<SNeuron>(*net.nodes[r].neuron);
+        if (!s.input) return 0.0;
+        const auto in = self(self, *s.input, s.input_pos);
+        if (in && *in == 0.0) return 0.0;
+        return std::nullopt;
+    };
+    auto cconn = [&](NodeId r, std::uint32_t pos) { return cc(cc, r, pos); };
     for (NodeId i : order) {
         if (!net.nodes[i].neuron) continue;
         const Neuron& n = *net.nodes[i].neuron;
         if (auto* v = std::get_if<VNeuron>(&n)) {
+            const auto in = v->input ? cconn(*v->input, v->input_pos) : std::optional<double>(0.0);
             if (!v->input) c[i] = eval_v(*v, 0.0);
-            else if (c[*v->input]) c[i] = eval_v(*v, *c[*v->input]);
+            else if (in) c[i] = eval_v(*v, *in);
             else if (v->op == VOp::Mul && v->weight == 0.0) c[i] = 0.0;
         } else if (auto* s = std::get_if<SNeuron>(&n)) {
-            if (!s->input || (c[*s->input] && *c[*s->input] == 0.0)) c[i] = 0.0;  // canonical: +0 only
+            if (!s->input) c[i] = 0.0;
+            else if (const auto in = cconn(*s->input, s->input_pos); in && *in == 0.0) c[i] = 0.0;  // +0 only
         } else {
             const auto& m = std::get<MNeuron>(n);
             std::vector<double> values;
             std::vector<bool> present;
             bool all = true;
-            for (const auto& s : m.slots) {
-                if (s && !c[*s]) { all = false; break; }
-                values.push_back(s ? *c[*s] : 0.0);
+            for (std::size_t k = 0; k < m.slots.size(); ++k) {
+                const auto& s = m.slots[k];
+                const auto cv = s ? cconn(*s, m.slot_pos(k)) : std::optional<double>(0.0);
+                if (s && !cv) { all = false; break; }
+                values.push_back(s ? *cv : 0.0);
                 present.push_back(s.has_value());
             }
             if (all) c[i] = canon(aggregate(m.op, values, present));
@@ -138,7 +168,8 @@ std::uint64_t fold_constants(Net<D>& net, Removed& removed, std::uint64_t genera
     for (NodeId i : cands) {
         Neuron old = *net.nodes[i].neuron;
         net.nodes[i].neuron = VNeuron{std::nullopt, Inversion::None, VOp::Add, *c[i]};
-        if (!paths.ok(net, &removed)) net.nodes[i].neuron = std::move(old);
+        // restore if the path rule breaks, or a depth rule (an s_neuron whose history is read)
+        if (!paths.ok(net, &removed) || history_floors(net, &removed)[i] > 0) net.nodes[i].neuron = std::move(old);
         else ++folded;
     }
     return folded;

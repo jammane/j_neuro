@@ -196,7 +196,7 @@ public:
     static Population load(const std::filesystem::path& path) {
         const Bytes data = read_file(path);
         detail::Reader r(data, "jpnet");
-        r.header("JPOP");
+        const bool legacy = r.header("JPOP");  // 0.5: nets convert, the log is not kept (spec/11)
         const auto priority = static_cast<Priority>(r.enum_byte(3, "priority"));
         if (static_cast<DepthType>(r.enum_byte(3, "depth_type")) != Net<D>::depth_type)
             throw ValidationError("jpnet: depth_type differs from this population type");
@@ -248,7 +248,7 @@ public:
         }
         r.done();
         pop.snapshot_hash_ = bytes_to_hex(sha256(data));
-        if (log) {
+        if (log && !legacy) {
             check_format(*log, "j_neuro.runlog");
             if (log->contains("resumed_from") && !log->at("resumed_from").is_null())
                 pop.resumed_from_ = log->at("resumed_from").get<std::string>();

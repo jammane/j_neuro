@@ -23,11 +23,11 @@ def version_compatible(ver: str) -> bool:
         return False
 
 
-def _check_version(d, fmt):
+def _check_version(d, fmt, accept_05: bool = False):
     if not isinstance(d, dict) or d.get("format") != fmt:
         raise ValidationError(f"format must be {fmt!r}")
     ver = d.get("spec_version")
-    if not isinstance(ver, str) or not version_compatible(ver):
+    if not isinstance(ver, str) or not (version_compatible(ver) or (accept_05 and ver.startswith("0.5."))):
         raise ValidationError(f"unsupported spec_version {ver!r}")
 
 
@@ -38,5 +38,5 @@ def profile_to_json(profile) -> str:
 def profile_from_json(text: str):
     from .mutate import Profile
     d = json.loads(text)
-    _check_version(d, PROFILE_FORMAT)
+    _check_version(d, PROFILE_FORMAT, accept_05=True)   # 0.5 profiles lack only history_read_prob
     return Profile.from_dict(d)

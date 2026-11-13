@@ -6,6 +6,10 @@ neuron output is passed through `canon` before being stored.
 Enumeration orders below are normative; they define what an RNG choice index means
 ([08](08-rng.md#derived-procedures)).
 
+Every connection reads a canonical value: the node's value for position 0, the length node's for
+position 1, history node `j`'s for position `j + 1` ([03](03-net-structure.md#connections-and-history-nodes),
+[s_neuron](#s_neuron)). `value(c)` below means the value of connection `c`.
+
 ## aggregate
 
 Shared by s_neurons and m_neurons.
@@ -48,7 +52,7 @@ mean = total / n                      # n converted to binary64
 
 | Field | Values |
 |---|---|
-| `input` | node id, or missing |
+| `input` | connection, or missing |
 | `inversion` | `[none, bitnot, recip]` (enumeration order) |
 | `op` | `[mul, div, add, sub]` (enumeration order) |
 | `weight` | finite binary64 |
@@ -78,7 +82,7 @@ exactly.
 
 | Field | Values |
 |---|---|
-| `input` | node id, or missing |
+| `input` | connection, or missing |
 | `op` | `[mean, median, min, max, lag]` (enumeration order): the four aggregation ops plus `lag`, which only s_neurons have |
 | `k` | integer, `1 ≤ k ≤ in_qty_max`; **odd if `op == median`** |
 | state: `history` | ring of `k` values, initially all `+0.0` |
@@ -95,6 +99,16 @@ output = canon(h[0])                            if op == lag   # the input from 
 push x into history (dropping the oldest), filled = min(filled + 1, k)
 ```
 
+**Length and history nodes.** Both hold their value as it is at the **start** of the step, before
+this step's push; every reader sees that value, whether it is evaluated before or after the
+s_neuron itself.
+
+- The length node (position 1) holds `filled` as a binary64: 0 right after a reset, then one more
+  each step up to `k`. With `mean` it recovers the sum of the filled history.
+- History node `j` (position `j + 1`, `1 ≤ j ≤ k`) holds `h[k − j]`: the input from `j` steps
+  ago, or `+0.0` while that entry is unfilled (`j > filled`). History node `k` is what `lag`
+  outputs.
+
 On the first step after a reset all entries are unfilled, so `aggregate` returns 0 and the
 output equals `x`. A `lag` s_neuron outputs the raw input from `k` steps ago, and `+0.0` for
 the first `k` steps after a reset (its oldest entry is still unfilled); `k` is its position
@@ -104,7 +118,7 @@ in the history.
 
 | Field | Values |
 |---|---|
-| `slots` | list of exactly `in_qty_max` entries, each a node id or empty |
+| `slots` | list of exactly `in_qty_max` entries, each a connection or empty |
 | `op` | aggregation op |
 
 ```

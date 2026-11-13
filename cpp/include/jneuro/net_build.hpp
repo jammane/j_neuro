@@ -163,9 +163,39 @@ Net<D> Net<D>::create(std::uint32_t n_inputs, std::uint32_t n_outputs, std::uint
         }
     }
     if (net.nodes.size() > d_max) throw ValidationError("node cap: too many nodes for the depth type");
+    if (const char* e = depth_rule_error(net)) throw ValidationError(std::string("create: ") + e);
     for (std::size_t i = 0; i < net.nodes.size(); ++i) net.nodes[i].birth = i;
     net.next_birth = net.nodes.size();
     return net;
+}
+
+/// Spec 0.5 nets: re-space depths so the s gap holds (spec/09 reading 0.5 nets). Every connection
+/// stays strictly shallower than its reader, so outputs are unchanged.
+template <class D>
+void respace_05(Net<D>& net) {
+    const std::size_t n = net.nodes.size();
+    std::vector<NodeId> order(n);
+    for (NodeId i = 0; i < n; ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
+    std::vector<std::uint64_t> nd(n, 0);
+    const std::uint64_t dmax = Net<D>::d_max;
+    for (NodeId id : order) {
+        const auto& node = net.nodes[id];
+        if (net.is_input(id) || !node.neuron) { nd[id] = 0; continue; }
+        std::uint64_t floor = 0;
+        for (NodeId c : connections(*node.neuron))
+            if (c < n) floor = std::max(floor, nd[c] + 1);
+        if (floor == 0) floor = 1;
+        if (std::holds_alternative<SNeuron>(*node.neuron)) floor += std::uint64_t{net.in_qty_max} + 1;
+        if (net.is_output(id)) {
+            if (floor > dmax) throw ValidationError("0.5 conversion: no depth room for the s gap");
+            nd[id] = dmax;
+        } else {
+            nd[id] = std::max<std::uint64_t>(node.depth, floor);
+            if (nd[id] > dmax - 1) throw ValidationError("0.5 conversion: no depth room for the s gap");
+        }
+    }
+    for (NodeId i = 0; i < n; ++i) net.nodes[i].depth = static_cast<D>(nd[i]);
 }
 
 template <class D>
@@ -190,14 +220,20 @@ void Net<D>::validate() const {
         if (!is_input(i)) {
             if (!node.neuron) throw ValidationError(at + "missing neuron");
             detail::check_neuron(*node.neuron, in_qty_max, i);
-            for (NodeId c : connections(*node.neuron)) {
-                if (c >= n) throw ValidationError(at + "bad reference");
-                if (nodes[c].depth >= node.depth) throw ValidationError(at + "connection depth must be smaller");
+            if (const auto* m = std::get_if<MNeuron>(&*node.neuron); m && !m->pos.empty()) {
+                if (m->pos.size() != m->slots.size()) throw ValidationError(at + "slot positions");
+                for (std::size_t s = 0; s < m->slots.size(); ++s)
+                    if (!m->slots[s] && m->pos[s] != 0) throw ValidationError(at + "empty slot with a position");
             }
+            if (const auto* v = std::get_if<VNeuron>(&*node.neuron); v && !v->input && v->input_pos != 0)
+                throw ValidationError(at + "missing input with a position");
+            if (const auto* s = std::get_if<SNeuron>(&*node.neuron); s && !s->input && s->input_pos != 0)
+                throw ValidationError(at + "missing input with a position");
         }
         if (node.birth >= next_birth || !births.insert(node.birth).second)
             throw ValidationError(at + "birth must be unique and < next_birth");
     }
+    if (const char* e = depth_rule_error(*this)) throw ValidationError(std::string("depth rule: ") + e);
     if (!path_rule_ok(*this)) throw ValidationError("path rule: some input has no path to some output");
     if (!mix_ok(*this)) throw ValidationError("mix rule: some path has too few v, s or m neurons");
     if (!run_ok(*this)) throw ValidationError("run rule: some path has too many 1:1 or many:1 neurons in a row");

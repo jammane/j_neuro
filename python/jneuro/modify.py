@@ -8,7 +8,7 @@ from __future__ import annotations
 import copy as _copy
 from typing import List, Optional
 
-from .analysis import connections, readers
+from .analysis import connections, depth_floor, readers, struct_depth
 from .net import MNeuron, Net, Node, SNeuron, VNeuron
 from .removal import compact, garbage_collect
 from .rng import Rng
@@ -23,10 +23,15 @@ def _remap(neuron, f):
     """Apply f to every connection of a neuron, in place."""
     if neuron is None:
         return
-    if isinstance(neuron, MNeuron):
-        neuron.slots = [None if s is None else f(s) for s in neuron.slots]
+    if isinstance(neuron, MNeuron):          # a connection mapped to None becomes empty, position 0
+        for i, s in enumerate(neuron.slots):
+            if s is not None:
+                to = f(s)
+                neuron.set(i, to, neuron.slot_pos(i) if to is not None else 0)
     elif neuron.input is not None:
         neuron.input = f(neuron.input)
+        if neuron.input is None:
+            neuron.input_pos = 0
 
 
 def _insert_node(net: Net, at: int, node: Node):
@@ -212,8 +217,7 @@ def add_input(net: Net, position: Optional[int] = None, active: bool = False,
         oid = n_in + o
         onode = out.nodes[oid]
         n = onode.neuron
-        conns = connections(n)
-        lo = max(out.nodes[c].depth for c in conns) + 1 if conns else 1
+        lo = depth_floor(out, oid)                    # N's own s gap included (spec/12)
         hi = d_max - 1
         if lo > hi:
             raise ValidationError(f"output {o}: no depth room for a receiver")
@@ -265,6 +269,8 @@ def add_input(net: Net, position: Optional[int] = None, active: bool = False,
     step = d // (len(parts) + 1)
     if step == 0:
         raise ValidationError("no depth room for the new input's chain")
+    if "s" in parts and step <= q + 1:
+        raise ValidationError("no depth room for the new input's chain (s gap)")
     prev = new_input
     for j, kind in enumerate(parts, start=1):
         if kind == "m":
@@ -280,8 +286,8 @@ def add_input(net: Net, position: Optional[int] = None, active: bool = False,
 
     # 5. connect
     for r in receivers:
-        slots = out.nodes[r].neuron.slots
-        slots[slots.index(None)] = prev
+        rm = out.nodes[r].neuron
+        rm.set(rm.slots.index(None), prev)
     _check_cap(out)
     out.reset()
     out.validate()
@@ -304,7 +310,7 @@ def _reverse(net: Net, start: int) -> set:
 def _fewest_to_output(net: Net):
     """For each node: fewest (v, s, m) neurons on any path from it to an output, its own included."""
     rd = readers(net)
-    order = sorted(range(net.n_inputs, len(net.nodes)), key=lambda i: (-net.nodes[i].depth, i))
+    order = sorted(range(net.n_inputs, len(net.nodes)), key=lambda i: (-struct_depth(net, i), i))
     fewest = [None] * len(net.nodes)
     for i in order:
         own = [0, 0, 0]

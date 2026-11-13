@@ -97,12 +97,13 @@ private:
         const NodeId i = pick(cands);
         const Neuron old = *net_.nodes[i].neuron;
         if (const auto* v = std::get_if<VNeuron>(&old)) {
-            net_.nodes[i].neuron = SNeuron{v->input, static_cast<AggOp>(rng_.choice(kSOps)), 1};
+            net_.nodes[i].neuron = SNeuron{v->input, static_cast<AggOp>(rng_.choice(kSOps)), 1, v->input_pos};
         } else {
             const VOp op = static_cast<VOp>(rng_.choice(4));
-            net_.nodes[i].neuron = VNeuron{std::get<SNeuron>(old).input, Inversion::None, op, identity_weight(op)};
+            const auto& s = std::get<SNeuron>(old);
+            net_.nodes[i].neuron = VNeuron{s.input, Inversion::None, op, identity_weight(op), s.input_pos};
         }
-        if (!rules_ok()) {  // a path would be short of v or s
+        if (!rules_ok()) {  // a path short of v or s; v -> s without the s gap; s -> v with its history read
             net_.nodes[i].neuron = old;
             return false;
         }
@@ -143,6 +144,61 @@ private:
     }
     template <class T>
     T pick(const std::vector<T>& v) { return v[static_cast<std::size_t>(rng_.below(v.size()))]; }
+
+    // ---- connections and history nodes (spec/03, spec/06 choosing a source)
+    using Conn = std::pair<NodeId, std::uint32_t>;  // (node, position)
+    std::uint64_t depth(NodeId i) const { return net_.nodes[i].depth; }
+    std::uint64_t cdepth(const Conn& c) const { return depth(c.first) - c.second; }
+    std::uint64_t gap_of(NeuronType t) const { return t == NeuronType::S ? std::uint64_t{q_} + 1 : 0; }
+
+    /// Length and history nodes (S, p), 1 <= p <= k + 1, of live hidden s_neurons whose depth
+    /// passes `ok`, ascending (S, p).
+    template <class Ok>
+    std::vector<Conn> history_nodes(Ok&& ok) const {
+        std::vector<Conn> out;
+        for (NodeId s = net_.n_inputs + net_.n_outputs; s < net_.nodes.size(); ++s) {
+            if (!live(s)) continue;
+            const auto* sn = std::get_if<SNeuron>(&*net_.nodes[s].neuron);
+            if (!sn) continue;
+            for (std::uint32_t j = 1; j <= sn->k + 1; ++j)
+                if (ok(Conn{s, j})) out.push_back({s, j});
+        }
+        return out;
+    }
+
+    /// spec/06 source(C, H): a history node with history_read_prob, else a node of C.
+    std::optional<Conn> source(const std::vector<NodeId>& c, const std::vector<Conn>& h) {
+        const double hp = p_.overall("history_read_prob");
+        if (hp > 0) {
+            const double x = rng_.u();
+            if (x < hp && !h.empty()) return pick(h);
+        }
+        if (c.empty()) return std::nullopt;
+        return Conn{pick(c), 0};
+    }
+
+    /// The largest history position any live connection reads from `id` (spec/03 history floor).
+    std::uint32_t hfloor(NodeId id) const {
+        std::uint32_t hf = 0;
+        for (NodeId r : live_neurons())
+            for_each_conn(*net_.nodes[r].neuron, [&](NodeId c, std::uint32_t p) { if (c == id) hf = std::max(hf, p); });
+        return hf;
+    }
+
+    /// Move every history connection (from, j >= 1) to (to, j) (spec/06 path insertion step 3).
+    void move_history(NodeId from, NodeId to) {
+        for (NodeId r : live_neurons()) {
+            Neuron& n = *net_.nodes[r].neuron;
+            if (auto* m = std::get_if<MNeuron>(&n)) {
+                for (std::size_t i = 0; i < m->slots.size(); ++i)
+                    if (m->slots[i] == from && m->slot_pos(i) > 0) m->set(i, to, m->slot_pos(i));
+            } else if (auto* v = std::get_if<VNeuron>(&n)) {
+                if (v->input == from && v->input_pos > 0) v->input = to;
+            } else if (auto& s = std::get<SNeuron>(n); s.input == from && s.input_pos > 0) {
+                s.input = to;
+            }
+        }
+    }
 
     void run_phase(const std::string& field, Attempt attempt) {
         const double n = static_cast<double>(live_neurons().size());
@@ -233,8 +289,12 @@ private:
             op = static_cast<AggOp>(j);
         };
         if (auto* s = std::get_if<SNeuron>(&n)) {
+            const SNeuron before = *s;
             change(s->op, kSOps);  // s: also lag (spec/04)
-            if (s->op == AggOp::Median && s->k % 2 == 0) --s->k;
+            if (s->op == AggOp::Median && s->k % 2 == 0) {
+                --s->k;
+                if (s->k + 1 < hfloor(*id)) { *s = before; return std::nullopt; }  // a read history node would go
+            }
             return NeuronType::S;
         }
         change(std::get<MNeuron>(n).op, kMOps);
@@ -274,6 +334,7 @@ private:
             std::int64_t k2 = std::clamp<std::int64_t>(static_cast<std::int64_t>(s->k) + d, 1, q_);
             if (s->op == AggOp::Median && k2 % 2 == 0) k2 = k2 > s->k ? k2 - 1 : k2 + 1;
             if (k2 == s->k) return std::nullopt;
+            if (k2 + 1 < hfloor(*id)) return std::nullopt;  // a read history node would disappear
             s->k = static_cast<std::uint32_t>(k2);
             return NeuronType::S;
         }
@@ -288,7 +349,8 @@ private:
         const D my_depth = net_.nodes[*id].depth;
         bool changed = false;
         for (std::uint64_t r = 0; r < c; ++r) {
-            auto& slots = std::get<MNeuron>(*net_.nodes[*id].neuron).slots;
+            auto& mn = std::get<MNeuron>(*net_.nodes[*id].neuron);
+            auto& slots = mn.slots;
             std::size_t i;
             if (p_.slot_edit() == "biased") {  // add or cut first, then which slot (spec/06)
                 const bool add = rng_.u() < p_.overall("slot_add_prob");
@@ -303,22 +365,24 @@ private:
             if (!slots[i]) {
                 std::vector<NodeId> cands;
                 for (NodeId j : live_nodes())
-                    if (net_.nodes[j].depth < my_depth && std::find(slots.begin(), slots.end(), j) == slots.end())
-                        cands.push_back(j);
-                if (cands.empty()) continue;
-                slots[i] = pick(cands);
+                    if (net_.nodes[j].depth < my_depth && !has_conn(mn, Conn{j, 0})) cands.push_back(j);
+                const auto h = history_nodes([&](const Conn& c) { return cdepth(c) < my_depth && !has_conn(mn, c); });
+                const auto src = source(cands, h);
+                if (!src) continue;
+                mn.set(i, src->first, src->second);
                 if (!rules_ok()) {
-                    slots[i] = std::nullopt;
+                    mn.set(i, std::nullopt);
                     continue;
                 }
                 changed = true;
             } else {
                 const auto old = slots[i];
+                const std::uint32_t old_pos = mn.slot_pos(i);
                 if (p_.prune() == "static" && !constant_values(net_, removed_)[*old])
                     continue;  // only static (constant) sources may be cut
-                slots[i] = std::nullopt;
+                mn.set(i, std::nullopt);
                 if (!path_ok()) {
-                    slots[i] = old;
+                    mn.set(i, old, old_pos);
                     continue;
                 }
                 changed = true;
@@ -327,27 +391,46 @@ private:
         return changed ? std::optional<NeuronType>(NeuronType::M) : std::nullopt;
     }
 
+    static bool has_conn(const MNeuron& m, const Conn& c) {
+        for (std::size_t i = 0; i < m.slots.size(); ++i)
+            if (m.slots[i] == c.first && m.slot_pos(i) == c.second) return true;
+        return false;
+    }
+
     std::optional<NodeId>& input_ref(NodeId id) {
         Neuron& n = *net_.nodes[id].neuron;
         if (auto* v = std::get_if<VNeuron>(&n)) return v->input;
         return std::get<SNeuron>(n).input;
     }
+    std::uint32_t& input_pos_ref(NodeId id) {
+        Neuron& n = *net_.nodes[id].neuron;
+        if (auto* v = std::get_if<VNeuron>(&n)) return v->input_pos;
+        return std::get<SNeuron>(n).input_pos;
+    }
 
     std::optional<NeuronType> rewire(NodeId id, NeuronType t) {
         const std::optional<NodeId> old = input_ref(id);
+        const std::uint32_t old_pos = input_pos_ref(id);
         if (old) {
             const auto rd = readers(net_, &removed_);
-            if (rd[*old].size() == 1 && rd[*old][0] == id) return std::nullopt;  // would orphan old
+            if (rd[*old].size() == 1 && rd[*old][0] == id) return std::nullopt;  // would orphan old's node
         }
-        const D my_depth = net_.nodes[id].depth;
+        const std::uint64_t my_depth = net_.nodes[id].depth;
+        const std::uint64_t d = my_depth - gap_of(t);  // an s_neuron keeps its gap
         const std::uint64_t lo = span_floor(my_depth);
         std::vector<NodeId> cands;
         for (NodeId j : live_nodes())
-            if (net_.nodes[j].depth >= lo && net_.nodes[j].depth < my_depth && (!old || j != *old)) cands.push_back(j);
-        if (cands.empty()) return std::nullopt;
-        input_ref(id) = pick(cands);
+            if (depth(j) >= lo && depth(j) < d && (!old || j != *old)) cands.push_back(j);
+        const auto h = history_nodes([&](const Conn& c) {
+            return cdepth(c) >= lo && cdepth(c) < d && !(old && c.first == *old && c.second == old_pos);
+        });
+        const auto src = source(cands, h);
+        if (!src) return std::nullopt;
+        input_ref(id) = src->first;
+        input_pos_ref(id) = src->second;
         if (!path_ok() || !rules_ok()) {
             input_ref(id) = old;
+            input_pos_ref(id) = old_pos;
             return std::nullopt;
         }
         return t;
@@ -363,24 +446,24 @@ private:
     /// The structural rules a mutation may not break besides the path rule (spec/03).
     bool rules_ok() {
         const auto& order = depth_order();
-        return mix_ok(net_, &removed_, &order) && run_ok(net_, &removed_, &order);
+        return mix_ok(net_, &removed_, &order) && run_ok(net_, &removed_, &order) &&
+               depth_rule_error(net_, &removed_) == nullptr;
     }
 
-    /// Every node id (dead ones too) by depth, ties by id. Kept between calls and re-sorted only when
-    /// a scan finds it stale: n ids < n in strictly increasing (depth, id) order are exactly 0..n-1.
+    /// Every node id (dead ones too) in structural order (structural depth, ties by id; spec/03).
+    /// Kept between calls and re-sorted only when a scan finds it stale: n ids < n in strictly
+    /// increasing (structural depth, id) order are exactly 0..n-1.
     const std::vector<NodeId>& depth_order() {
         const std::size_t n = net_.nodes.size();
-        auto before = [&](NodeId a, NodeId b) {
-            return net_.nodes[a].depth != net_.nodes[b].depth ? net_.nodes[a].depth < net_.nodes[b].depth : a < b;
-        };
+        auto sd = [&](NodeId i) { return struct_depth(net_, i); };
+        auto before = [&](NodeId a, NodeId b) { return sd(a) != sd(b) ? sd(a) < sd(b) : a < b; };
         bool fresh = order_.size() == n;
         for (std::size_t k = 0; fresh && k < n; ++k)
             fresh = order_[k] < n && (k == 0 || before(order_[k - 1], order_[k]));
         if (!fresh) {
             order_.resize(n);
             for (NodeId i = 0; i < n; ++i) order_[i] = i;
-            std::stable_sort(order_.begin(), order_.end(),
-                             [&](NodeId a, NodeId b) { return net_.nodes[a].depth < net_.nodes[b].depth; });
+            std::stable_sort(order_.begin(), order_.end(), [&](NodeId a, NodeId b) { return sd(a) < sd(b); });
         }
         return order_;
     }
@@ -431,27 +514,32 @@ private:
 
     /// Move one non-critical m slot to another node no deeper than the one it reads (spec/06).
     std::optional<NeuronType> retarget(NodeId id) {
-        auto& slots = std::get<MNeuron>(*net_.nodes[id].neuron).slots;
+        auto& mn = std::get<MNeuron>(*net_.nodes[id].neuron);
+        auto& slots = mn.slots;
         std::vector<std::size_t> conn;
         for (std::size_t i = 0; i < slots.size(); ++i) if (slots[i]) conn.push_back(i);
         if (conn.empty()) return std::nullopt;
         const std::size_t i = pick(conn);
         const std::optional<NodeId> old = slots[i];
+        const std::uint32_t old_pos = mn.slot_pos(i);
         if (p_.prune() == "static" && std::count(slots.begin(), slots.end(), old) == 1) {
             const auto rd = readers(net_, &removed_);
             if (rd[*old].size() == 1 && rd[*old][0] == id) return std::nullopt;  // would strand old's branch
         }
-        slots[i] = std::nullopt;
-        if (!path_ok()) { slots[i] = old; return std::nullopt; }  // critical
+        mn.set(i, std::nullopt);
+        if (!path_ok()) { mn.set(i, old, old_pos); return std::nullopt; }  // critical
         std::vector<NodeId> cands;
         const std::uint64_t lo = span_floor(net_.nodes[id].depth);
+        const std::uint64_t hi = cdepth(Conn{*old, old_pos});
         for (NodeId j : live_nodes())
-            if (net_.nodes[j].depth >= lo && net_.nodes[j].depth <= net_.nodes[*old].depth && j != *old &&
-                std::find(slots.begin(), slots.end(), std::optional<NodeId>(j)) == slots.end())
-                cands.push_back(j);
-        if (cands.empty()) { slots[i] = old; return std::nullopt; }
-        slots[i] = pick(cands);
-        if (!rules_ok()) { slots[i] = old; return std::nullopt; }
+            if (depth(j) >= lo && depth(j) <= hi && j != *old && !has_conn(mn, Conn{j, 0})) cands.push_back(j);
+        const auto h = history_nodes([&](const Conn& c) {
+            return cdepth(c) >= lo && cdepth(c) <= hi && !(c.first == *old && c.second == old_pos) && !has_conn(mn, c);
+        });
+        const auto src = source(cands, h);
+        if (!src) { mn.set(i, old, old_pos); return std::nullopt; }
+        mn.set(i, src->first, src->second);
+        if (!rules_ok()) { mn.set(i, old, old_pos); return std::nullopt; }
         return NeuronType::M;
     }
 
@@ -519,9 +607,9 @@ private:
         MNeuron copy = std::get<MNeuron>(*net_.nodes[u].neuron);
         append(Node<D>{net_.next_birth, gen_, net_.nodes[u].depth, std::move(copy)});
         net_.next_birth += 1;
-        std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = x;
+        std::get<MNeuron>(*net_.nodes[r].neuron).set(slot, x);
         if (!rules_ok()) {  // cannot happen (paths mirror U's); kept as a guard
-            std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = std::nullopt;
+            std::get<MNeuron>(*net_.nodes[r].neuron).set(slot, std::nullopt);
             net_.nodes.resize(x);
             removed_.resize(x);
             net_.next_birth -= 1;
@@ -555,37 +643,35 @@ private:
 
     /// Links steps 3-6 (spec/06): a new 1:1 neuron from an existing node into empty slot `slot` of R.
     std::optional<NeuronType> link_into(NeuronType t, NodeId r, std::size_t slot) {
+        const auto& rm = std::get<MNeuron>(*net_.nodes[r].neuron);
         std::uint64_t hi_src = 0;  // sources no deeper than what R already reads
-        for (const auto& s : std::get<MNeuron>(*net_.nodes[r].neuron).slots)
-            if (s) hi_src = std::max<std::uint64_t>(hi_src, net_.nodes[*s].depth);
+        for_each_conn(MNeuron(rm), [&](NodeId c, std::uint32_t p) { hi_src = std::max(hi_src, cdepth(Conn{c, p})); });
         const std::uint64_t lo_src = span_floor(net_.nodes[r].depth);  // longest link allowed
         std::vector<NodeId> cands;
-        {
-            const auto& slots = std::get<MNeuron>(*net_.nodes[r].neuron).slots;
-            for (NodeId j : live_nodes())
-                if (net_.nodes[j].depth >= lo_src && net_.nodes[j].depth <= hi_src &&
-                    std::find(slots.begin(), slots.end(), std::optional<NodeId>(j)) == slots.end())
-                    cands.push_back(j);
-        }
-        if (cands.empty()) return std::nullopt;
-        const NodeId src = pick(cands);
-        const std::uint64_t lo = static_cast<std::uint64_t>(net_.nodes[src].depth) + 1;
+        for (NodeId j : live_nodes())
+            if (depth(j) >= lo_src && depth(j) <= hi_src && !has_conn(rm, Conn{j, 0})) cands.push_back(j);
+        const auto h = history_nodes([&](const Conn& c) {
+            return cdepth(c) >= lo_src && cdepth(c) <= hi_src && !has_conn(rm, c);
+        });
+        const auto src = source(cands, h);
+        if (!src) return std::nullopt;
+        const std::uint64_t lo = cdepth(*src) + 1 + gap_of(t);  // an s link keeps its gap
         const std::uint64_t hi = static_cast<std::uint64_t>(net_.nodes[r].depth) - 1;
         if (lo > hi) return std::nullopt;
         const std::uint64_t d = place(lo, hi);
         Neuron neuron;
         if (t == NeuronType::V) {
             const VOp op = static_cast<VOp>(rng_.choice(4));
-            neuron = VNeuron{src, new_inversion(), op, identity_weight(op)};
+            neuron = VNeuron{src->first, new_inversion(), op, identity_weight(op), src->second};
         } else {
-            neuron = SNeuron{src, static_cast<AggOp>(rng_.choice(kSOps)), 1};
+            neuron = SNeuron{src->first, static_cast<AggOp>(rng_.choice(kSOps)), 1, src->second};
         }
         const NodeId x = static_cast<NodeId>(net_.nodes.size());
         append(Node<D>{net_.next_birth, gen_, static_cast<D>(d), std::move(neuron)});
         net_.next_birth += 1;
-        std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = x;
+        std::get<MNeuron>(*net_.nodes[r].neuron).set(slot, x);
         if (!rules_ok()) {
-            std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = std::nullopt;
+            std::get<MNeuron>(*net_.nodes[r].neuron).set(slot, std::nullopt);
             net_.nodes.resize(x);
             removed_.resize(x);
             net_.next_birth -= 1;
@@ -607,17 +693,18 @@ private:
         if (recv.empty()) return std::nullopt;
         const NodeId r = pick_receiver(recv, "tap_peak");
         std::vector<std::size_t> empties;
-        std::uint64_t hi = 0;  // deepest node R reads
+        std::uint64_t hi = 0;  // deepest connection of R
         {
-            const auto& slots = std::get<MNeuron>(*net_.nodes[r].neuron).slots;
-            for (std::size_t s = 0; s < slots.size(); ++s) {
-                if (!slots[s]) empties.push_back(s);
-                else hi = std::max<std::uint64_t>(hi, net_.nodes[*slots[s]].depth);
+            const auto& rm = std::get<MNeuron>(*net_.nodes[r].neuron);
+            for (std::size_t s = 0; s < rm.slots.size(); ++s) {
+                if (!rm.slots[s]) empties.push_back(s);
+                else hi = std::max(hi, cdepth(Conn{*rm.slots[s], rm.slot_pos(s)}));
             }
         }
         const std::size_t slot = pick(empties);
-        if (hi < 1) return std::nullopt;  // R reads only inputs: no room
-        const std::uint64_t d = place(1, hi);
+        const std::uint64_t g = gap_of(t);  // s_tap: the s gap above the inputs
+        if (hi < 1 + g) return std::nullopt;  // no room
+        const std::uint64_t d = place(1 + g, hi);
         const std::uint64_t n_in = net_.n_inputs;
         Neuron neuron;
         if (t == NeuronType::V) {
@@ -654,9 +741,9 @@ private:
         const NodeId x = static_cast<NodeId>(net_.nodes.size());
         append(Node<D>{net_.next_birth, gen_, static_cast<D>(d), std::move(neuron)});
         net_.next_birth += 1;
-        std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = x;
+        std::get<MNeuron>(*net_.nodes[r].neuron).set(slot, x);
         if (!rules_ok()) {  // undo: the new paths break the mix rule
-            std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = std::nullopt;
+            std::get<MNeuron>(*net_.nodes[r].neuron).set(slot, std::nullopt);
             net_.nodes.resize(x);
             removed_.resize(x);
             net_.next_birth -= 1;
@@ -672,27 +759,23 @@ private:
         if (cands.empty()) return std::nullopt;
         const NodeId a = pick(cands);
         const D old_depth = net_.nodes[a].depth;
-        std::uint64_t lo = 1;
-        bool any = false;
-        for (NodeId c : connections(*net_.nodes[a].neuron)) {
-            if (!live(c)) continue;
-            const std::uint64_t d = static_cast<std::uint64_t>(net_.nodes[c].depth) + 1;
-            if (!any || d > lo) lo = d;
-            any = true;
-        }
-        std::uint64_t hi = static_cast<std::uint64_t>(net_.nodes[a].depth) - 1;
-        if (lo > hi) {
+        const std::uint64_t gx = method == 2 ? std::uint64_t{q_} + 1 : 0;  // s_insert: X keeps the s gap above B
+        const std::uint64_t lo = depth_floor(net_, a, &removed_);  // N's floor, its own s gap included
+        // B fits when lo <= depth(A) - 1 - gx (kept unsigned: compare lo + 1 + gx <= depth(A))
+        std::uint64_t top = depth(a);
+        if (lo + 1 + gx > top) {
             if (!net_.is_hidden(a)) return std::nullopt;
-            const auto rd = readers(net_, &removed_)[a];
+            // A may move deeper, up to its position-0 readers (history reads move to B)
             std::uint64_t ub = static_cast<std::uint64_t>(Net<D>::d_max) - 1;
-            for (std::size_t k = 0; k < rd.size(); ++k) {
-                const std::uint64_t d = static_cast<std::uint64_t>(net_.nodes[rd[k]].depth) - 1;
-                if (k == 0 || d < ub) ub = d;
-            }
-            if (lo > ub - 1) return std::nullopt;
+            for (NodeId r : live_neurons())
+                for_each_conn(*net_.nodes[r].neuron, [&](NodeId c, std::uint32_t pos) {
+                    if (c == a && pos == 0) ub = std::min(ub, depth(r) - gap_of(type_at(r)) - 1);
+                });
+            if (lo + 1 + gx > ub) return std::nullopt;  // spec: lo <= ub - 1 - gap(X), else skip
             net_.nodes[a].depth = static_cast<D>(ub);
-            hi = ub - 1;
+            top = ub;
         }
+        const std::uint64_t hi = top - 1 - gx;
         const std::uint64_t d_b = place(lo, hi);
         const NodeId b = static_cast<NodeId>(net_.nodes.size());
         append(Node<D>{net_.nodes[a].birth, net_.nodes[a].born_gen, static_cast<D>(d_b), net_.nodes[a].neuron});
@@ -714,7 +797,9 @@ private:
         node_a.neuron = x;
         node_a.birth = net_.next_birth++;
         node_a.born_gen = gen_;
+        move_history(a, b);  // N's history moves with N to B
         if (!rules_ok()) {  // undo: a run would become too long
+            move_history(b, a);
             auto& na = net_.nodes[a];
             na.neuron = saved_neuron;
             na.birth = saved_birth;
@@ -747,11 +832,12 @@ private:
         const NeuronType t = kTypes[rng_.weighted({tw[0], tw[1], tw[2]})];
         if (cap_reached(t)) return std::nullopt;
         const std::uint64_t d_r = net_.nodes[r].depth;
-        if (d_r < 3) return std::nullopt;
-        const std::uint64_t d_w = place(2, d_r - 1);
-        const std::uint64_t d_q = place(1, d_w - 1);
+        const std::uint64_t g = gap_of(t);  // an s filler keeps the s gap
+        if (d_r < 3 + g) return std::nullopt;
+        const std::uint64_t d_w = place(2 + g, d_r - 1);
+        const std::uint64_t d_q = place(1 + g, d_w - 1);
         std::vector<NodeId> cands;
-        for (NodeId j : live_nodes()) if (net_.nodes[j].depth < d_q) cands.push_back(j);
+        for (NodeId j : live_nodes()) if (depth(j) + g < d_q) cands.push_back(j);
         Neuron qn;
         if (t == NeuronType::V) {
             const NodeId in = pick(cands);
@@ -778,9 +864,9 @@ private:
         const NodeId w_id = static_cast<NodeId>(net_.nodes.size());
         append(Node<D>{net_.next_birth + 1, gen_, static_cast<D>(d_w), VNeuron{q_id, Inversion::None, VOp::Mul, 0.0}});
         net_.next_birth += 2;
-        std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = w_id;
+        std::get<MNeuron>(*net_.nodes[r].neuron).set(slot, w_id);
         if (!rules_ok()) {  // undo: the new paths break the mix rule
-            std::get<MNeuron>(*net_.nodes[r].neuron).slots[slot] = std::nullopt;
+            std::get<MNeuron>(*net_.nodes[r].neuron).set(slot, std::nullopt);
             net_.nodes.resize(q_id);
             removed_.resize(q_id);
             net_.next_birth -= 2;
@@ -810,7 +896,7 @@ private:
             }
             return t;
         }
-        if (!is_silenced(net_, *id)) return std::nullopt;
+        if (!is_silenced(net_, *id, &removed_)) return std::nullopt;
         if (has_min_reader(net_, *id, removed_) || !path_ok(*id)) return std::nullopt;
         op_ = "remove_silenced";
         remove_silenced(net_, *id, removed_);

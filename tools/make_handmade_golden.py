@@ -67,14 +67,20 @@ VOPS = {"mul": 0, "div": 1, "add": 2, "sub": 3}
 AGG = {"mean": 0, "median": 1, "min": 2, "max": 3, "lag": 4}
 
 
-def encode(g, magic=b"JNET", fmt=1, ver=(0, 5, 0), dt_byte=None, pri_byte=None,
+def encode(g, magic=b"JNET", fmt=2, ver=(0, 6, 0), dt_byte=None, pri_byte=None,
            cut=0, extra=b"", bad_hash=False):
+    """A connection is a node id, None, or (id or None, position). Format 1 (spec 0.5) has no
+    positions; format 2 writes each connection as the id and a u32 position."""
     p = g["params"]
     w = WIDTH[p["depth_type"]]
     none = (1 << (8 * w)) - 1
 
     def u(v):
         return (none if v is None else v).to_bytes(w, "little")
+
+    def conn(c):
+        node, pos = c if isinstance(c, tuple) else (c, 0)
+        return u(node) if fmt == 1 else u(node) + struct.pack("<I", pos)
 
     b = magic + struct.pack("<HHHH", fmt, *ver)
     b += bytes([PRI[p["priority"]] if pri_byte is None else pri_byte,
@@ -88,12 +94,12 @@ def encode(g, magic=b"JNET", fmt=1, ver=(0, 5, 0), dt_byte=None, pri_byte=None,
         if x is None:
             b += b"\x00"
         elif x["type"] == "v":
-            b += b"\x01" + u(x["input"]) + bytes([INV.get(x["inversion"], 3), VOPS.get(x["op"], 9)])
+            b += b"\x01" + conn(x["input"]) + bytes([INV.get(x["inversion"], 3), VOPS.get(x["op"], 9)])
             b += struct.pack("<d", x["weight"])
         elif x["type"] == "s":
-            b += b"\x02" + u(x["input"]) + bytes([AGG.get(x["op"], 9)]) + struct.pack("<I", x["k"])
+            b += b"\x02" + conn(x["input"]) + bytes([AGG.get(x["op"], 9)]) + struct.pack("<I", x["k"])
         elif x["type"] == "m":
-            b += b"\x03" + bytes([AGG.get(x["op"], 9)]) + b"".join(u(s) for s in x["slots"])
+            b += b"\x03" + bytes([AGG.get(x["op"], 9)]) + b"".join(conn(s) for s in x["slots"])
         else:
             b += b"\x04"
     b = b[:len(b) - cut] + extra
@@ -103,8 +109,8 @@ def encode(g, magic=b"JNET", fmt=1, ver=(0, 5, 0), dt_byte=None, pri_byte=None,
     return (b + digest).hex()
 
 
-def eval_case(g, steps):
-    return {"kind": "eval", "jnet": encode(g), "priorities": ALL_PRIORITIES,
+def eval_case(g, steps, **enc):
+    return {"kind": "eval", "jnet": encode(g, **enc), "priorities": ALL_PRIORITIES,
             "steps": [{"inputs": [bits(x) for x in i], "outputs": [bits(y) for y in o]}
                       for i, o in steps]}
 
@@ -183,6 +189,33 @@ cases["eval_s_lag"] = eval_case(g, [([xs[i]], [xs[i - 1] if i >= 1 else 0.0, xs[
 g = genome(1, 1, 3, [(D64, v(2, "add", 1.0)), (2**53 + 1, v(0, "mul", 3.0))], "U64")
 cases["eval_u64_depth"] = eval_case(g, [([2.0], [7.0])])
 
+# 8. length and history nodes (spec/03, spec/04): S = s(mean, k = 2) at depth 1000 reading the input.
+#    Outputs read S, its length node (S, 1), history node 1 (S, 2) and history node 2 (S, 3); a
+#    hidden v at 999, evaluated before S, also reads history node 1 (it sees the ring before the push).
+hist = genome(1, 5, 3, [
+    (D16, v(6, "add", 0.0)),                 # id 1: S
+    (D16, v((6, 1), "add", 0.0)),            # id 2: length node
+    (D16, v((6, 2), "add", 0.0)),            # id 3: history node 1
+    (D16, v((6, 3), "add", 0.0)),            # id 4: history node 2
+    (D16, v(7, "add", 0.0)),                 # id 5: history node 1, through the shallower H
+    (1000, s(0, "mean", 2)),                 # id 6: S
+    (999, v((6, 2), "mul", 1.0)),            # id 7: H, shallower than S
+])
+xs = [1.0, 2.0, 3.0, 4.0]
+s_out = [1.0, 2.0 - 0.5, 3.0 - 1.5, 4.0 - 2.5]  # x - mean of the 2 previous inputs (unfilled = 0)
+length = [0.0, 1.0, 2.0, 2.0]
+h1 = [0.0, 1.0, 2.0, 3.0]
+h2 = [0.0, 0.0, 1.0, 2.0]
+cases["eval_history_nodes"] = eval_case(hist, [([xs[i]], [s_out[i], length[i], h1[i], h2[i], h1[i]])
+                                               for i in range(len(xs))])
+
+# 9. a spec 0.5 file (format 1) is converted on load (spec/09): this hidden s_neuron at depth 2 lacks
+#    the s gap (needs depth > in_qty_max + 1 = 4); after re-spacing it computes the same values.
+old = genome(1, 1, 3, [(D16, v(2, "add", 0.0)), (2, s(0, "mean", 1))])
+xs = [1.0, 2.0, 5.0]
+cases["eval_05_conversion"] = eval_case(old, [([xs[i]], [xs[i] - (xs[i - 1] if i else 0.0)])
+                                              for i in range(len(xs))], fmt=1, ver=(0, 5, 0))
+
 # invalid genomes, each derived from the valid chain genome
 invalid = {}
 
@@ -217,7 +250,32 @@ bad("hidden_depth_zero", "hidden depth", lambda g: g["nodes"][3].__setitem__("de
 bad("duplicate_birth", "birth", lambda g: g["nodes"][4].__setitem__("birth", 3))
 bad("birth_too_large", "next_birth", lambda g: g.__setitem__("next_birth", 5))
 bad("magic", "magic", same, magic=b"XNET")
-bad("format_version", "format version", same, fmt=2)
+bad("format_version", "format version", same, fmt=3)
+bad("format_1_spec_06", "format version 1 is only spec 0.5", same, fmt=1)
+bad("s_gap", "s gap: input not shallower than depth - (in_qty_max + 1)",
+    lambda g: g["nodes"][4].update({"depth": 4, "neuron": s(1, "mean", 1)}))
+bad("empty_with_position", "an empty slot has position 0",
+    lambda g: g["nodes"][5]["neuron"].__setitem__("slots", [3, 4, (None, 2)]))
+bad("history_of_v", "only s_neurons have length and history nodes",
+    lambda g: g["nodes"][5]["neuron"].__setitem__("slots", [3, (4, 1), 4]))
+
+
+def bad_hist(name, reason, fn):
+    g2 = copy.deepcopy(hist)
+    fn(g2)
+    invalid[name] = {"kind": "invalid", "jnet": encode(g2), "reason": reason}
+
+
+bad_hist("history_position_beyond_k", "position 4 > k + 1 = 3",
+         lambda g: g["nodes"][4]["neuron"].__setitem__("input", (6, 4)))
+bad_hist("history_too_deep", "history node 1 of S is at depth 998; a reader at 998 is not deeper",
+         lambda g: g["nodes"][7].__setitem__("depth", 998))
+bad_hist("history_of_output", "an output's length or history nodes cannot be read",
+         lambda g: (g["nodes"].append({"birth": 8, "born_gen": 0, "depth": D16 - 1,
+                                       "neuron": v((1, 3), "mul", 1.0)}),
+                    g["nodes"][5].__setitem__("neuron", v(8, "add", 0.0)),
+                    g["nodes"][1].__setitem__("neuron", s(6, "mean", 2)),
+                    g.__setitem__("next_birth", 9)))
 bad("major_version", "spec_version", same, ver=(1, 0, 0))
 bad("minor_version_pre_1", "spec_version 0.x minor", same, ver=(0, 4, 0))
 bad("truncated", "truncated", same, cut=1)

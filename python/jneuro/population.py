@@ -293,7 +293,7 @@ class Population:
         path = Path(path)
         data = path.read_bytes()
         r = Reader(data, "jpnet")
-        r.header(JPNET_MAGIC)
+        legacy = r.header(JPNET_MAGIC)     # 0.5: nets convert, the log is not kept (spec/11)
         priority = r.enum(Priority, "priority")
         depth_type = r.enum(DepthType, "depth_type")
         q, n_in, n_out = r.u(4), r.u(4), r.u(4)
@@ -333,7 +333,7 @@ class Population:
             raise ValidationError("jpnet: log flag out of range")
         r.done()
         pop._snapshot_hash = sha256(data).hex()
-        if log is not None:
+        if log is not None and not legacy:
             _check_version(log, RUNLOG_FORMAT)
             pop._resumed_from = log.get("resumed_from")
             pop._profiles = log["profiles"]

@@ -63,7 +63,7 @@ A = nodes reachable from x
 B = nodes reachable from any other input
 doomed = {x} ∪ (A \ B)                   # only x could reach these
 for each live node not in doomed:
-    every connection to a doomed node: m slot -> empty; v/s input -> missing
+    every connection to a doomed node (any position): m slot -> empty; v/s input -> missing
 mark every doomed node removed
 garbage collection; compact; n_inputs −= 1
 ```
@@ -153,8 +153,8 @@ repeat:
 **2. Median insertion.** This happens for each output still uncovered, in ascending output
 order. Let `N` be the output's neuron and `O` the output node.
 
-1. Compute the gap. `lo` = (largest depth among N's connections) + 1, or 1 if N has none, and
-   `hi = D_MAX − 1`. If `lo > hi`, fail.
+1. Compute the gap. `lo = floor(N)` ([06](06-mutation.md#principles); N's own s gap included),
+   and `hi = D_MAX − 1`. If `lo > hi`, fail.
 2. Place B. A new node B gets depth `lo + (hi − lo) / 2` (integer division). N moves to B, and so
    do O's `birth` and `born_gen`. B is appended.
 3. Separator, only if N is an m_neuron and `max_run > 0`: append a node C with depth
@@ -175,7 +175,7 @@ with it, the median's m run is 1.
 
 **3. Chain contents.** Let `fewest(R)` be, for each type t in (v, s, m), the minimum number of
 type-t neurons on any path from R (R's own neuron included) to an output. It is computed by
-descending depth: an output counts only its own neuron, and a hidden node adds its own neuron to
+descending structural depth ([03](03-net-structure.md#connections-and-history-nodes)): an output counts only its own neuron, and a hidden node adds its own neuron to
 the element-wise minimum over its readers. With `P = path_mix`:
 
 ```
@@ -204,7 +204,8 @@ If `max_run = K > 0`, separators are inserted as in `create`. Start with the run
 
 Let `L` be the number of parts and `d` the smallest receiver depth. With
 `step = d / (L + 1)` (integer division), part `j = 1 … L` gets depth `step × j`. If
-`step = 0`, fail with no depth room.
+`step = 0`, or the chain has an s part and `step ≤ in_qty_max + 1` (the s gap,
+[03](03-net-structure.md#depth-rules)), fail with no depth room.
 
 **5. Connect.** For each receiver, in the order they were chosen, set its lowest empty slot to W.
 

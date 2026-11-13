@@ -128,7 +128,60 @@ def profile_variants():
                         "s": {"edit_max_pct": 0.0}, "m": {"removal_max_pct": 100.0}})
     capped.overall["depth_shift_mode"] = "center"
     out["per_type_caps_center"] = capped
+    hist = Profile.default()                                   # length and history reads (spec/06)
+    for f in PHASES:
+        hist.overall[f] = 40.0
+    hist.overall.update({"history_read_prob": 0.5, "rewire_prob": 0.5, "slot_retarget_prob": 0.3,
+                         "min_age_for_removal": 1, "insert_depth": "uniform"})
+    hist.overall["add_method_weights"].update({"v_link": 40, "s_link": 40, "s_insert": 20})
+    out["history_reads"] = hist
     return out
+
+
+def history_profiles():
+    """Profiles applied to parents that already read length and history nodes."""
+    out = {}
+    for name, extra in (("hist_heavy", {}), ("hist_fold", {"constant_folding": "on", "min_age_for_removal": 0}),
+                        ("hist_shift", {"depth_shift_max_pct": 100.0, "depth_shift_mode": "uniform"})):
+        p = Profile.default()
+        for f in PHASES:
+            p.overall[f] = 40.0
+        p.overall.update({"history_read_prob": 0.3, "rewire_prob": 0.3, "min_age_for_removal": 1,
+                          "insert_depth": "uniform"})
+        p.overall["add_method_weights"].update({"s_insert": 30, "v_link": 30, "s_link": 30})
+        p.overall.update(extra)
+        out[name] = p
+    return out
+
+
+def make_mutate_history():
+    """Parents grown with history_read_prob > 0, so op and k changes, path insertions (history moves
+    with N), removal, folding and depth shifts all meet length and history connections."""
+    grow = Profile.default()
+    for f in PHASES:
+        grow.overall[f] = 35.0
+    grow.overall.update({"min_age_for_removal": 2, "history_read_prob": 0.5, "rewire_prob": 0.4})
+    grow.overall["add_method_weights"].update({"v_link": 40, "s_link": 40, "s_insert": 20})
+    parents = []
+    for i, (n_in, n_out, dt, q) in enumerate([(3, 2, "U16", 3), (6, 1, "U32", 5), (4, 2, "U64", 3)]):
+        r = Rng(900 + i)
+        net = Net.create(n_in, n_out, DepthType[dt], q, Priority.SPEED, r, [2, 1, 2][i], [3, 0, 2][i])
+        for gen in range(1, 16):
+            net = mutate(net, grow, gen, r)
+        parents.append(net)
+    reads = sum(1 for net in parents for node in net.nodes if node.neuron is not None
+                for c in ([node.neuron.input_pos] if not hasattr(node.neuron, "slots")
+                          else [node.neuron.slot_pos(i) for i in range(len(node.neuron.slots))]) if c > 0)
+    assert reads > 0, "history parents should read length or history nodes"
+    for pname, prof in history_profiles().items():
+        for pi, parent in enumerate(parents):
+            seed = 17 * pi + len(pname)
+            gen = 30
+            child = mutate(parent, prof, gen, Rng(seed))
+            write("mutate", f"mutate_{pname}_p{pi}",
+                  {"kind": "mutate", "seed": seed, "generation": gen,
+                   "jnet": net_to_bytes(parent).hex(), "profile": prof.to_dict(),
+                   "expected_jnet": net_to_bytes(child).hex()})
 
 
 def make_mutate():
@@ -285,6 +338,7 @@ if __name__ == "__main__":
     if what in ("mutate", "all"):
         make_mutate()
         make_mutate_mix()
+        make_mutate_history()
     if what in ("diversity", "all"):
         make_diversity()
     if what in ("population", "all"):

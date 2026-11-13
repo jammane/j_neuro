@@ -4,7 +4,8 @@ from __future__ import annotations
 import copy
 import math
 
-from .analysis import connections, is_immune, legal_depth_range, mix_ok, path_rule_ok, readers, run_ok
+from .analysis import (conns, connections, depth_floor, depth_rule_error, is_immune, legal_depth_range,
+                       mix_ok, path_rule_ok, readers, run_ok)
 from .net import MNeuron, Net, Node, SNeuron, VNeuron
 from .removal import (bypass, compact, constant_values, fold_constants, garbage_collect,
                       has_min_reader, is_identity, is_silenced, remove_silenced)
@@ -51,6 +52,7 @@ DEFAULTS = {
     "slot_edit": "toggle",
     "slot_add_prob": 0.75,
     "open_slot_fill_pct": 0.0,
+    "history_read_prob": 0.0,
 }
 CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared"),
            "growth_budget": ("up_to", "exact", "fill"), "constant_folding": ("off", "on"),
@@ -93,6 +95,8 @@ class Profile:
                 raise ValidationError(f"{k} must be in (0, 1)")
             if k == "link_max_span" and v is not None and not 0.0 < float(v) <= 1.0:
                 raise ValidationError("link_max_span must be in (0, 1]")
+            if k == "history_read_prob" and v is not None and not 0.0 <= float(v) <= 1.0:
+                raise ValidationError("history_read_prob must be in [0, 1]")
             if k == "open_slot_fill_pct" and v is not None and not 0.0 <= float(v) <= 100.0:
                 raise ValidationError("open_slot_fill_pct must be in [0, 100]")
             if k in ("growth_gen_prob", "growth_net_prob", "slot_add_prob") and v is not None and \
@@ -175,6 +179,63 @@ class _Mutation:
 
     def live_nodes(self):
         return [i for i in range(len(self.net.nodes)) if i not in self.removed]
+
+    # ---- connections, length and history nodes (spec/03, spec/06 choosing a source)
+    def depth(self, i):
+        return self.net.nodes[i].depth
+
+    def cdepth(self, c):
+        return self.net.nodes[c[0]].depth - c[1]
+
+    def gap_of(self, t):
+        return self.q + 1 if t == "s" else 0
+
+    def history_nodes(self, ok):
+        """Length and history nodes (S, p), 1 <= p <= k + 1, of live hidden s_neurons passing ok."""
+        out = []
+        net = self.net
+        for s in range(net.n_inputs + net.n_outputs, len(net.nodes)):
+            if s in self.removed or not isinstance(net.nodes[s].neuron, SNeuron):
+                continue
+            for j in range(1, net.nodes[s].neuron.k + 2):
+                if ok((s, j)):
+                    out.append((s, j))
+        return out
+
+    def source(self, c, h):
+        """spec/06 source(C, H): a length or history node with history_read_prob, else a node of C."""
+        hp = float(self.p.overall["history_read_prob"])
+        if hp > 0:
+            x = self.rng.u()
+            if x < hp and h:
+                return h[self.rng.below(len(h))]
+        if not c:
+            return None
+        return (c[self.rng.below(len(c))], 0)
+
+    def hfloor(self, nid):
+        """The largest position any live connection reads from nid (spec/03 history floor)."""
+        hf = 0
+        for r in self.live_neurons():
+            for c, p in conns(self.net.nodes[r].neuron):
+                if c == nid:
+                    hf = max(hf, p)
+        return hf
+
+    def move_history(self, frm, to):
+        """Every connection (frm, p >= 1) becomes (to, p) (spec/06 path insertion step 3)."""
+        for r in self.live_neurons():
+            n = self.net.nodes[r].neuron
+            if isinstance(n, MNeuron):
+                for i, s in enumerate(n.slots):
+                    if s == frm and n.slot_pos(i) > 0:
+                        n.set(i, to, n.slot_pos(i))
+            elif n.input == frm and n.input_pos > 0:
+                n.input = to
+
+    @staticmethod
+    def has_conn(m, c):
+        return any(s == c[0] and m.slot_pos(i) == c[1] for i, s in enumerate(m.slots))
 
     def budget(self, field):
         rng = self.rng
@@ -271,9 +332,13 @@ class _Mutation:
             j = rng.below(n_ops - 1)
             if j >= int(n.op):
                 j += 1
+            before = (n.op, n.k) if t == "s" else None
             n.op = AggOp(j)
             if t == "s" and n.op == AggOp.MEDIAN and n.k % 2 == 0:
                 n.k -= 1
+                if n.k + 1 < self.hfloor(nid):           # a read history node would go
+                    n.op, n.k = before
+                    return None
         return t
 
     # phase 2
@@ -310,6 +375,8 @@ class _Mutation:
                 k2 = k2 - 1 if k2 > n.k else k2 + 1
             if k2 == n.k:
                 return None
+            if k2 + 1 < self.hfloor(nid):                 # a read history node would disappear
+                return None
             n.k = k2
             return t
         pr = p.effective("slot_retarget_prob", "m")
@@ -332,22 +399,24 @@ class _Mutation:
                 i = rng.below(self.q)
             if n.slots[i] is None:
                 cands = [j for j in self.live_nodes()
-                         if self.net.nodes[j].depth < my_depth and j not in n.slots]
-                if not cands:
+                         if self.net.nodes[j].depth < my_depth and not self.has_conn(n, (j, 0))]
+                h = self.history_nodes(lambda c: self.cdepth(c) < my_depth and not self.has_conn(n, c))
+                src = self.source(cands, h)
+                if src is None:
                     continue
-                n.slots[i] = cands[rng.below(len(cands))]
+                n.set(i, src[0], src[1])
                 if not self.rules_ok():
-                    n.slots[i] = None
+                    n.set(i, None)
                     continue
                 changed = True
             else:
-                old = n.slots[i]
+                old, old_pos = n.slots[i], n.slot_pos(i)
                 if self.p.overall["prune"] == "static":   # only static (constant) sources may be cut
                     if constant_values(self.net, self.removed)[old] is None:
                         continue
-                n.slots[i] = None
+                n.set(i, None)
                 if not path_rule_ok(self.net, self.removed):
-                    n.slots[i] = old
+                    n.set(i, old, old_pos)
                     continue
                 changed = True
         return t if changed else None
@@ -359,39 +428,46 @@ class _Mutation:
         if not conn:
             return None
         i = conn[rng.below(len(conn))]
-        old = n.slots[i]
+        old, old_pos = n.slots[i], n.slot_pos(i)
         if self.p.overall["prune"] == "static" and n.slots.count(old) == 1 and \
                 readers(net, self.removed)[old] == [nid]:
             return None                                   # would strand old's branch
-        n.slots[i] = None
+        n.set(i, None)
         if not path_rule_ok(net, self.removed):           # critical: the only path for some input
-            n.slots[i] = old
+            n.set(i, old, old_pos)
             return None
         lo = self.span_floor(net.nodes[nid].depth)
+        hi = self.cdepth((old, old_pos))
         cands = [j for j in self.live_nodes()
-                 if lo <= net.nodes[j].depth <= net.nodes[old].depth and j != old and j not in n.slots]
-        if not cands:
-            n.slots[i] = old
+                 if lo <= net.nodes[j].depth <= hi and j != old and not self.has_conn(n, (j, 0))]
+        h = self.history_nodes(lambda c: lo <= self.cdepth(c) <= hi and c != (old, old_pos)
+                               and not self.has_conn(n, c))
+        src = self.source(cands, h)
+        if src is None:
+            n.set(i, old, old_pos)
             return None
-        n.slots[i] = cands[rng.below(len(cands))]
+        n.set(i, src[0], src[1])
         if not self.rules_ok():
-            n.slots[i] = old
+            n.set(i, old, old_pos)
             return None
         return "m"
 
     def rewire(self, nid, n, t):
         net, rng = self.net, self.rng
-        old = n.input
+        old, old_pos = n.input, n.input_pos
         if old is not None and readers(net, self.removed)[old] == [nid]:
-            return None                                   # old input would be orphaned
+            return None                                   # old input's node would be orphaned
         my_depth = net.nodes[nid].depth
+        d = my_depth - self.gap_of(t)                     # an s_neuron keeps its gap
         lo = self.span_floor(my_depth)
-        cands = [j for j in self.live_nodes() if lo <= net.nodes[j].depth < my_depth and j != old]
-        if not cands:
+        cands = [j for j in self.live_nodes() if lo <= net.nodes[j].depth < d and j != old]
+        h = self.history_nodes(lambda c: lo <= self.cdepth(c) < d and not (old is not None and c == (old, old_pos)))
+        src = self.source(cands, h)
+        if src is None:
             return None
-        n.input = cands[rng.below(len(cands))]
+        n.input, n.input_pos = src
         if not path_rule_ok(net, self.removed) or not self.rules_ok():
-            n.input = old
+            n.input, n.input_pos = old, old_pos
             return None
         return t
 
@@ -415,11 +491,11 @@ class _Mutation:
         i = cands[rng.below(len(cands))]
         old = net.nodes[i].neuron
         if isinstance(old, VNeuron):
-            net.nodes[i].neuron = SNeuron(old.input, AggOp(rng.choice(S_OPS)), 1)
+            net.nodes[i].neuron = SNeuron(old.input, AggOp(rng.choice(S_OPS)), 1, old.input_pos)
         else:
             op = VOp(rng.choice(4))
-            net.nodes[i].neuron = VNeuron(old.input, Inversion.NONE, op, IDENTITY_WEIGHT[op])
-        if not self.rules_ok():                            # a path would be short of v or s
+            net.nodes[i].neuron = VNeuron(old.input, Inversion.NONE, op, IDENTITY_WEIGHT[op], old.input_pos)
+        if not self.rules_ok():     # a path short of v or s; v -> s without the s gap; s -> v with its history read
             net.nodes[i].neuron = old
             return False
         return True
@@ -432,7 +508,8 @@ class _Mutation:
 
     def rules_ok(self):
         """The structural rules a mutation may not break besides the path rule (spec/03)."""
-        return mix_ok(self.net, self.removed) and run_ok(self.net, self.removed)
+        return mix_ok(self.net, self.removed) and run_ok(self.net, self.removed) and \
+            depth_rule_error(self.net, self.removed) is None
 
     def pick_receiver(self, recv, peak_field="width_peak", by_empty=False):
         """An m_neuron to receive new width: uniform, or weighted toward the field's peak depth
@@ -522,11 +599,11 @@ class _Mutation:
         slot = empties[rng.below(len(empties))]
         un = net.nodes[u].neuron
         x = len(net.nodes)
-        net.nodes.append(Node(net.next_birth, self.gen, net.nodes[u].depth, MNeuron(un.op, list(un.slots))))
+        net.nodes.append(Node(net.next_birth, self.gen, net.nodes[u].depth, MNeuron(un.op, list(un.slots), list(un.pos))))
         net.next_birth += 1
-        rn.slots[slot] = x
+        rn.set(slot, x)
         if not self.rules_ok():                 # cannot happen (paths mirror U's); kept as a guard
-            rn.slots[slot] = None
+            rn.set(slot, None)
             del net.nodes[x:]
             net.next_birth -= 1
             return None
@@ -548,28 +625,29 @@ class _Mutation:
         """Links steps 3-6 (spec/06): a new 1:1 neuron from an existing node into empty slot `slot` of R."""
         net, rng = self.net, self.rng
         rn = net.nodes[r].neuron
-        hi_src = max(net.nodes[s].depth for s in rn.slots if s is not None)   # no deeper than R's reads
+        hi_src = max(self.cdepth(c) for c in conns(rn))   # no deeper than what R already reads
         lo_src = self.span_floor(net.nodes[r].depth)       # longest link allowed
         cands = [j for j in self.live_nodes()
-                 if lo_src <= net.nodes[j].depth <= hi_src and j not in rn.slots]
-        if not cands:
+                 if lo_src <= net.nodes[j].depth <= hi_src and not self.has_conn(rn, (j, 0))]
+        h = self.history_nodes(lambda c: lo_src <= self.cdepth(c) <= hi_src and not self.has_conn(rn, c))
+        src = self.source(cands, h)
+        if src is None:
             return None
-        src = cands[rng.below(len(cands))]
-        lo, hi = net.nodes[src].depth + 1, net.nodes[r].depth - 1
+        lo, hi = self.cdepth(src) + 1 + self.gap_of(t), net.nodes[r].depth - 1   # an s link keeps its gap
         if lo > hi:
             return None
         d = self.place(lo, hi)
         if t == "v":
             op = VOp(rng.choice(4))
-            neuron = VNeuron(src, self.new_inversion(), op, IDENTITY_WEIGHT[op])
+            neuron = VNeuron(src[0], self.new_inversion(), op, IDENTITY_WEIGHT[op], src[1])
         else:
-            neuron = SNeuron(src, AggOp(rng.choice(S_OPS)), 1)
+            neuron = SNeuron(src[0], AggOp(rng.choice(S_OPS)), 1, src[1])
         x = len(net.nodes)
         net.nodes.append(Node(net.next_birth, self.gen, d, neuron))
         net.next_birth += 1
-        rn.slots[slot] = x
+        rn.set(slot, x)
         if not self.rules_ok():
-            rn.slots[slot] = None
+            rn.set(slot, None)
             del net.nodes[x:]
             net.next_birth -= 1
             return None
@@ -587,10 +665,11 @@ class _Mutation:
         rn = net.nodes[r].neuron
         empties = [s for s, x in enumerate(rn.slots) if x is None]
         slot = empties[rng.below(len(empties))]
-        hi = max(net.nodes[s].depth for s in rn.slots if s is not None)  # deepest node R reads
-        if hi < 1:
-            return None                                   # R reads only inputs: no room
-        d = self.place(1, hi)
+        hi = max(self.cdepth(c) for c in conns(rn))     # deepest connection of R
+        g = self.gap_of(t)                                # s_tap: the s gap above the inputs
+        if hi < 1 + g:
+            return None                                   # no room
+        d = self.place(1 + g, hi)
         n_in = net.n_inputs
         if t == "v":
             op = VOp(rng.choice(4))
@@ -610,9 +689,9 @@ class _Mutation:
         x = len(net.nodes)
         net.nodes.append(Node(net.next_birth, self.gen, d, neuron))
         net.next_birth += 1
-        rn.slots[slot] = x
+        rn.set(slot, x)
         if not self.rules_ok():                 # undo: the new paths break the mix rule
-            rn.slots[slot] = None
+            rn.set(slot, None)
             del net.nodes[x:]
             net.next_birth -= 1
             return None
@@ -629,18 +708,24 @@ class _Mutation:
         a = cands[rng.below(len(cands))]
         node_a = net.nodes[a]
         old_depth = node_a.depth
-        conns = [c for c in connections(node_a.neuron) if c not in self.removed]
-        lo = max(net.nodes[c].depth for c in conns) + 1 if conns else 1
-        hi = node_a.depth - 1
-        if lo > hi:
+        gx = self.q + 1 if method == "s_insert" else 0    # s_insert: X keeps the s gap above B
+        lo = depth_floor(net, a, self.removed)             # N's floor, its own s gap included
+        top = node_a.depth
+        if lo + 1 + gx > top:
             if not net.is_hidden(a):
                 return None
-            rd = readers(net, self.removed)[a]
-            ub = min(net.nodes[r].depth for r in rd) - 1 if rd else net.d_max - 1
-            if lo > ub - 1:
+            # A may move deeper, up to its position-0 readers (history reads move to B)
+            ub = net.d_max - 1
+            for r in self.live_neurons():
+                rn = net.nodes[r].neuron
+                for c, pos in conns(rn):
+                    if c == a and pos == 0:
+                        ub = min(ub, net.nodes[r].depth - self.gap_of(_type_of(rn)) - 1)
+            if lo + 1 + gx > ub:
                 return None
             node_a.depth = ub
-            hi = ub - 1
+            top = ub
+        hi = top - 1 - gx
         d_b = self.place(lo, hi)
         b = len(net.nodes)
         net.nodes.append(Node(node_a.birth, node_a.born_gen, d_b, node_a.neuron))
@@ -658,7 +743,9 @@ class _Mutation:
         node_a.birth = net.next_birth
         node_a.born_gen = self.gen
         net.next_birth += 1
+        self.move_history(a, b)                           # N's history moves with N to B
         if not self.rules_ok():                           # undo: a run would become too long
+            self.move_history(b, a)
             node_a.neuron, node_a.birth, node_a.born_gen, node_a.depth = saved
             del net.nodes[b:]
             net.next_birth -= 1
@@ -681,11 +768,12 @@ class _Mutation:
         if caps[t] is not None and used[t] >= caps[t]:
             return None
         d_r = net.nodes[r].depth
-        if d_r < 3:
+        g = self.gap_of(t)                                # an s filler keeps the s gap
+        if d_r < 3 + g:
             return None
-        d_w = self.place(2, d_r - 1)
-        d_q = self.place(1, d_w - 1)
-        cands = [j for j in self.live_nodes() if net.nodes[j].depth < d_q]
+        d_w = self.place(2 + g, d_r - 1)
+        d_q = self.place(1 + g, d_w - 1)
+        cands = [j for j in self.live_nodes() if net.nodes[j].depth + g < d_q]
         if t == "v":
             inp = cands[rng.below(len(cands))]
             op = VOp(rng.choice(4))
@@ -703,9 +791,9 @@ class _Mutation:
         w_id = len(net.nodes)
         net.nodes.append(Node(net.next_birth + 1, self.gen, d_w, VNeuron(q_id, Inversion.NONE, VOp.MUL, 0.0)))
         net.next_birth += 2
-        rn.slots[slot] = w_id
+        rn.set(slot, w_id)
         if not self.rules_ok():                 # undo: the new paths break the mix rule
-            rn.slots[slot] = None
+            rn.set(slot, None)
             del net.nodes[q_id:]
             net.next_birth -= 2
             return None
@@ -731,7 +819,7 @@ class _Mutation:
                 self.removed.discard(nid)
                 return None
             return t
-        if not is_silenced(net, nid):
+        if not is_silenced(net, nid, self.removed):
             return None
         if has_min_reader(net, nid, self.removed) or is_immune(net, nid, self.removed):
             return None

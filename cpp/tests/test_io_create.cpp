@@ -34,12 +34,12 @@ TEST_CASE("exact layout") {
     // Bytes built by hand from spec/09, independent of the library's writer.
     auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, V(0, VOp::Add, 0.5)}});
     Bytes b = {'J', 'N', 'E', 'T'};
-    put(b, 1, 2); put(b, 0, 2); put(b, 5, 2); put(b, 0, 2);
+    put(b, 2, 2); put(b, 0, 2); put(b, 6, 2); put(b, 0, 2);
     put(b, 0, 1); put(b, 0, 1); put(b, 3, 4); put(b, 1, 4); put(b, 1, 4); put(b, 0, 1); put(b, 0, 1); put(b, 2, 8);
     put(b, 2, 2);
     put(b, 0, 8); put(b, 0, 8); put(b, 0, 2); put(b, 0, 1);
     put(b, 1, 8); put(b, 0, 8); put(b, 0xFFFF, 2); put(b, 1, 1);
-    put(b, 0, 2); put(b, 0, 1); put(b, 2, 1); put(b, to_bits(0.5), 8);
+    put(b, 0, 2); put(b, 0, 4); put(b, 0, 1); put(b, 2, 1); put(b, to_bits(0.5), 8);  // input conn: node 0, position 0
     const Digest h = sha256(b);
     b.insert(b.end(), h.begin(), h.end());
     CHECK(to_bytes(net) == b);
@@ -50,8 +50,9 @@ TEST_CASE("none sentinel and widths") {
         using D = decltype(tag);
         auto net = make_net<D>(2, 1, 3, {{std::numeric_limits<D>::max(), M(AggOp::Max, {0, 1, none})}});
         Bytes b = to_bytes(net);
-        for (std::size_t i = 0; i < w; ++i) CHECK(b[b.size() - 32 - w + i] == 0xFF);
-        CHECK(b.size() == 36 + w + 3 * (16 + w + 1) + (1 + 3 * w) + 32);
+        for (std::size_t i = 0; i < w; ++i) CHECK(b[b.size() - 32 - 4 - w + i] == 0xFF);  // last slot empty
+        for (std::size_t i = 0; i < 4; ++i) CHECK(b[b.size() - 32 - 4 + i] == 0);         // ... position 0
+        CHECK(b.size() == 36 + w + 3 * (16 + w + 1) + (1 + 3 * (w + 4)) + 32);            // conn = id + u32
     };
     check(std::uint16_t{}, 2);
     check(std::uint32_t{}, 4);

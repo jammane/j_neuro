@@ -47,10 +47,23 @@ namespace detail::modify {
 template <class F>
 void remap(std::optional<Neuron>& n, F&& f) {
     if (!n) return;
-    auto one = [&](std::optional<NodeId>& r) { if (r) r = f(*r); };
-    if (auto* m = std::get_if<MNeuron>(&*n)) for (auto& s : m->slots) one(s);
-    else if (auto* v = std::get_if<VNeuron>(&*n)) one(v->input);
-    else one(std::get<SNeuron>(*n).input);
+    // a connection mapped to nullopt becomes empty / missing, and its position 0
+    auto one = [&](std::optional<NodeId>& r, std::uint32_t& pos) {
+        if (r) r = f(*r);
+        if (!r) pos = 0;
+    };
+    if (auto* m = std::get_if<MNeuron>(&*n)) {
+        for (std::size_t i = 0; i < m->slots.size(); ++i)
+            if (m->slots[i]) {
+                const auto to = f(*m->slots[i]);
+                m->set(i, to, to ? m->slot_pos(i) : 0);
+            }
+    } else if (auto* v = std::get_if<VNeuron>(&*n)) {
+        one(v->input, v->input_pos);
+    } else {
+        auto& s = std::get<SNeuron>(*n);
+        one(s.input, s.input_pos);
+    }
 }
 
 /// Insert a node at id `at`; every id >= at moves up by 1.
@@ -117,7 +130,7 @@ std::vector<std::optional<Triple>> fewest_to_output(const Net<D>& net) {
     std::vector<NodeId> order;
     for (NodeId i = net.n_inputs; i < net.nodes.size(); ++i) order.push_back(i);
     std::stable_sort(order.begin(), order.end(),
-                     [&](NodeId a, NodeId b) { return net.nodes[a].depth > net.nodes[b].depth; });
+                     [&](NodeId a, NodeId b) { return struct_depth(net, a) > struct_depth(net, b); });
     std::vector<std::optional<Triple>> fewest(net.nodes.size());
     for (NodeId i : order) {
         Triple own{0, 0, 0};
@@ -277,14 +290,10 @@ Net<D> add_input(const Net<D>& net, std::optional<std::uint32_t> position, bool 
         if (!uncovered[o]) continue;
         const NodeId oid = n_in + o;
         Neuron n = *out.nodes[oid].neuron;
-        D lo = 1;
-        bool any = false;
-        for (NodeId c : connections(n)) {
-            const D d = static_cast<D>(out.nodes[c].depth + 1);
-            if (!any || d > lo) lo = d;
-            any = true;
-        }
+        const std::uint64_t floor = depth_floor(out, oid);  // N's own s gap included (spec/12)
         const D hi = static_cast<D>(d_max - 1);
+        if (floor > hi) throw ValidationError("output " + std::to_string(o) + ": no depth room for a receiver");
+        const D lo = static_cast<D>(floor);
         if (lo > hi) throw ValidationError("output " + std::to_string(o) + ": no depth room for a receiver");
         const NodeId b = static_cast<NodeId>(out.nodes.size());
         const bool need_sep = std::holds_alternative<MNeuron>(n) && k_run > 0;
@@ -342,6 +351,8 @@ Net<D> add_input(const Net<D>& net, std::optional<std::uint32_t> position, bool 
     for (NodeId r : receivers) d = std::min(d, out.nodes[r].depth);
     const D step = static_cast<D>(d / static_cast<D>(parts.size() + 1));
     if (step == 0) throw ValidationError("no depth room for the new input's chain");
+    if (std::find(parts.begin(), parts.end(), Part::S) != parts.end() && step <= q + 1)
+        throw ValidationError("no depth room for the new input's chain (s gap)");
     NodeId prev = new_input;
     for (std::size_t j = 0; j < parts.size(); ++j) {
         Neuron neuron;
@@ -363,8 +374,8 @@ Net<D> add_input(const Net<D>& net, std::optional<std::uint32_t> position, bool 
 
     // 5. connect
     for (NodeId r : receivers) {
-        auto& slots = std::get<MNeuron>(*out.nodes[r].neuron).slots;
-        *std::find(slots.begin(), slots.end(), std::nullopt) = prev;
+        auto& rm = std::get<MNeuron>(*out.nodes[r].neuron);
+        rm.set(static_cast<std::size_t>(std::find(rm.slots.begin(), rm.slots.end(), std::nullopt) - rm.slots.begin()), prev);
     }
     mod::check_cap(out);
     out.reset();

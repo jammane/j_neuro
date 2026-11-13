@@ -34,8 +34,8 @@ equal content, so a file exported from one language imports unchanged into the o
 | Field | Type | Notes |
 |---|---|---|
 | magic | 4 bytes | ASCII `JNET` |
-| format version | `u16` | `1` |
-| spec version | 3 × `u16` | major, minor, patch, e.g. `0, 5, 0` |
+| format version | `u16` | `2` (`1`: spec 0.5, read with [conversion](#reading-05-nets)) |
+| spec version | 3 × `u16` | major, minor, patch, e.g. `0, 6, 0` |
 | priority | `u8` | |
 | depth_type | `u8` | fixes `W` for the rest of the file |
 | in_qty_max | `u32` | |
@@ -56,18 +56,24 @@ Each node:
 | born_gen | `u64` | |
 | depth | `W` | |
 | neuron type | `u8` | `0` none (input nodes), `1` v, `2` s, `3` m |
-| v | input `W`, inversion `u8`, op `u8`, weight `f64` | |
-| s | input `W`, op `u8`, k `u32` | |
-| m | op `u8`, then `in_qty_max` × slot `W` | |
+| v | input `conn`, inversion `u8`, op `u8`, weight `f64` | |
+| s | input `conn`, op `u8`, k `u32` | |
+| m | op `u8`, then `in_qty_max` × slot `conn` | |
 
-s_neuron history is state and is not stored.
+A `conn` is the node id `W` (`NONE` for an empty slot or missing input) followed by the position
+`u32` (0 for the node itself, 1 for the length node, `j + 1` for history node `j`; 0 with `NONE`). Format version 1 had no
+position.
+
+s_neuron history values are state and are not stored; history nodes are addressed only by
+connections.
 
 ### Loading
 
 A reader MUST reject a `.jnet` unless all of these hold:
 
 - Magic `JNET`, a known format version, and a spec version with the same MAJOR (and, while
-  MAJOR is 0, the same MINOR) version.
+  MAJOR is 0, the same MINOR) version — except format version 1 with spec version 0.5, which is
+  converted ([below](#reading-05-nets)).
 - The file is exactly as long as its contents require (no truncation, no trailing bytes) and
   the checksum matches.
 - Every enumeration byte is in range.
@@ -75,9 +81,29 @@ A reader MUST reject a `.jnet` unless all of these hold:
 - Node order and depths as in [03](03-net-structure.md#nodes).
 - Exactly the non-input nodes have a neuron; `k` within range and odd for `median`; weights
   finite.
-- Every connection refers to an existing node of strictly smaller depth.
+- Every connection refers to an existing node, a NONE connection has position 0, and the depth
+  rules hold ([03](03-net-structure.md#depth-rules)): connections strictly shallower than their
+  reader, the s gap, history positions within `k` of a hidden s_neuron.
 - The path, mix and run rules hold; no node fails to reach an output.
 - `birth` values unique and all `< next_birth`.
+
+### Reading 0.5 nets
+
+A format-1 file written under spec 0.5 is read with every position 0, then its depths are
+re-spaced so the s gap holds, before the checks above:
+
+```
+for each node X in ascending (old depth, id):
+    input:   depth 0
+    output:  depth D_MAX
+    hidden:  depth = max(old depth, floor(X))          # floor from the new depths
+             (06: largest connection depth + 1, + in_qty_max + 1 for an s_neuron)
+fail if a hidden depth exceeds D_MAX − 1 or an output's floor exceeds D_MAX
+```
+
+Every connection stays strictly shallower than its reader, and evaluation reads the same values,
+so outputs are bit-for-bit unchanged. Only depths change (later mutations place nodes by depth,
+so they differ from what 0.5 would have done). The converted net is written in format 2.
 
 ## `.jpnet`
 
@@ -88,7 +114,7 @@ are separate `.jnet` files, each verified by its SHA-256 hash.
 |---|---|---|
 | magic | 4 bytes | ASCII `JPOP` |
 | format version | `u16` | `1` |
-| spec version | 3 × `u16` | |
+| spec version | 3 × `u16` | 0.5 files are read; their nets convert as above |
 | priority | `u8` | population priority |
 | depth_type | `u8` | |
 | in_qty_max | `u32` | |
@@ -143,7 +169,7 @@ growing; otherwise the journal restarts, marked as resuming from this file
 ```json
 {
   "format": "j_neuro.profile",
-  "spec_version": "0.5.0",
+  "spec_version": "0.6.0",
   "overall": {
     "op_change_max_pct": 1.0,
     "edit_max_pct": 5.0,
@@ -168,7 +194,8 @@ growing; otherwise the journal restarts, marked as resuming from this file
 }
 ```
 
-Missing overall fields take their defaults. Per-type sections contain only overrides, and only
+Missing overall fields take their defaults. Profiles written under 0.5 are accepted (they lack
+only `history_read_prob`, which defaults to 0). Per-type sections contain only overrides, and only
 of fields marked overridable in [06](06-mutation.md#mutation-profile).
 
 ## Run log (JSON)
@@ -178,7 +205,7 @@ The journal of a population ([11](11-population.md#run-log)).
 ```json
 {
   "format": "j_neuro.runlog",
-  "spec_version": "0.5.0",
+  "spec_version": "0.6.0",
   "population": {"depth_type": "U32", "in_qty_max": 5, "n_inputs": 4, "n_outputs": 2,
                  "path_mix": 2, "max_run": 3, "priority": "BALANCED", "seed": 12345},
   "resumed_from": null,
