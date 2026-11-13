@@ -9,7 +9,7 @@ from typing import Set
 import math
 
 from .aggregate import aggregate
-from .analysis import connections, path_rule_ok, reaching_output, readers
+from .analysis import connections, conns, history_floors, path_rule_ok, reaching_output, readers
 from .net import MNeuron, Net, SNeuron, VNeuron, eval_v
 from .numerics import canon
 from .types import IDENTITY_WEIGHT, AggOp, Inversion, VOp
@@ -21,8 +21,9 @@ def is_identity(net: Net, nid: int) -> bool:
             and n.weight == IDENTITY_WEIGHT[n.op])
 
 
-def is_silenced(net: Net, nid: int) -> bool:
-    """Output is always +0.0."""
+def is_silenced(net: Net, nid: int, removed: Set[int] = None) -> bool:
+    """Output is always +0.0 (and so is everything a live reader reads from it: an s_neuron whose
+    length node is read is not silenced, spec/07)."""
     n = net.nodes[nid].neuron
     if isinstance(n, VNeuron) and n.op == VOp.MUL and n.weight == 0.0:
         return True
@@ -30,6 +31,12 @@ def is_silenced(net: Net, nid: int) -> bool:
         return False
     if isinstance(n, VNeuron):
         return eval_v(n, 0.0) == 0.0
+    if isinstance(n, SNeuron):
+        for r, node in enumerate(net.nodes):
+            if (removed and r in removed) or node.neuron is None:
+                continue
+            if (nid, 1) in conns(node.neuron):
+                return False
     return isinstance(n, (SNeuron, MNeuron))
 
 
@@ -41,18 +48,24 @@ def has_min_reader(net: Net, nid: int, removed: Set[int]) -> bool:
     return False
 
 
-def _redirect(neuron, old: int, new):
+def _redirect(neuron, old: int, new, new_pos: int = 0):
+    """Every connection to node `old` (any position) becomes (new, new_pos), or empty / missing."""
+    if new is None:
+        new_pos = 0
     if isinstance(neuron, MNeuron):
-        neuron.slots = [new if s == old else s for s in neuron.slots]
+        for i, s in enumerate(neuron.slots):
+            if s == old:
+                neuron.set(i, new, new_pos)
     elif neuron.input == old:
-        neuron.input = new
+        neuron.input, neuron.input_pos = new, new_pos
 
 
 def bypass(net: Net, nid: int, removed: Set[int]):
     """Remove an identity neuron; its readers read its input directly."""
-    src = net.nodes[nid].neuron.input
+    x = net.nodes[nid].neuron
+    src, src_pos = x.input, x.input_pos          # the input may itself be a history node
     for r in readers(net, removed)[nid]:
-        _redirect(net.nodes[r].neuron, nid, src)
+        _redirect(net.nodes[r].neuron, nid, src, src_pos)
     removed.add(nid)
 
 
@@ -66,7 +79,7 @@ def remove_silenced(net: Net, nid: int, removed: Set[int]):
             _redirect(net.nodes[r].neuron, y, None)
         removed.add(y)
         for r in rd:
-            if (net.is_hidden(r) and not connections(net.nodes[r].neuron) and is_silenced(net, r)
+            if (net.is_hidden(r) and not connections(net.nodes[r].neuron) and is_silenced(net, r, removed)
                     and not has_min_reader(net, r, removed)):
                 queue.append(r)
 
@@ -75,23 +88,39 @@ def constant_values(net: Net, removed: Set[int]):
     """For each live node: its output if provably the same at every step from reset, else None."""
     order = sorted((i for i in range(len(net.nodes)) if i not in removed), key=lambda i: net.nodes[i].depth)
     const = [None] * len(net.nodes)
+
+    def cconn(r, pos):
+        """A connection's constant: the node's at position 0; never for a length node; for a history
+        node +0.0 when S's input is missing or its constant is +0.0 (the history is always 0)."""
+        if pos == 0:
+            return const[r]
+        if pos == 1:
+            return None
+        s = net.nodes[r].neuron
+        if s.input is None:
+            return 0.0
+        c = cconn(s.input, s.input_pos)
+        return 0.0 if c is not None and c == 0.0 else None
+
     for i in order:
         n = net.nodes[i].neuron
         if n is None:
             continue
         if isinstance(n, VNeuron):
+            c = cconn(n.input, n.input_pos) if n.input is not None else None
             if n.input is None:
                 const[i] = eval_v(n, 0.0)
-            elif const[n.input] is not None:
-                const[i] = eval_v(n, const[n.input])
+            elif c is not None:
+                const[i] = eval_v(n, c)
             elif n.op == VOp.MUL and n.weight == 0.0:
                 const[i] = 0.0
         elif isinstance(n, SNeuron):
-            if n.input is None or _is_pos_zero(const[n.input]):
+            if n.input is None or _is_pos_zero(cconn(n.input, n.input_pos)):
                 const[i] = 0.0
         else:
-            if all(s is None or const[s] is not None for s in n.slots):
-                vals = [0.0 if s is None else const[s] for s in n.slots]
+            cs = [None if s is None else cconn(s, n.slot_pos(k)) for k, s in enumerate(n.slots)]
+            if all(s is None or c is not None for s, c in zip(n.slots, cs)):
+                vals = [0.0 if s is None else c for s, c in zip(n.slots, cs)]
                 const[i] = canon(aggregate(n.op, vals, [s is not None for s in n.slots]))
     return const
 
@@ -112,7 +141,8 @@ def fold_constants(net: Net, removed: Set[int], generation: int, min_age):
     for i in cands:
         old = net.nodes[i].neuron
         net.nodes[i].neuron = VNeuron(None, Inversion.NONE, VOp.ADD, const[i])
-        if not path_rule_ok(net, removed):
+        # restore if the path rule breaks, or a depth rule (an s_neuron whose history is read)
+        if not path_rule_ok(net, removed) or history_floors(net, removed)[i] > 0:
             net.nodes[i].neuron = old
         else:
             folded += 1

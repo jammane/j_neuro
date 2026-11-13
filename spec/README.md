@@ -1,6 +1,6 @@
 # j_neuro Specification
 
-**Version:** 0.5.0-draft
+**Version:** 0.6.0-draft
 
 This specification is **normative** for both the C++ and the Python implementation. Where an
 implementation and this document disagree, the implementation is wrong.

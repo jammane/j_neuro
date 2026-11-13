@@ -11,12 +11,17 @@ from .rng import Rng
 from .types import IDENTITY_WEIGHT, AggOp, DepthType, Inversion, Priority, ValidationError, VOp
 
 
+# A connection is (node, position): position 0 reads the node, position 1 the length node of the
+# node's s_neuron (how many history entries are filled), position j + 1 its history node j (spec/03). Node ids stay in `input` / `slots`, so every structural analysis
+# works on them unchanged; the positions sit beside them.
+
 @dataclass
 class VNeuron:
     input: Optional[int]
     inversion: Inversion
     op: VOp
     weight: float
+    input_pos: int = 0
 
 
 @dataclass
@@ -24,12 +29,29 @@ class SNeuron:
     input: Optional[int]
     op: AggOp
     k: int
+    input_pos: int = 0
 
 
 @dataclass
 class MNeuron:
     op: AggOp
     slots: List[Optional[int]]
+    pos: List[int] = field(default_factory=list)   # per slot position; empty means all 0
+
+    def slot_pos(self, i: int) -> int:
+        return self.pos[i] if self.pos else 0
+
+    def set(self, i: int, node: Optional[int], p: int = 0):
+        """Set slot i to a connection (or empty: node None, position 0)."""
+        self.slots[i] = node
+        if node is None:
+            p = 0
+        if p != 0 and not self.pos:
+            self.pos = [0] * len(self.slots)
+        if self.pos:
+            self.pos[i] = p
+            if not any(self.pos):
+                self.pos = []
 
 
 Neuron = Union[VNeuron, SNeuron, MNeuron]
@@ -99,12 +121,21 @@ class Net:
 
     def get_warmup_steps(self) -> int:
         """Steps after a reset before every s_neuron history on any path is filled (spec/05)."""
-        from .analysis import connections
+        from .analysis import conns
         w = [0] * len(self.nodes)
+
+        def w_conn(r, pos):       # W of a connection (spec/05)
+            if pos == 0:
+                return w[r]
+            if pos == 1:
+                return 0          # the length node is exact from the first step
+            s = self.nodes[r].neuron
+            return (pos - 1) + (w_conn(s.input, s.input_pos) if s.input is not None else 0)
+
         for nid in self._order():
             n = self.nodes[nid].neuron
             own = n.k if isinstance(n, SNeuron) else 0
-            w[nid] = own + max((w[c] for c in connections(n)), default=0)
+            w[nid] = own + max((w_conn(c, p) for c, p in conns(n)), default=0)
         return max((w[o] for o in range(self.n_inputs, self.n_inputs + self.n_outputs)), default=0)
 
     # ------------------------------------------------------------ evaluation (spec/05)
@@ -122,12 +153,39 @@ class Net:
     def _order(self):
         return sorted(range(self.n_inputs, len(self.nodes)), key=lambda i: (self.nodes[i].depth, i))
 
+    def _history_value(self, s: int, pos: int) -> float:
+        """Length node (pos 1) or history node pos - 1 of the s_neuron at s, as it stood at the start
+        of the step (spec/04)."""
+        ring = self._state["rings"].get(s)
+        if ring is None:
+            return 0.0                      # not yet stepped: nothing filled
+        buf, head, filled = ring
+        if pos == 1:
+            return float(filled)            # the length node
+        j = pos - 1
+        k = len(buf)
+        if j > filled:
+            return 0.0
+        return buf[(head + k - j) % k]
+
+    def _push_histories(self):
+        rings = self._state["rings"]
+        for nid, x in self._state["pushes"]:
+            ring = rings[nid]
+            k = len(ring[0])
+            ring[0][ring[1]] = x
+            ring[1] = (ring[1] + 1) % k
+            ring[2] = min(ring[2] + 1, k)
+        self._state["pushes"] = []
+
     def _eval_node(self, nid, neuron, value_of):
-        def inp(r):
-            return 0.0 if r is None else value_of(r)
+        def inp(r, pos=0):
+            if r is None:
+                return 0.0
+            return value_of(r) if pos == 0 else self._history_value(r, pos)
 
         if isinstance(neuron, VNeuron):
-            return eval_v(neuron, inp(neuron.input))
+            return eval_v(neuron, inp(neuron.input, neuron.input_pos))
         if isinstance(neuron, SNeuron):
             rings = self._state["rings"]
             k = neuron.k
@@ -136,18 +194,16 @@ class Net:
                 ring = [[0.0] * k, 0, 0]
                 rings[nid] = ring
             buf, head, filled = ring
-            x = inp(neuron.input)
+            x = inp(neuron.input, neuron.input_pos)
             h = [buf[(head + i) % k] for i in range(k)]
             present = [i >= k - filled for i in range(k)]
             if neuron.op == AggOp.LAG:
                 out = canon(h[0])                       # the input from k steps ago (+0.0 if unfilled)
             else:
                 out = canon(x - aggregate(neuron.op, h, present))
-            buf[head] = x
-            ring[1] = (head + 1) % k
-            ring[2] = min(filled + 1, k)
+            self._state["pushes"].append((nid, x))   # pushed after the step: history reads see the old ring
             return out
-        vals = [inp(s) for s in neuron.slots]
+        vals = [inp(s, neuron.slot_pos(i)) for i, s in enumerate(neuron.slots)]
         present = [s is not None for s in neuron.slots]
         return canon(aggregate(neuron.op, vals, present))
 
@@ -156,7 +212,7 @@ class Net:
         if len(inputs) != self.n_inputs:
             raise ValueError("step: wrong number of inputs")
         if self._state is None:
-            self._state = {"rings": {}, "order": None, "values": None}
+            self._state = {"rings": {}, "order": None, "values": None, "pushes": []}
         st = self._state
         n_in = self.n_inputs
         outputs = [0.0] * self.n_outputs
@@ -179,6 +235,7 @@ class Net:
                 for c in connections(neuron):
                     if last_use.get(c) == p and not self.is_output(c):
                         live.pop(c, None)
+            self._push_histories()
             return outputs
 
         if st["order"] is None:
@@ -189,6 +246,7 @@ class Net:
             values[i] = canon(float(inputs[i]))
         for nid in st["order"]:
             values[nid] = self._eval_node(nid, self.nodes[nid].neuron, values.__getitem__)
+        self._push_histories()
         return values[n_in:n_in + self.n_outputs]
 
     # ------------------------------------------------------------ creation (spec/03)
@@ -301,13 +359,18 @@ class Net:
             raise ValidationError(f"node cap: {len(nodes)} nodes exceed D_MAX of {depth_type.name}")
         for i, node in enumerate(nodes):
             node.birth = i
-        return cls(priority, depth_type, q, n_inputs, n_outputs, nodes, len(nodes), path_mix, max_run)
+        net = cls(priority, depth_type, q, n_inputs, n_outputs, nodes, len(nodes), path_mix, max_run)
+        from .analysis import depth_rule_error
+        err = depth_rule_error(net)
+        if err:
+            raise ValidationError(f"create: {err}")
+        return net
 
     # ------------------------------------------------------------ validation (spec/03, spec/09)
 
     def validate(self):
         """Raise ValidationError unless every structural invariant holds."""
-        from .analysis import connections, mix_ok, path_rule_ok, reaching_output, run_ok
+        from .analysis import connections, depth_rule_error, mix_ok, path_rule_ok, reaching_output, run_ok
         _check_params(self.n_inputs, self.n_outputs, self.in_qty_max)
         _check_path_mix(self.path_mix)
         _check_max_run(self.max_run)
@@ -334,14 +397,23 @@ class Net:
                 for c in connections(node.neuron):
                     if not isinstance(c, int) or not 0 <= c < n:
                         raise ValidationError(f"node {i}: bad reference {c}")
-                    if self.nodes[c].depth >= node.depth:
-                        raise ValidationError(f"node {i}: connection depth must be smaller")
+                nr = node.neuron
+                if isinstance(nr, MNeuron) and nr.pos:
+                    if len(nr.pos) != len(nr.slots):
+                        raise ValidationError(f"node {i}: slot positions")
+                    if any(s is None and p != 0 for s, p in zip(nr.slots, nr.pos)):
+                        raise ValidationError(f"node {i}: empty slot with a position")
+                if isinstance(nr, (VNeuron, SNeuron)) and nr.input is None and nr.input_pos != 0:
+                    raise ValidationError(f"node {i}: missing input with a position")
             if not isinstance(node.birth, int) or node.birth in births or node.birth >= self.next_birth \
                     or node.birth < 0:
                 raise ValidationError(f"node {i}: birth must be unique and < next_birth")
             if not isinstance(node.born_gen, int) or node.born_gen < 0:
                 raise ValidationError(f"node {i}: bad born_gen")
             births.add(node.birth)
+        err = depth_rule_error(self)
+        if err:
+            raise ValidationError(f"depth rule: {err}")
         if not path_rule_ok(self):
             raise ValidationError("path rule: some input has no path to some output")
         if not mix_ok(self):

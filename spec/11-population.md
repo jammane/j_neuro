@@ -86,3 +86,7 @@ generation and shared-stream state, in either language.
 - A population loaded **without** an embedded log has a log with `resumed_from` set to the
   `.jpnet`'s SHA-256. Replaying it requires `base`: the population loaded from that same file
   (checked by hash); the operations are then applied to a copy of it.
+- A population loaded from a **0.5** `.jpnet` has its nets converted
+  ([09](09-serialization.md#reading-05-nets)). An embedded 0.5 log is not kept (0.6 mutation
+  would not reproduce it): the journal restarts with `resumed_from` set, as for a file without a
+  log.

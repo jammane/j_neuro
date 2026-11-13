@@ -11,13 +11,19 @@ from .net import MNeuron, Net, Node, SNeuron, VNeuron
 from .types import AggOp, DepthType, Inversion, Priority, ValidationError, VOp
 
 MAGIC = b"JNET"
-FORMAT_VERSION = 1
-SPEC_VERSION = (0, 5, 0)
+NET_FORMAT_VERSION = 2     # .jnet; 1 = spec 0.5 (read and converted, spec/09)
+POP_FORMAT_VERSION = 1     # .jpnet
+SPEC_VERSION = (0, 6, 0)
 WIDTH = {DepthType.U16: 2, DepthType.U32: 4, DepthType.U64: 8}
 
 
 def sha256(data: bytes) -> bytes:
     return hashlib.sha256(data).digest()
+
+
+def is_legacy_05(major: int, minor: int) -> bool:
+    """Spec 0.5 genomes are still read; nets are converted on load (spec/09)."""
+    return major == 0 and minor == 5
 
 
 def spec_version_ok(major: int, minor: int) -> bool:
@@ -73,14 +79,19 @@ class Reader:
             raise ValidationError(f"{self.what}: {what} byte {v} out of range")
         return cls(v)
 
-    def header(self, magic: bytes):
+    def header(self, magic: bytes) -> bool:
+        """Check magic, format and spec version; True for a spec 0.5 file (to convert)."""
         if self.take(len(magic)) != magic:
             raise ValidationError(f"{self.what}: wrong magic")
-        if self.u(2) != FORMAT_VERSION:
-            raise ValidationError(f"{self.what}: unknown format version")
+        fmt = self.u(2)
         major, minor, _patch = self.u(2), self.u(2), self.u(2)
-        if not spec_version_ok(major, minor):
+        legacy = is_legacy_05(major, minor)
+        if not legacy and not spec_version_ok(major, minor):
             raise ValidationError(f"{self.what}: unsupported spec version {major}.{minor}")
+        want = (1 if legacy else NET_FORMAT_VERSION) if magic == MAGIC else POP_FORMAT_VERSION
+        if fmt != want:
+            raise ValidationError(f"{self.what}: unknown format version")
+        return legacy
 
     def done(self):
         if self.pos != len(self.data):
@@ -89,7 +100,7 @@ class Reader:
 
 def write_header(w: Writer, magic: bytes):
     w.raw(magic)
-    w.u(FORMAT_VERSION, 2)
+    w.u(NET_FORMAT_VERSION if magic == MAGIC else POP_FORMAT_VERSION, 2)
     for v in SPEC_VERSION:
         w.u(v, 2)
 
@@ -112,8 +123,9 @@ def net_to_bytes(net: Net) -> bytes:
     w.u(net.next_birth, 8)
     w.u(len(net.nodes), wd)
 
-    def ref(r):
+    def ref(r, pos):                     # a conn: id, position
         w.u(none if r is None else r, wd)
+        w.u(0 if r is None else pos, 4)
 
     for node in net.nodes:
         w.u(node.birth, 8)
@@ -124,27 +136,27 @@ def net_to_bytes(net: Net) -> bytes:
             w.u(0, 1)
         elif isinstance(n, VNeuron):
             w.u(1, 1)
-            ref(n.input)
+            ref(n.input, n.input_pos)
             w.u(n.inversion, 1)
             w.u(n.op, 1)
             w.f64(n.weight)
         elif isinstance(n, SNeuron):
             w.u(2, 1)
-            ref(n.input)
+            ref(n.input, n.input_pos)
             w.u(n.op, 1)
             w.u(n.k, 4)
         else:
             w.u(3, 1)
             w.u(n.op, 1)
-            for s in n.slots:
-                ref(s)
+            for i, s in enumerate(n.slots):
+                ref(s, n.slot_pos(i))
     return w.finish()
 
 
 def net_from_bytes(data: bytes) -> Net:
     """Parse and fully validate .jnet bytes."""
     r = Reader(bytes(data), "jnet")
-    r.header(MAGIC)
+    legacy = r.header(MAGIC)
     priority = r.enum(Priority, "priority")
     depth_type = r.enum(DepthType, "depth_type")
     wd = WIDTH[depth_type]
@@ -161,9 +173,14 @@ def net_from_bytes(data: bytes) -> Net:
     if q < 3 or q % 2 == 0:
         raise ValidationError("jnet: in_qty_max must be odd and >= 3")
 
-    def ref():
+    def ref():                           # a conn: id, then (format 2) its position
         v = r.u(wd)
-        return None if v == none else v
+        pos = 0 if legacy else r.u(4)
+        if v == none:
+            if pos != 0:
+                raise ValidationError("jnet: empty connection with a position")
+            return None, 0
+        return v, pos
 
     nodes = []
     for _ in range(count):
@@ -172,26 +189,59 @@ def net_from_bytes(data: bytes) -> Net:
         if kind == 0:
             neuron = None
         elif kind == 1:
-            inp = ref()
+            inp, ip = ref()
             inv = r.enum(Inversion, "inversion")
             op = r.enum(VOp, "v op")
-            neuron = VNeuron(inp, inv, op, r.f64())
+            neuron = VNeuron(inp, inv, op, r.f64(), ip)
         elif kind == 2:
-            inp = ref()
+            inp, ip = ref()
             op = r.enum(AggOp, "op")
-            neuron = SNeuron(inp, op, r.u(4))
+            neuron = SNeuron(inp, op, r.u(4), ip)
         elif kind == 3:
             op = r.enum(AggOp, "op")
             if op == AggOp.LAG:
                 raise ValidationError("jnet: lag is an s_neuron op, not an m_neuron op")
-            neuron = MNeuron(op, [ref() for _ in range(q)])
+            neuron = MNeuron(op, [None] * q)
+            for k in range(q):
+                c, cp = ref()
+                neuron.set(k, c, cp)
         else:
             raise ValidationError(f"jnet: neuron type byte {kind} out of range")
         nodes.append(Node(birth, born_gen, depth, neuron))
     r.done()
     net = Net(priority, depth_type, q, n_in, n_out, nodes, next_birth, path_mix, max_run)
+    if legacy:
+        respace_05(net)
     net.validate()
     return net
+
+
+def respace_05(net: Net):
+    """Spec 0.5 nets: re-space depths so the s gap holds (spec/09 reading 0.5 nets). Every
+    connection stays strictly shallower than its reader, so outputs are unchanged."""
+    from .analysis import connections
+    n = len(net.nodes)
+    order = sorted(range(n), key=lambda i: (net.nodes[i].depth, i))
+    nd = [0] * n
+    d_max = net.d_max
+    for i in order:
+        node = net.nodes[i]
+        if net.is_input(i) or node.neuron is None:
+            nd[i] = 0
+            continue
+        floor = max((nd[c] + 1 for c in connections(node.neuron) if c < n), default=1)
+        if isinstance(node.neuron, SNeuron):
+            floor += net.in_qty_max + 1
+        if net.is_output(i):
+            if floor > d_max:
+                raise ValidationError("0.5 conversion: no depth room for the s gap")
+            nd[i] = d_max
+        else:
+            nd[i] = max(node.depth, floor)
+            if nd[i] > d_max - 1:
+                raise ValidationError("0.5 conversion: no depth room for the s gap")
+    for i in range(n):
+        net.nodes[i].depth = nd[i]
 
 
 def save_net(net: Net, path: Union[str, Path]):

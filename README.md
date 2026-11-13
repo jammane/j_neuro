@@ -6,7 +6,7 @@ An **evolutionary neural-network library**, written twice — once in **C++** an
 **Python** — as exact mirrors of a single language-neutral specification. Networks are not
 trained by gradients; they are **grown, tuned and pruned by mutation**.
 
-> **Status:** spec v0.5.0-draft is implemented in both Python and C++. The two produce
+> **Status:** spec v0.6.0-draft is implemented in both Python and C++. The two produce
 > byte-identical results on every shared golden case, and a run logged in either language
 > replays exactly in the other. Three example programs train and analyze nets on card games and
 > measure how mutation alone shapes a net.
@@ -88,13 +88,14 @@ Build and test instructions: [cpp/README.md](cpp/README.md), [python/README.md](
 | **Neuron** | Writes exactly one node. Every node it reads must be strictly shallower than the node it writes, so nets are always acyclic. |
 | `v_neuron` | 1 in → 1 out: optional inversion (bitwise `~` or `1/x`), then `* / + −` by a weight. |
 | `s_neuron` | 1 in → 1 out, stateful: `x − agg(previous k inputs)`, or with `lag` the raw input from k steps ago. |
+| **History nodes** | Every s_neuron's memory is readable: history node `j` (its input `j` steps ago) and a length node (how many entries are filled), at the consecutive depths just below it. A connection is `(node, position)`. Every s_neuron keeps a depth gap of `IN_QTY_MAX + 1` below it for them, so they can be wired in later without moving anything. Spec 0.5 nets load and are re-spaced, with identical outputs. |
 | `m_neuron` | `IN_QTY_MAX` slots in → 1 out: `mean`, `median`, `min` or `max`. Empty slots read 0. |
 | `DEPTH` | Per-net integer type of depth values: `U16`, `U32` or `U64`. Bounds how finely structure can be layered. |
 | `IN_QTY_MAX` | Per-net odd number: m_neuron slot count and maximum s_neuron history. |
 | **Path rule** | Every input always has at least one path to every output. |
 | **Mix rule** | Every input-to-output path passes through at least `path_mix` v, s and m neurons each (default 2, set when a net is created). |
 | **Run rule** | No path has more than `max_run` 1:1 (v, s) or many:1 (m) neurons in a row (default 3), so the kinds alternate. |
-| **Mutation** | A profile sets "up to %" budgets for op changes, edits (including rewiring and slot retargeting), growth, removal and depth shifts. Growth has eleven methods: neutral path insertions (`v_insert`, `s_insert`, `m_after_m`, `m_insert`), branches into open m slots (`slot_fill`, input taps, `v_link`/`s_link`, `m_clone`), with receivers chosen to spread width across the net. Removal is exact neutral pruning with cascades, plus optional constant folding. Growth can be limited to a share of generations and nets, with an s↔v swap for the nets that miss out. A `fill` growth budget adds an exact share of the net's neurons (retrying skipped attempts), optionally filling open m slots with links inside the same total (bulking). Every mutation operation is counted. |
+| **Mutation** | A profile sets "up to %" budgets for op changes, edits (including rewiring and slot retargeting), growth, removal and depth shifts. Growth has eleven methods: neutral path insertions (`v_insert`, `s_insert`, `m_after_m`, `m_insert`), branches into open m slots (`slot_fill`, input taps, `v_link`/`s_link`, `m_clone`), with receivers chosen to spread width across the net. Removal is exact neutral pruning with cascades, plus optional constant folding. Growth can be limited to a share of generations and nets, with an s↔v swap for the nets that miss out. A `fill` growth budget adds an exact share of the net's neurons (retrying skipped attempts), optionally filling open m slots with links inside the same total (bulking). With `history_read_prob`, new connections can read length and history nodes. Every mutation operation is counted. |
 
 The full, normative definition lives in [`spec/`](spec/README.md).
 

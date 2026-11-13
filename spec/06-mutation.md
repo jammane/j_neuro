@@ -24,6 +24,42 @@ using the procedures of [08](08-rng.md), in exactly the order this document list
    rules**. Every operation that adds or moves a connection, or removes a neuron from a path,
    checks them right after it changes the net and is undone (and skipped) if one is broken:
    rewiring, connecting a slot, retargeting a slot, every growth method, and bypass.
+6. **Depth rules.** No mutation may break a depth rule ([03](03-net-structure.md#depth-rules)):
+   the s gap, history positions within `k`, and connections strictly shallower than their reader.
+   The depth ranges below already leave the s gap; an operation that could still break a depth
+   rule (an op or `k` change below the history floor, a type swap of a read s_neuron, …) checks
+   it with the structural rules and is undone and skipped the same way.
+
+**Gaps and depth limits.** `gap(X) = in_qty_max + 1` if X is (or will be) an s_neuron, else 0. For a
+node X:
+
+```
+floor(X) = max(depth(c) for c in connections of X's neuron) + 1 + gap(X)
+           (1 + gap(X) if it has none: a missing s input counts as depth 0)
+ceil(X)  = min(depth(r) − gap(r) + j − 1 for every connection (X, j) read by the neuron writing r)
+           (D_MAX − 1 if nothing reads X)
+```
+
+`floor(X) ≤ depth(X) ≤ ceil(X)` holds for every hidden node of a valid net. A connection's depth is
+`depth(node) − position` ([03](03-net-structure.md#connections-and-history-nodes)).
+
+**Choosing a source.** Rewiring, retargeting, connecting a slot and links choose the node a new
+connection reads from a list `C` of live nodes (ascending id) given by the operation. With
+`history_read_prob > 0` they may read a length or history node instead. `H` is the list of
+connections `(S, p)` (`S` a live hidden s_neuron node, `1 ≤ p ≤ k(S) + 1`, ascending
+`(id of S, p)`) whose depth `depth(S) − p` meets the same depth bounds as `C` and that meet the
+same exclusions:
+
+```
+source(C, H):
+    if history_read_prob > 0:
+        x = u()
+        if x < history_read_prob and H is not empty: return H[below(len(H))]
+    if C is empty: skip
+    return (C[below(len(C))], 0)
+```
+
+With `history_read_prob = 0` nothing extra is drawn and only nodes are chosen.
 
 ## Mutation profile
 
@@ -62,6 +98,7 @@ A per-type value overrides the overall value for neurons of that type.
 | `slot_add_prob` | 0.75 | no | With `slot_edit = biased`: chance a slot change adds a connection |
 | `no_growth_swap` | `on` | no | `off` or `on`: in a growth generation, an offspring whose `growth_net_prob` draw fails gets one [type swap](#type-swap) instead |
 | `open_slot_fill_pct` | 0.0 | no | With `growth_budget = fill`: % of each m_neuron's empty slots that phase 3 fills with new links, within the same growth target, in [0, 100] ([open-slot fill](#open-slot-fill)) |
+| `history_read_prob` | 0.0 | no | Probability that a new connection made by rewiring, retargeting, connecting a slot or a link reads a length or history node of an s_neuron instead of a node ([choosing a source](#principles)), in [0, 1] |
 | `prune` | `static` | no | `any` or `static`: with `static`, edits never cut a live branch — an m slot is emptied only if its source is constant ([07](07-removal.md#constant-folding)), and a retarget never leaves its old source without readers |
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
@@ -141,7 +178,8 @@ Each attempt picks a neuron and changes its operation to a different one, unifor
   to the new op's identity weight ([04](04-neurons.md#v_neuron)).
 - **s:** draw `j = below(4)` over the other four s ops `[mean, median, min, max, lag]` (same
   skip-current rule).
-  If the new op is `median` and `k` is even, set `k = k − 1`.
+  If the new op is `median` and `k` is even, set `k = k − 1`; if that is below `hf − 1`
+  ([03](03-net-structure.md#neuron-rules)), restore the neuron and skip.
 - **m:** draw `j = below(3)` over the other three aggregation ops (m_neurons have no `lag`).
 
 ## Phase 2 — Parameter edits
@@ -155,10 +193,11 @@ edits the parameter as described below.
 ```
 rewire:
     old = current input (may be missing)
-    if old is connected and this neuron is old's only reader: skip   # would orphan old
-    C = live nodes with span_floor(depth(this node)) <= depth < depth(this node), ≠ old, ascending id
-    if C is empty: skip
-    input = C[below(len(C))]
+    if old is connected and this neuron is the only reader of old's node: skip   # would orphan it
+    d = depth(this node) − gap(this neuron)
+    C = live nodes with span_floor(depth(this node)) <= depth < d, ≠ old's node, ascending id
+    H = history nodes with span_floor(depth(this node)) <= depth < d, ≠ old
+    input = source(C, H)
     if the path rule or a structural rule is now broken: restore old; skip
 ```
 
@@ -187,6 +226,7 @@ k2 = clamp(k + d, 1, in_qty_max)
 if op == median and k2 is even:
     k2 = k2 - 1 if k2 > k else k2 + 1
 if k2 == k: skip
+if k2 < hf(this neuron) − 1: skip    # a read history node would disappear
 k = k2
 ```
 
@@ -200,10 +240,11 @@ retarget:
     i = S[below(len(S))]; old = slot i
     if prune == static and slot i is the only connection to old: skip   # would strand old
     if emptying slot i would break the path rule: skip        # slot i is on a critical path
-    C = live nodes with span_floor(depth(this node)) <= depth <= depth(old), ≠ old, not connected
-        to any slot of this neuron, ascending id
-    if C is empty: skip
-    slot i = C[below(len(C))]
+    C = live nodes with span_floor(depth(this node)) <= depth <= depth(old), ≠ old's node, not
+        connected (at position 0) to any slot of this neuron, ascending id
+    H = history nodes with span_floor(depth(this node)) <= depth <= depth(old), ≠ old, not
+        connected to any slot of this neuron
+    slot i = source(C, H)
     if a structural rule is now broken: slot i = old; skip
 ```
 
@@ -220,10 +261,10 @@ repeat c times:
     else:
         i = below(in_qty_max)
     if slot i is empty:
-        C = live nodes with depth < depth(this node), not connected to any slot of this
-            neuron, ascending id
-        if C is empty: continue
-        slot i = C[below(len(C))]
+        C = live nodes with depth < depth(this node), not connected (at position 0) to any slot
+            of this neuron, ascending id
+        H = history nodes with depth < depth(this node), not connected to any slot of this neuron
+        slot i = source(C, H)                        # an empty C skips only this slot change
         if a structural rule is now broken: slot i = empty; continue
     else:
         if prune == static and old's constant value is unknown: continue   # live source
@@ -259,7 +300,8 @@ L = live neurons that are v or s, ascending id; if empty: skip
 X = L[below(len(L))]
 v -> s: s_neuron, same input, op = choice(5) (s ops), k = 1
 s -> v: v_neuron, same input, op = choice(4), inversion none, that op's identity weight
-if a structural rule is now broken: restore X; skip        # a path would be short of v or s
+if a structural or depth rule is now broken: restore X; skip
+        # a path short of v or s; a v -> s without the s gap; an s -> v whose history is read
 ```
 
 The node, its `birth` and `born_gen` are kept. Both kinds are 1:1, so the run rule cannot break;
@@ -333,13 +375,16 @@ unchanged.
 
 1. **Choose A.** `v_insert`, `s_insert`, `m_insert`: any live non-input node. `m_after_m`: any
    live node written by an m_neuron. Pick `A = list[below(len)]` (ascending id). None → skip.
-2. **Find the gap.** `lo` = (largest depth among N's connections) + 1, or 1 if N has none.
-   `hi = depth(A) − 1`.
-   If `lo > hi` and A is hidden: let `ub` = (smallest depth among A's readers) − 1, or
-   `D_MAX − 1` if A has no readers. If `lo ≤ ub − 1`, set `depth(A) = ub` and
-   `hi = ub − 1`; otherwise skip (A is not moved).
+2. **Find the gap.** `lo = floor(A)` for N (N keeps its connections, so this is N's floor,
+   including N's own s gap). `hi = depth(A) − 1 − gap(X)` (X: s for `s_insert`, else 0).
+   If `lo > hi` and A is hidden: let `ub = min(depth(r) − gap(r) − 1)` over the neurons r reading A
+   at position 0, or `D_MAX − 1` if there are none (history reads of A move to B in step 3, so
+   they do not limit A). If `lo ≤ ub − 1 − gap(X)`, set `depth(A) = ub` and
+   `hi = ub − 1 − gap(X)`; otherwise skip (A is not moved).
 3. **Place B.** `depth(B) = place(lo, hi)`. B is appended as a new node. N, with its
-   `birth` and `born_gen`, moves to B.
+   `birth` and `born_gen`, moves to B, and so does its history: every connection `(A, j)` with
+   `j ≥ 1` becomes `(B, j)`. B is shallower than A, so those connections stay shallower than
+   their readers.
 4. **Create X** at A:
    - `v_insert`: v_neuron, input B, `op = choice(4)`, identity weight, inversion as above.
      **Exactly neutral** when no inversion is drawn.
@@ -366,10 +411,10 @@ silencing v_neuron **W** (`mul`, weight `0.0`) so the net's outputs are unchange
    None → skip. R is chosen as in [choosing a receiver](#choosing-a-receiver).
 2. **Choose slot.** `s = empty_slots(R)[below(count)]` (ascending slot index).
 3. **Choose type.** `T = weighted(slot_fill_type_weights)` (order v, s, m). Cap reached → skip.
-4. **Depths.** If `depth(R) < 3` → skip.
-   `depth(W) = place(2, depth(R) − 1)`; `depth(Q) = place(1, depth(W) − 1)`.
-5. **Build Q.** `C` = live nodes with depth < depth(Q), ascending id (never empty: inputs
-   qualify).
+4. **Depths.** With `g = gap(T)`: if `depth(R) < 3 + g` → skip.
+   `depth(W) = place(2 + g, depth(R) − 1)`; `depth(Q) = place(1 + g, depth(W) − 1)`.
+5. **Build Q.** `C` = live nodes with depth < depth(Q) − g, ascending id (never empty: inputs
+   qualify). Q reads nodes only, never history nodes.
    - v: `input = C[below(len(C))]`, `op = choice(4)`, inversion as above, identity weight.
    - s: `input = C[below(len(C))]`, `op = choice(5)` (s ops), `k = 1`.
    - m: `count = 1 + below(min(in_qty_max, len(C)))`; for each of `count` slots in order,
@@ -391,8 +436,9 @@ of an existing m_neuron **R**. Unlike slot fill, X is not silenced: R's output c
    ascending id. None → skip. R is chosen as in [choosing a receiver](#choosing-a-receiver),
    with `tap_peak`.
 2. **Choose slot.** `s = empty_slots(R)[below(count)]` (ascending slot index).
-3. **Depth.** `hi` = largest depth among the nodes R reads. If `hi < 1` (R reads only inputs)
-   → skip. `depth(X) = place(1, hi)`, so X is never deeper than what R already reads.
+3. **Depth.** `hi` = largest depth among R's connections. With `g = gap(X)` (`s_tap`:
+   `in_qty_max`, else 0): if `hi < 1 + g` → skip. `depth(X) = place(1 + g, hi)`, so X is never
+   deeper than what R already reads.
 4. **Build X.**
    - `v_tap`: v_neuron, `op = choice(4)`, `input = below(n_inputs)`, inversion as for new
      v_neurons, identity weight.
@@ -436,17 +482,19 @@ slots m_insert leaves are the main targets.
    ascending id. None → skip. R is chosen as in [choosing a receiver](#choosing-a-receiver),
    each weight multiplied by R's number of empty slots.
 2. **Choose slot.** `s = empty_slots(R)[below(count)]`.
-3. **Choose the source.** `hi` = largest depth among the nodes R reads;
+3. **Choose the source.** `hi` = largest depth among R's connections;
    `span = floor(link_max_span × D_MAX)` (binary64 product, truncated); `lo = depth(R) − span`, or
-   0 if `depth(R) ≤ span`. `C` = live nodes with `lo ≤ depth ≤ hi` not connected to any slot of R,
-   ascending id (inputs included). None → skip. `src = C[below(len(C))]`.
-4. **Depth.** `lo = depth(src) + 1`, `hi2 = depth(R) − 1`; if `lo > hi2` → skip.
+   0 if `depth(R) ≤ span`. `C` = live nodes with `lo ≤ depth ≤ hi` not connected (at position 0)
+   to any slot of R, ascending id (inputs included); `H` = history nodes with `lo ≤ depth ≤ hi`
+   not connected to any slot of R. `src = source(C, H)`.
+4. **Depth.** `lo = depth(src) + 1 + gap(X)`, `hi2 = depth(R) − 1`; if `lo > hi2` → skip.
    `depth(X) = place(lo, hi2)`.
 5. **Build X.** `v_link`: v_neuron, input `src`, `op = choice(4)`, inversion as for new v_neurons,
    identity weight. `s_link`: s_neuron, input `src`, `op = choice(5)`, `k = 1`.
 6. **Connect** and check the structural rules as for input taps.
 
-RNG order: method, R, slot, source, depth (if drawn), op, inversion draws (v only).
+RNG order: method, R, slot, source (with its `u()` if `history_read_prob > 0`), depth (if
+drawn), op, inversion draws (v only).
 
 ### Open-slot fill
 
@@ -502,8 +550,8 @@ Each attempt picks a node from the live **hidden** nodes (ascending id; none →
 neuron's type is used for caps.
 
 ```
-lo = (largest depth among its neuron's connections) + 1, or 1 if none
-hi = (smallest depth among its readers) − 1, or D_MAX − 1 if none
+lo = floor(node)
+hi = ceil(node)                           # readers' s gaps and history positions included
 if lo == hi: skip
 uniform: d = lo + below(hi − lo + 1)
 center:  d = lo + (hi − lo) / 2           # integer division
@@ -511,7 +559,8 @@ if d == depth: skip
 depth = d
 ```
 
-Depth shifts never change outputs. They redistribute gaps so later insertions find room.
+Depth shifts never change outputs. They redistribute gaps so later insertions find room. An
+s_neuron's history nodes move with it.
 
 ## Diversity injection
 

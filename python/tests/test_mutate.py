@@ -462,6 +462,8 @@ def test_midpoint_insert_depth():
             x = readers_b[0]                                   # X: the inserted neuron, writes A
             conns = connections(node.neuron)
             lo = max(child.nodes[c].depth for c in conns) + 1 if conns else 1
+            if isinstance(node.neuron, SNeuron):
+                lo += child.in_qty_max + 1                     # N keeps its s gap (spec/03)
             hi = child.nodes[x].depth - 1
             assert node.depth == lo + (hi - lo) // 2
             checked += 1

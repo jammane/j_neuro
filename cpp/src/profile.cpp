@@ -6,7 +6,7 @@ namespace jneuro {
 
 using json = nlohmann::json;
 
-void check_format(const json& d, const char* fmt);  // io.cpp
+void check_format(const json& d, const char* fmt, bool accept_05);  // io.cpp
 
 namespace {
 const std::map<std::string, double>& numeric_defaults() {
@@ -17,7 +17,7 @@ const std::map<std::string, double>& numeric_defaults() {
         {"rewire_prob", 0.05},       {"insert_inversion_prob", 0.05}, {"min_age_for_removal", 5.0},
         {"slot_retarget_prob", 0.05}, {"width_peak", 0.5}, {"tap_peak", 0.25}, {"link_max_span", 0.25},
         {"growth_gen_prob", 1.0}, {"growth_net_prob", 1.0}, {"slot_add_prob", 0.75},
-        {"open_slot_fill_pct", 0.0}};
+        {"open_slot_fill_pct", 0.0}, {"history_read_prob", 0.0}};
     return d;
 }
 const std::set<std::string>& overridable() {
@@ -34,7 +34,7 @@ const char* const kOverallOrder[] = {
     "insert_inversion_prob", "min_age_for_removal", "add_method_weights", "slot_fill_type_weights",
     "rng_mode", "growth_budget", "constant_folding", "insert_depth", "slot_retarget_prob", "width_bias",
     "width_peak", "tap_peak", "prune", "link_max_span", "growth_gen_prob", "growth_net_prob", "no_growth_swap",
-    "slot_edit", "slot_add_prob", "open_slot_fill_pct"};
+    "slot_edit", "slot_add_prob", "open_slot_fill_pct", "history_read_prob"};
 const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap",
                                 "m_clone",   "m_insert", "v_link",   "s_link"};
 constexpr std::array<double, 11> kMethodDefaults{0, 10, 5, 5, 10, 10, 5, 60, 20, 24, 24};
@@ -75,6 +75,7 @@ void Profile::set_overall(const std::string& f, double v) {
     if ((f == "growth_gen_prob" || f == "growth_net_prob" || f == "slot_add_prob") && !(v >= 0.0 && v <= 1.0))
         throw ValidationError(f + " must be in [0, 1]");
     if (f == "open_slot_fill_pct" && !(v >= 0.0 && v <= 100.0)) throw ValidationError(f + " must be in [0, 100]");
+    if (f == "history_read_prob" && !(v >= 0.0 && v <= 1.0)) throw ValidationError(f + " must be in [0, 1]");
     overall_[f] = v;
 }
 
@@ -89,6 +90,8 @@ void Profile::merge_overall(const json& body) {
                 throw ValidationError("link_max_span must be in (0, 1]");
             if ((k == "growth_gen_prob" || k == "growth_net_prob" || k == "slot_add_prob") &&
                 !(overall_[k] >= 0.0 && overall_[k] <= 1.0))
+                throw ValidationError(k + " must be in [0, 1]");
+            if (k == "history_read_prob" && !(overall_[k] >= 0.0 && overall_[k] <= 1.0))
                 throw ValidationError(k + " must be in [0, 1]");
             if (k == "open_slot_fill_pct" && !(overall_[k] >= 0.0 && overall_[k] <= 100.0))
                 throw ValidationError(k + " must be in [0, 100]");
@@ -203,7 +206,7 @@ json Profile::to_json() const {
         }
     }
     o["format"] = "j_neuro.profile";
-    o["spec_version"] = "0.5.0";
+    o["spec_version"] = "0.6.0";
     o["overall"] = overall;
     for (std::size_t t = 0; t < 3; ++t) {
         json sec = json::object();
@@ -231,7 +234,7 @@ Profile profile_from_json(const std::string& text) {
     } catch (const json::exception& e) {
         throw ValidationError(std::string("invalid JSON: ") + e.what());
     }
-    check_format(d, "j_neuro.profile");
+    check_format(d, "j_neuro.profile", true);  // 0.5 profiles lack only history_read_prob
     return Profile::from_json(d);
 }
 

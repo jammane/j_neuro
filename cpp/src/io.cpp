@@ -27,11 +27,13 @@ bool version_compatible(const std::string& v) {
     }
 }
 
-void check_format(const json& d, const char* fmt) {
+void check_format(const json& d, const char* fmt, bool accept_05) {
     if (!d.is_object() || !d.contains("format") || d.at("format") != fmt)
         throw ValidationError(std::string("format must be ") + fmt);
-    if (!d.contains("spec_version") || !d.at("spec_version").is_string() ||
-        !version_compatible(d.at("spec_version").get<std::string>()))
+    if (!d.contains("spec_version") || !d.at("spec_version").is_string())
+        throw ValidationError("unsupported spec_version");
+    const std::string v = d.at("spec_version").get<std::string>();
+    if (!version_compatible(v) && !(accept_05 && v.rfind("0.5.", 0) == 0))
         throw ValidationError("unsupported spec_version");
 }
 
@@ -89,13 +91,18 @@ std::uint8_t Reader::enum_byte(std::uint8_t count, const char* field) {
     return v;
 }
 
-void Reader::header(const char magic[4]) {
+bool Reader::header(const char magic[4]) {
     if (std::memcmp(take(4), magic, 4) != 0) throw ValidationError(what_ + ": wrong magic");
-    if (u(2) != kFormatVersion) throw ValidationError(what_ + ": unknown format version");
+    const auto format = u(2);
     const auto major = static_cast<std::uint16_t>(u(2));
     const auto minor = static_cast<std::uint16_t>(u(2));
     u(2);
-    if (!version_compatible(major, minor)) throw ValidationError(what_ + ": unsupported spec version");
+    const bool legacy = is_legacy_05(major, minor);
+    if (!legacy && !version_compatible(major, minor)) throw ValidationError(what_ + ": unsupported spec version");
+    const bool net = std::memcmp(magic, "JNET", 4) == 0;
+    const std::uint64_t want = net ? (legacy ? 1 : kNetFormatVersion) : kPopFormatVersion;
+    if (format != want) throw ValidationError(what_ + ": unknown format version");
+    return legacy;
 }
 
 void Reader::done() const {
@@ -107,7 +114,7 @@ void Reader::done() const {
 namespace {
 
 template <class D>
-Net<D> parse_net(detail::Reader& r, Priority priority) {
+Net<D> parse_net(detail::Reader& r, Priority priority, bool legacy) {
     constexpr std::size_t W = sizeof(D);
     const std::uint64_t none = static_cast<std::uint64_t>(Net<D>::d_max);
     Net<D> net;
@@ -122,9 +129,14 @@ Net<D> parse_net(detail::Reader& r, Priority priority) {
     if (count > Net<D>::d_max) throw ValidationError("jnet: more than D_MAX nodes");
     if (net.in_qty_max < 3 || net.in_qty_max % 2 == 0)
         throw ValidationError("jnet: in_qty_max must be odd and >= 3");
-    auto ref = [&]() -> std::optional<NodeId> {
+    // a conn: node id, then (format 2) its position
+    auto ref = [&](std::uint32_t& pos) -> std::optional<NodeId> {
         const std::uint64_t v = r.u(W);
-        if (v == none) return std::nullopt;
+        pos = legacy ? 0 : static_cast<std::uint32_t>(r.u(4));
+        if (v == none) {
+            if (pos != 0) throw ValidationError("jnet: empty connection with a position");
+            return std::nullopt;
+        }
         if (v > 0xFFFFFFFFull) throw ValidationError("jnet: node id out of range");
         return static_cast<NodeId>(v);
     };
@@ -136,26 +148,32 @@ Net<D> parse_net(detail::Reader& r, Priority priority) {
         const std::uint8_t kind = r.enum_byte(4, "neuron type");
         if (kind == 1) {
             VNeuron v;
-            v.input = ref();
+            v.input = ref(v.input_pos);
             v.inversion = static_cast<Inversion>(r.enum_byte(3, "inversion"));
             v.op = static_cast<VOp>(r.enum_byte(4, "v op"));
             v.weight = r.f64();
             node.neuron = v;
         } else if (kind == 2) {
             SNeuron s;
-            s.input = ref();
+            s.input = ref(s.input_pos);
             s.op = static_cast<AggOp>(r.enum_byte(kSOps, "op"));
             s.k = static_cast<std::uint32_t>(r.u(4));
             node.neuron = s;
         } else if (kind == 3) {
             MNeuron m;
             m.op = static_cast<AggOp>(r.enum_byte(kMOps, "op"));  // lag is s-only
-            for (std::uint32_t k = 0; k < net.in_qty_max; ++k) m.slots.push_back(ref());
+            m.slots.resize(net.in_qty_max);
+            for (std::uint32_t k = 0; k < net.in_qty_max; ++k) {
+                std::uint32_t p = 0;
+                const auto c = ref(p);
+                m.set(k, c, p);
+            }
             node.neuron = m;
         }
         net.nodes.push_back(std::move(node));
     }
     r.done();
+    if (legacy) respace_05(net);
     net.validate();
     return net;
 }
@@ -164,12 +182,12 @@ Net<D> parse_net(detail::Reader& r, Priority priority) {
 
 AnyNet from_bytes(const Bytes& data) {
     detail::Reader r(data, "jnet");
-    r.header("JNET");
+    const bool legacy = r.header("JNET");
     const auto priority = static_cast<Priority>(r.enum_byte(3, "priority"));
     switch (static_cast<DepthType>(r.enum_byte(3, "depth_type"))) {
-        case DepthType::U16: return parse_net<std::uint16_t>(r, priority);
-        case DepthType::U32: return parse_net<std::uint32_t>(r, priority);
-        case DepthType::U64: return parse_net<std::uint64_t>(r, priority);
+        case DepthType::U16: return parse_net<std::uint16_t>(r, priority, legacy);
+        case DepthType::U32: return parse_net<std::uint32_t>(r, priority, legacy);
+        case DepthType::U64: return parse_net<std::uint64_t>(r, priority, legacy);
     }
     throw ValidationError("jnet: unknown depth_type");
 }

@@ -18,6 +18,95 @@ def connections(neuron) -> List[int]:
     return [] if neuron.input is None else [neuron.input]
 
 
+def conns(neuron) -> List[Tuple[int, int]]:
+    """Connections (node, position) of a neuron, in slot order (spec/03)."""
+    if neuron is None:
+        return []
+    if isinstance(neuron, MNeuron):
+        return [(s, neuron.slot_pos(i)) for i, s in enumerate(neuron.slots) if s is not None]
+    return [] if neuron.input is None else [(neuron.input, neuron.input_pos)]
+
+
+def conn_depth(net: Net, node: int, pos: int) -> int:
+    """Depth of a connection: depth(node) - position (spec/03)."""
+    return net.nodes[node].depth - pos
+
+
+def depth_rule_error(net: Net, removed: Optional[Set[int]] = None) -> Optional[str]:
+    """The first broken depth rule of spec/03 (connections shallower than their reader, the s gap,
+    history positions within k of a hidden s_neuron), or None. Live nodes only."""
+    q = net.in_qty_max
+    n = len(net.nodes)
+    for i in range(net.n_inputs, n):
+        if (removed and i in removed) or net.nodes[i].neuron is None:
+            continue
+        d = net.nodes[i].depth
+        neuron = net.nodes[i].neuron
+        for c, p in conns(neuron):
+            if c >= n:
+                return "bad reference"
+            if p > 0:
+                src = net.nodes[c]
+                if not net.is_hidden(c) or not isinstance(src.neuron, SNeuron) or p > src.neuron.k + 1 \
+                        or p > src.depth:
+                    return "history connection: no such history node"
+            if conn_depth(net, c, p) >= d:
+                return "connection depth must be smaller"
+        if isinstance(neuron, SNeuron):
+            inp = conn_depth(net, neuron.input, neuron.input_pos) if neuron.input is not None else 0
+            if inp + q + 1 >= d:
+                return "s gap: an s_neuron's input must be shallower than its depth - (in_qty_max + 1)"
+    return None
+
+
+def history_floors(net: Net, removed: Optional[Set[int]] = None) -> List[int]:
+    """Largest history position read from each node (spec/03 history floor), by node id."""
+    hf = [0] * len(net.nodes)
+    for i, node in enumerate(net.nodes):
+        if (removed and i in removed) or node.neuron is None:
+            continue
+        for c, p in conns(node.neuron):
+            if c < len(hf):
+                hf[c] = max(hf[c], p)
+    return hf
+
+
+def s_gap(net: Net, neuron) -> int:
+    """gap(X) of spec/06: in_qty_max + 1 for an s_neuron (length node and longest history), else 0."""
+    return net.in_qty_max + 1 if isinstance(neuron, SNeuron) else 0
+
+
+def depth_floor(net: Net, node_id: int, removed: Optional[Set[int]] = None) -> int:
+    """floor(X) of spec/06: the shallowest depth node_id may have (live connections; its own s gap)."""
+    neuron = net.nodes[node_id].neuron
+    f = 1
+    for c, p in conns(neuron):
+        if not removed or c not in removed:
+            f = max(f, conn_depth(net, c, p) + 1)
+    return f + s_gap(net, neuron)
+
+
+def depth_ceil(net: Net, node_id: int, removed: Optional[Set[int]] = None) -> int:
+    """ceil(X) of spec/06: min over live connections (node_id, j) of depth(r) - gap(r) + j - 1."""
+    hi = net.d_max - 1
+    for r, node in enumerate(net.nodes):
+        if (removed and r in removed) or node.neuron is None:
+            continue
+        for c, j in conns(node.neuron):
+            if c == node_id:
+                hi = min(hi, node.depth - s_gap(net, node.neuron) + j - 1)
+    return hi
+
+
+def struct_depth(net: Net, i: int) -> int:
+    """Structural depth (spec/03 structural order): the depth, or for an s_neuron the bottom of its
+    gap, depth - (in_qty_max + 1); each node then comes after everything it reads."""
+    d = net.nodes[i].depth
+    if isinstance(net.nodes[i].neuron, SNeuron):
+        return max(0, d - (net.in_qty_max + 1))
+    return d
+
+
 def _live(net: Net, removed) -> List[bool]:
     alive = [True] * len(net.nodes)
     if removed:
@@ -84,7 +173,7 @@ def mix_ok(net: Net, removed: Optional[Set[int]] = None) -> bool:
     if p == 0:
         return True
     alive = _live(net, removed)
-    order = sorted((i for i in range(len(net.nodes)) if alive[i]), key=lambda i: net.nodes[i].depth)
+    order = sorted((i for i in range(len(net.nodes)) if alive[i]), key=lambda i: struct_depth(net, i))
     fewest: List[Optional[Tuple[int, int, int]]] = [None] * len(net.nodes)  # min (v, s, m) from any input
     for i in order:
         neuron = net.nodes[i].neuron
@@ -114,7 +203,7 @@ def run_ok(net: Net, removed: Optional[Set[int]] = None) -> bool:
         return True
     alive = _live(net, removed)
     reach = reaching_output(net, removed)
-    order = sorted((i for i in range(len(net.nodes)) if alive[i]), key=lambda i: net.nodes[i].depth)
+    order = sorted((i for i in range(len(net.nodes)) if alive[i]), key=lambda i: struct_depth(net, i))
     run_1: List[Optional[int]] = [None] * len(net.nodes)    # longest run ending here, from an input
     run_m: List[Optional[int]] = [None] * len(net.nodes)
     for i in order:
@@ -140,10 +229,5 @@ def is_immune(net: Net, node_id: int, removed: Optional[Set[int]] = None) -> boo
 
 
 def legal_depth_range(net: Net, node_id: int, removed: Optional[Set[int]] = None) -> Tuple[int, int]:
-    """[lo, hi] depths node_id may take without breaking any neuron (spec/06)."""
-    alive = _live(net, removed)
-    conns = [c for c in connections(net.nodes[node_id].neuron) if alive[c]]
-    lo = max(net.nodes[c].depth for c in conns) + 1 if conns else 1
-    rd = [r for r in readers(net, removed)[node_id]]
-    hi = min(net.nodes[r].depth for r in rd) - 1 if rd else net.d_max - 1
-    return lo, hi
+    """[lo, hi] depths node_id may take without breaking any neuron (spec/06 floor and ceil)."""
+    return depth_floor(net, node_id, removed), depth_ceil(net, node_id, removed)

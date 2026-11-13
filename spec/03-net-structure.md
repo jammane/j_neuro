@@ -6,7 +6,7 @@
 |---|---|---|
 | `priority` | `SPEED`, `MEMORY`, `BALANCED` | Secondary goal after accuracy. Changes storage, caching and memory reuse only. MUST NOT change any result. |
 | `depth_type` | `U16`, `U32`, `U64` | Unsigned integer type of depth values. `D_MAX` = 2¹⁶−1, 2³²−1 or 2⁶⁴−1. Fixed width on every platform. |
-| `in_qty_max` | odd integer ≥ 3 | Slots per m_neuron; maximum s_neuron history length `k`. |
+| `in_qty_max` | odd integer ≥ 3 | Slots per m_neuron; maximum s_neuron history length `k`; the depth gap below every s_neuron ([depth rules](#depth-rules)). |
 | `n_inputs` | integer ≥ 1 | Number of input nodes. |
 | `n_outputs` | integer ≥ 1 | Number of output nodes. |
 | `path_mix` | integer 0–255 | Minimum number of v, of s and of m neurons on every input-to-output path ([mix rule](#mix-rule)). |
@@ -37,16 +37,57 @@ Each node has:
 `n_inputs … n_inputs+n_outputs−1` are the outputs, in caller order. Hidden nodes follow.
 New nodes are appended at the end.
 
+## Connections and history nodes
+
+A **connection** (a v/s input or a connected m slot) is a pair `(node, position)`:
+
+- position `0` reads the node itself;
+- position `1` reads the **length node** of the node's s_neuron: how many of its history entries
+  are filled ([04](04-neurons.md#s_neuron));
+- position `j + 1` (`j ≥ 1`) reads **history node `j`** of the node's s_neuron: the value that
+  s_neuron's input had `j` steps ago.
+
+Only nodes written by an s_neuron have these nodes, and only positions `1 … k + 1` exist for its
+current history length `k`. An s_neuron at depth `d` has its length node at depth `d − 1` and
+history node `j` at depth `d − 1 − j`: the further back in time, the shallower, and the s_neuron's
+own output is the next depth after its length node. Together they fill the consecutive depths
+`d − k − 1 … d − 1` below the s_neuron. Length and
+history nodes have no depth of their own: whenever the s_neuron's depth changes, they move with it
+as one unit. They take no node id; they exist whether or not anything reads them, and they are
+not stored
+([09](09-serialization.md)). The **depth of a connection** is the depth of the node it reads:
+`depth(node) − position`.
+
+For every structural rule below (path, mix and run rules, reachability, immunity, garbage
+collection) a connection `(S, p)` counts as a connection to `S`: a path through its length or a
+history node passes through the s_neuron S. An s_neuron is therefore useless only when neither its
+output nor any of its connected length or history nodes can affect an output
+([07](07-removal.md)).
+
+**Structural order.** A history reader can be shallower than its s_neuron, so the rule checks
+below visit nodes in ascending **structural depth**, ties by id: a node's depth, except
+`depth − (in_qty_max + 1)` for an s_neuron (the bottom of its gap). An s_neuron's input is
+shallower than that, and every reader of it or of its length and history nodes is deeper, so
+each node is visited after everything it reads. Where an informative check below says "in
+ascending depth", it means this order. (Evaluation still runs in depth order, [05](05-evaluation.md):
+history values come from earlier steps.)
+
 ## Depth rules
 
 1. Input nodes have depth `0`. Output nodes have depth `D_MAX`. Hidden nodes have depth in
    `[1, D_MAX − 1]`.
-2. Every connection of a neuron MUST refer to a node with depth **strictly less than** the
-   depth of the node the neuron writes.
-3. Any number of nodes may share a depth.
+2. Every connection of a neuron MUST have a depth **strictly less than** the depth of the node
+   the neuron writes.
+3. **s gap.** An s_neuron at depth `d` MUST have an input connection of depth
+   `< d − (in_qty_max + 1)` (a missing input counts as depth 0, so `d > in_qty_max + 1`). The gap
+   holds room for the length node and the longest history (`k = in_qty_max`), so changing `k` never
+   moves anything.
+4. A connection `(S, p)` with `p ≥ 1` MUST read a **hidden** node written by an s_neuron with
+   `k ≥ p − 1`. (Output nodes have no readers, length and history nodes included.)
+5. Any number of nodes may share a depth.
 
-Consequences: nets are acyclic; output nodes have no readers; nodes at the same depth never
-depend on each other.
+Consequences: nets are acyclic (a history node only holds values of earlier steps); output nodes
+have no readers; nodes at the same depth never depend on each other.
 
 ## Neuron rules
 
@@ -54,6 +95,8 @@ depend on each other.
 - An m_neuron has exactly `in_qty_max` slots, each empty or connected. Several slots MAY
   connect to the same node (this can result from identity bypass, [07](07-removal.md)).
 - A v_neuron or s_neuron input MAY be missing. Such a neuron reads 0 and acts as a constant.
+- The **history floor** `hf(S)` of an s_neuron is the largest position any connection reads
+  from it, or 0. Its `k` MUST be at least `hf(S) − 1` (depth rule 4).
 
 ## Path rule
 
@@ -154,7 +197,9 @@ hidden node. With `longest` = the longest chain, there are `H = L + longest − 
 tree levels `1 … L`, then chain positions `L + 1 …`. A hidden node of level `ℓ` gets depth
 `(D_MAX / (H + 1)) * ℓ`, using integer division first.
 
-If the resulting net would exceed the node cap, `create` fails with a validation error.
+If the resulting net would exceed the node cap or break the s gap (levels closer than
+`in_qty_max + 2` apart, possible only with `U16` and very many levels), `create` fails with a
+validation error.
 
 **RNG order and ids.** Draws happen in this order: during the tree, one op choice per neuron as
 it is created (level by level, each level in node order); then the shuffle draws of every output,
