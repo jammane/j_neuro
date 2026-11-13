@@ -52,7 +52,8 @@
    "growth_net_prob": 1.0,
    "no_growth_swap": "on",
    "slot_edit": "toggle",
-   "slot_add_prob": 0.75
+   "slot_add_prob": 0.75,
+   "open_slot_fill_pct": 0.0
   },
   "v": {},
   "s": {},

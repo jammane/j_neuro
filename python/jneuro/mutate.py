@@ -50,9 +50,10 @@ DEFAULTS = {
     "no_growth_swap": "on",
     "slot_edit": "toggle",
     "slot_add_prob": 0.75,
+    "open_slot_fill_pct": 0.0,
 }
 CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared"),
-           "growth_budget": ("up_to", "exact"), "constant_folding": ("off", "on"),
+           "growth_budget": ("up_to", "exact", "fill"), "constant_folding": ("off", "on"),
            "insert_depth": ("uniform", "midpoint"), "width_bias": ("none", "center", "deficit"),
            "prune": ("any", "static"), "no_growth_swap": ("off", "on"),
            "slot_edit": ("toggle", "biased")}
@@ -92,6 +93,8 @@ class Profile:
                 raise ValidationError(f"{k} must be in (0, 1)")
             if k == "link_max_span" and v is not None and not 0.0 < float(v) <= 1.0:
                 raise ValidationError("link_max_span must be in (0, 1]")
+            if k == "open_slot_fill_pct" and v is not None and not 0.0 <= float(v) <= 100.0:
+                raise ValidationError("open_slot_fill_pct must be in [0, 100]")
             if k in ("growth_gen_prob", "growth_net_prob", "slot_add_prob") and v is not None and \
                     not 0.0 <= float(v) <= 1.0:
                 raise ValidationError(f"{k} must be in [0, 1]")
@@ -176,7 +179,7 @@ class _Mutation:
     def budget(self, field):
         rng = self.rng
         n = float(len(self.live_neurons()))
-        exact = field == "growth_max_pct" and self.p.overall["growth_budget"] == "exact"
+        exact = field == "growth_max_pct" and self.p.overall["growth_budget"] in ("exact", "fill")
 
         def limit(pct):                       # a nonzero cap is at least 1 (spec/06)
             return 0.0 if pct == 0 else max(1.0, pct * n / 100.0)
@@ -195,12 +198,17 @@ class _Mutation:
 
     def run_phase(self, field, attempt):
         b, caps, used = self.budget(field)
-        for _ in range(b):
+        # fill: b is a target in neurons added; skipped attempts are retried, up to 10 * b tries
+        fill = field == "growth_max_pct" and self.p.overall["growth_budget"] == "fill"
+        added = tries = 0
+        while (added < b and tries < 10 * b) if fill else tries < b:
+            tries += 1
             self.op = None
             t = attempt(caps, used)
             if t is not None:
                 used[t] += 1
                 self.counts[self.op] = self.counts.get(self.op, 0) + 1
+                added += 2 if self.op == "slot_fill" else 1
 
     def pick_neuron(self, caps, used):
         lst = self.live_neurons()
@@ -502,9 +510,13 @@ class _Mutation:
         if not recv:
             return None
         r = self.pick_receiver(recv, by_empty=True)
+        empties = [s for s, x in enumerate(net.nodes[r].neuron.slots) if x is None]
+        return self.link_into(t, r, empties[rng.below(len(empties))])
+
+    def link_into(self, t, r, slot):
+        """Links steps 3-6 (spec/06): a new 1:1 neuron from an existing node into empty slot `slot` of R."""
+        net, rng = self.net, self.rng
         rn = net.nodes[r].neuron
-        empties = [s for s, x in enumerate(rn.slots) if x is None]
-        slot = empties[rng.below(len(empties))]
         hi_src = max(net.nodes[s].depth for s in rn.slots if s is not None)   # no deeper than R's reads
         lo_src = self.span_floor(net.nodes[r].depth)       # longest link allowed
         cands = [j for j in self.live_nodes()
@@ -531,6 +543,32 @@ class _Mutation:
             net.next_birth -= 1
             return None
         return t
+
+    def open_slot_fill(self):
+        """Open-slot fill (spec/06): after the growth attempts, fill open_slot_fill_pct % of every
+        m_neuron's empty slots with links."""
+        pct = float(self.p.overall["open_slot_fill_pct"])
+        if not pct > 0:
+            return
+        net, rng = self.net, self.rng
+        recv = [i for i in self.live_neurons() if isinstance(net.nodes[i].neuron, MNeuron)
+                and any(s is not None for s in net.nodes[i].neuron.slots)]
+        for r in recv:
+            e = sum(1 for s in net.nodes[r].neuron.slots if s is None)
+            if e == 0:
+                continue
+            k = rng.prob_round(pct * float(e) / 100.0)
+            filled = tries = 0
+            while filled < k and tries < 10 * k:
+                tries += 1
+                t = "v" if rng.below(2) == 0 else "s"
+                if len(self.live_nodes()) + 1 > net.d_max:
+                    continue                              # node cap (spec/03)
+                empties = [s for s, x in enumerate(net.nodes[r].neuron.slots) if x is None]
+                if self.link_into(t, r, empties[rng.below(len(empties))]) is not None:
+                    filled += 1
+                    op = "v_link" if t == "v" else "s_link"
+                    self.counts[op] = self.counts.get(op, 0) + 1
 
     def input_tap(self, t):
         """A new neuron reading network inputs, feeding an empty slot of an m_neuron (spec/06)."""
@@ -725,6 +763,7 @@ class _Mutation:
         g = self.grows()
         if g:
             self.run_phase("growth_max_pct", self.growth)
+            self.open_slot_fill()
         elif g is None and self.p.overall["no_growth_swap"] == "on":
             if self.type_swap():
                 self.counts["type_swap"] = self.counts.get("type_swap", 0) + 1

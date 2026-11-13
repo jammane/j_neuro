@@ -109,7 +109,7 @@ The golden set SHOULD include at least:
 - Minimal-net creation for `n_inputs` = 1, ≤ `in_qty_max`, and > `in_qty_max`, with
   `path_mix` 0 and above.
 - Every mix-rule skip: rewire, slot connect, slot fill and bypass.
-- `growth_budget = exact`, and constant folding including the path-rule restore.
+- `growth_budget = exact` and `fill`, and constant folding including the path-rule restore.
 - Run-rule skips (path insertion, slot fill, taps), the run rule on load, and minimal nets with
   `max_run` 0 and above, including identity-v tree levels and chain separators.
 - m_clone, m_insert, links, slot retarget, `insert_depth` both ways, every `width_bias`.

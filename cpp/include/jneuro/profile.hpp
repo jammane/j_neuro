@@ -25,7 +25,8 @@ public:
     const std::string& depth_shift_mode() const { return mode_; }
     /// "fresh" or "shared" (spec/11); used by Population::mutate.
     const std::string& rng_mode() const { return rng_mode_; }
-    /// "up_to" or "exact" (spec/06): whether the growth budget draws a fraction of its cap.
+    /// "up_to", "exact" or "fill" (spec/06): whether the growth budget draws a fraction of its cap,
+    /// and whether it counts attempts or neurons added.
     const std::string& growth_budget() const { return growth_budget_; }
     /// "off" or "on" (spec/07): fold constant neurons before garbage collection.
     const std::string& constant_folding() const { return constant_folding_; }

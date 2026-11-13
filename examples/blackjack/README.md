@@ -85,3 +85,10 @@ rule, plus double on a two-card 10 or 11 when the dealer's card is lower) on the
 (default 100,000). It prints each net's points per deal, win % of winnable deals and mix of actions,
 and for the best net its structure and its decision table (most common action per player total and
 dealer card) beside the double rule's.
+
+`--bulk PROFILE` (with `--resume`) mutates every resumed net once with that profile (e.g.
+`profiles/bulk.json`) before training continues, and writes `removals.csv`: each generation, the
+hidden neurons removed by mutation (counted in every offspring, before selection) and the neurons in
+the top 10 and the whole population, split by birth into originals (in the resumed nets), bulk
+(added by `--bulk`) and new (added by later evolution). A profile with `growth_max_pct` 0 gives a
+control run with the same accounting.

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace jneuro {
@@ -60,7 +61,10 @@ public:
         run_phase("op_change_max_pct", &Mutation::op_change);
         run_phase("edit_max_pct", &Mutation::edit);
         const int g = grows();
-        if (g == 1) run_phase("growth_max_pct", &Mutation::growth);
+        if (g == 1) {
+            run_phase("growth_max_pct", &Mutation::growth);
+            open_slot_fill();
+        }
         else if (g == -1 && p_.no_growth_swap() == "on" && type_swap()) ++counts["type_swap"];
         run_phase("removal_max_pct", &Mutation::removal);
         run_phase("depth_shift_max_pct", &Mutation::depth_shift);
@@ -146,7 +150,9 @@ private:
     void run_phase(const std::string& field, Attempt attempt) {
         const double n = static_cast<double>(live_neurons().size());
         auto limit = [n](double pct) { return pct == 0 ? 0.0 : std::max(1.0, pct * n / 100.0); };  // spec/06
-        const bool exact = field == "growth_max_pct" && p_.growth_budget() == "exact";
+        const bool growth = field == "growth_max_pct";
+        const bool fill = growth && p_.growth_budget() == "fill";
+        const bool exact = growth && (p_.growth_budget() == "exact" || fill);
         // "up to" draws a fraction of the cap; exact uses the whole cap
         auto draw = [&](double pct) { return rng_.prob_round(exact ? limit(pct) : rng_.u() * limit(pct)); };
         const std::int64_t b = draw(p_.overall(field));
@@ -157,11 +163,14 @@ private:
                 caps_[ti(t)] = std::nullopt;
             used_[ti(t)] = 0;
         }
-        for (std::int64_t i = 0; i < b; ++i) {
+        // fill: b is a target in neurons added; skipped attempts are retried, up to 10 * b tries
+        std::int64_t added = 0;
+        for (std::int64_t i = 0; fill ? (added < b && i < 10 * b) : i < b; ++i) {
             op_ = nullptr;
             if (auto t = (this->*attempt)()) {
                 ++used_[ti(*t)];
                 ++counts[op_];
+                added += std::string_view(op_) == "slot_fill" ? 2 : 1;
             }
         }
     }
@@ -506,16 +515,22 @@ private:
         }
         if (recv.empty()) return std::nullopt;
         const NodeId r = pick_receiver(recv, "width_peak", true);
-        std::vector<std::size_t> empties;
+        return link_into(t, r, pick(empty_slots(r)));
+    }
+
+    std::vector<std::size_t> empty_slots(NodeId r) const {
+        std::vector<std::size_t> out;
+        const auto& slots = std::get<MNeuron>(*net_.nodes[r].neuron).slots;
+        for (std::size_t s = 0; s < slots.size(); ++s)
+            if (!slots[s]) out.push_back(s);
+        return out;
+    }
+
+    /// Links steps 3-6 (spec/06): a new 1:1 neuron from an existing node into empty slot `slot` of R.
+    std::optional<NeuronType> link_into(NeuronType t, NodeId r, std::size_t slot) {
         std::uint64_t hi_src = 0;  // sources no deeper than what R already reads
-        {
-            const auto& slots = std::get<MNeuron>(*net_.nodes[r].neuron).slots;
-            for (std::size_t s = 0; s < slots.size(); ++s) {
-                if (!slots[s]) empties.push_back(s);
-                else hi_src = std::max<std::uint64_t>(hi_src, net_.nodes[*slots[s]].depth);
-            }
-        }
-        const std::size_t slot = pick(empties);
+        for (const auto& s : std::get<MNeuron>(*net_.nodes[r].neuron).slots)
+            if (s) hi_src = std::max<std::uint64_t>(hi_src, net_.nodes[*s].depth);
         const std::uint64_t lo_src = span_floor(net_.nodes[r].depth);  // longest link allowed
         std::vector<NodeId> cands;
         {
@@ -550,6 +565,33 @@ private:
             return std::nullopt;
         }
         return t;
+    }
+
+    /// Open-slot fill (spec/06): after the growth attempts, fill open_slot_fill_pct % of every
+    /// m_neuron's empty slots with links.
+    void open_slot_fill() {
+        const double pct = p_.overall("open_slot_fill_pct");
+        if (!(pct > 0)) return;
+        std::vector<NodeId> recv;
+        for (NodeId i : live_neurons()) {
+            const auto* m = std::get_if<MNeuron>(&*net_.nodes[i].neuron);
+            if (m && std::any_of(m->slots.begin(), m->slots.end(), [](const auto& s) { return s.has_value(); }))
+                recv.push_back(i);
+        }
+        for (NodeId r : recv) {
+            const std::size_t e = empty_slots(r).size();
+            if (e == 0) continue;
+            const std::int64_t k = rng_.prob_round(pct * static_cast<double>(e) / 100.0);
+            for (std::int64_t filled = 0, tries = 0; filled < k && tries < 10 * k;) {
+                ++tries;
+                const NeuronType t = rng_.below(2) == 0 ? NeuronType::V : NeuronType::S;
+                if (live_nodes().size() + 1 > static_cast<std::uint64_t>(Net<D>::d_max)) continue;  // node cap
+                if (link_into(t, r, pick(empty_slots(r)))) {
+                    ++filled;
+                    ++counts[t == NeuronType::V ? "v_link" : "s_link"];
+                }
+            }
+        }
     }
 
     /// A new neuron reading network inputs, feeding an empty slot of an m_neuron (spec/06).

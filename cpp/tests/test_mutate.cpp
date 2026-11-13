@@ -2,7 +2,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <bit>
+#include <fstream>
 #include <functional>
+#include <map>
+#include <sstream>
 #include <set>
 
 using namespace th;
@@ -415,6 +419,25 @@ TEST_CASE("exact growth budget adds exactly one") {
     CHECK(grew[0] == std::set<std::size_t>{0, 1});
 }
 
+TEST_CASE("fill growth budget retries skipped attempts") {
+    Rng r0(1);
+    const N32 net = N32::create(5, 2, 3, Priority::Speed, r0, 2, 0);
+    std::set<std::size_t> grew[2];
+    for (int fill = 0; fill < 2; ++fill) {
+        Profile p = growth_only("v_tap");  // taps near the inputs break the mix rule
+        json w = p.to_json()["overall"]["add_method_weights"];
+        w["v_insert"] = 1.0;
+        p.apply_patch(json{{"overall", {{"growth_max_pct", 1e-9}, {"growth_budget", fill ? "fill" : "exact"},
+                                        {"insert_inversion_prob", 0.0}, {"add_method_weights", w}}}});
+        for (std::uint64_t s = 0; s < 60; ++s) {
+            Rng r(s);
+            grew[fill].insert(mutate(net, p, 1, r).nodes.size() - net.nodes.size());
+        }
+    }
+    CHECK(grew[0] == std::set<std::size_t>{0, 1});  // one attempt, sometimes skipped
+    CHECK(grew[1] == std::set<std::size_t>{1});     // retried until one neuron is added
+}
+
 TEST_CASE("constant folding") {
     // output m max [2, 3]; 2 = identity of input 0; 3 = (4 + 2) where 4 = input * 0 (constant)
     const auto net = make_net<std::uint16_t>(1, 1, 3, {{D16, M(AggOp::Max, {2, 3, none})}, {200, V(0, VOp::Mul, 1.0)},
@@ -648,4 +671,75 @@ TEST_CASE("type swap when this net does not grow") {
         if (diff) { ++swapped; CHECK(counts["type_swap"] == 1); }
     }
     CHECK(swapped >= 20);
+}
+
+TEST_CASE("profiles/bulk.json grows a net by 10% without changing its outputs") {
+    std::ifstream f(std::string(JNEURO_GOLDEN_DIR) + "/../../profiles/bulk.json");
+    REQUIRE(f);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    const Profile bulk = profile_from_json(ss.str());
+    Profile grow = Profile::defaults();
+    grow.set_overall("growth_max_pct", 3.0);
+    auto neurons = [](const N32& n) {
+        std::size_t c = 0;
+        for (const auto& x : n.nodes) c += x.neuron.has_value();
+        return c;
+    };
+    for (std::uint64_t seed = 0; seed < 4; ++seed) {
+        Rng r(seed);
+        N32 net = N32::create(40, 6, 5, Priority::Speed, r, 2, 3);
+        for (std::uint64_t g = 1; g < 80; ++g) net = mutate(net, grow, g, r);
+        Rng rb(seed + 7);
+        N32 big = mutate(net, bulk, 100, rb);
+        const double target = std::max(1.0, 0.1 * static_cast<double>(neurons(net)));
+        CHECK(static_cast<double>(neurons(big) - neurons(net)) >= std::floor(target));
+        CHECK(neurons(big) - neurons(net) <= static_cast<std::size_t>(std::ceil(target)) + 1);
+        Rng ri(seed + 99);
+        net.reset();
+        big.reset();
+        for (int t = 0; t < 40; ++t) {
+            std::vector<double> in(40);
+            for (auto& x : in) x = (ri.u() - 0.5) * 10;
+            const auto a = net.step(in), b = big.step(in);
+            REQUIRE(a.size() == b.size());
+            for (std::size_t k = 0; k < a.size(); ++k)
+                CHECK(std::bit_cast<std::uint64_t>(a[k]) == std::bit_cast<std::uint64_t>(b[k]));
+        }
+    }
+}
+
+TEST_CASE("open-slot fill fills most empty m slots") {
+    Profile grow = Profile::defaults();
+    grow.set_overall("growth_max_pct", 5.0);
+    Rng r(4);
+    N32 net = N32::create(8, 2, 7, Priority::Speed, r, 2, 3);
+    for (std::uint64_t g = 1; g < 60; ++g) net = mutate(net, grow, g, r);
+    auto empties = [](const N32& n) {
+        std::map<NodeId, int> e;
+        for (NodeId i = 0; i < n.nodes.size(); ++i) {
+            const auto* m = n.nodes[i].neuron ? std::get_if<MNeuron>(&*n.nodes[i].neuron) : nullptr;
+            if (!m) continue;
+            int empty = 0, connected = 0;
+            for (const auto& s : m->slots) ++(s ? connected : empty);
+            if (connected) e[i] = empty;
+        }
+        return e;
+    };
+    const auto before = empties(net);
+    Profile p = zero_profile();
+    p.set_overall("open_slot_fill_pct", 80.0);
+    Rng rc(9);
+    const auto after = empties(mutate(net, p, 100, rc));
+    int total = 0, filled = 0;
+    for (const auto& [i, e] : before) {
+        const int f = e - after.at(i);
+        CHECK(f >= 0);
+        CHECK(f <= static_cast<int>(std::ceil(0.8 * e)));
+        total += e;
+        filled += f;
+    }
+    CHECK(total > 20);
+    CHECK(filled >= 0.4 * total);  // the mix rule blocks some (near inputs)
+    CHECK_THROWS(p.set_overall("open_slot_fill_pct", 101.0));
 }

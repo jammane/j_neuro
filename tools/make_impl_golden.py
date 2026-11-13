@@ -59,6 +59,28 @@ def profile_variants():
     exact.overall["growth_budget"] = "exact"
     exact.overall["growth_max_pct"] = 6.0
     out["exact_growth"] = exact
+    fill = Profile.default()
+    fill.overall["growth_budget"] = "fill"
+    fill.overall["growth_max_pct"] = 6.0
+    out["fill_growth"] = fill
+    fill_small = Profile.default()
+    fill_small.overall["growth_budget"] = "fill"
+    fill_small.overall["growth_max_pct"] = 1.0
+    fill_small.overall["add_method_weights"].update({"slot_fill": 40, "v_tap": 30, "m_tap": 30})
+    out["fill_growth_small"] = fill_small
+    open_fill = Profile.default()
+    open_fill.overall["growth_max_pct"] = 10.0
+    open_fill.overall["open_slot_fill_pct"] = 80.0
+    out["open_slot_fill"] = open_fill
+    open_bulk = Profile.default()
+    for f in PHASES:
+        open_bulk.overall[f] = 0.0
+    open_bulk.overall.update({"growth_max_pct": 10.0, "growth_budget": "fill", "open_slot_fill_pct": 80.0,
+                              "insert_depth": "uniform", "insert_inversion_prob": 0.0})
+    open_bulk.overall["add_method_weights"] = {"v_insert": 1.0, "m_insert": 1.0, "slot_fill": 0.0,
+                                               "s_insert": 0.0, "m_after_m": 0.0, "v_tap": 0.0, "s_tap": 0.0,
+                                               "m_tap": 0.0, "m_clone": 0.0, "v_link": 0.0, "s_link": 0.0}
+    out["open_slot_fill_bulk"] = open_bulk
     taps = Profile.default()
     taps.overall["growth_max_pct"] = 30.0
     taps.overall["add_method_weights"].update({"v_tap": 30, "s_tap": 30, "m_tap": 30})

@@ -4,7 +4,7 @@
  "overall": {
   "op_change_max_pct": 1.0,
   "edit_max_pct": 20.0,
-  "growth_max_pct": 1e-09,
+  "growth_max_pct": 1.0,
   "removal_max_pct": 0.0,
   "depth_shift_max_pct": 5.0,
   "depth_shift_mode": "uniform",
@@ -34,7 +34,7 @@
    "m": 1
   },
   "rng_mode": "fresh",
-  "growth_budget": "exact",
+  "growth_budget": "fill",
   "constant_folding": "on",
   "insert_depth": "uniform",
   "slot_retarget_prob": 0.05,

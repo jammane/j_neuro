@@ -4,7 +4,7 @@
 // 30 are culled, and each survivor is mutated 3 times to refill the population to 40.
 // Runs until interrupted (Ctrl+C / SIGINT / SIGTERM), then saves the population.
 //
-// Usage: blackjack_trainer [--out DIR] [--seed N] [--pop-seed N] [--resume FILE.jpnet] [--rules new|old]
+// Usage: blackjack_trainer [--out DIR] [--seed N] [--pop-seed N] [--resume FILE.jpnet [--bulk PROFILE]] [--rules new|old]
 //                          [--deals N] [--stop-at GENERATIONS] [--console-every SECONDS]
 // --deals: deals per generation (default 200). Each generation the log also scores the simple
 // hit rule (hit below 12, or below 17 vs a dealer 7+; never doubles or splits) and the double rule
@@ -34,6 +34,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -116,6 +117,28 @@ Profile make_profile(double alter_pct, double grow_pct) {
     return p;
 }
 
+/// Removal accounting (--bulk): every hidden neuron, by birth id, is an original (in the
+/// resumed nets), a bulk neuron (added by --bulk) or a new one (added by later evolution).
+enum Tag { kOriginal = 0, kBulk = 1, kNew = 2 };
+using Tags = std::map<std::uint64_t, Tag>;  // birth -> tag, for one net
+
+Tags hidden_births(const Net<D>& net, Tag tag) {
+    Tags t;
+    for (NodeId i = net.n_inputs + net.n_outputs; i < net.nodes.size(); ++i) t[net.nodes[i].birth] = tag;
+    return t;
+}
+
+/// The child's tags: inherited where the birth survives, `fresh` for new births. Adds the
+/// parent's lost births to `removed` by tag.
+Tags inherit(const Tags& parent, const Net<D>& child, Tag fresh, double removed[3]) {
+    Tags t = hidden_births(child, fresh);
+    for (auto& [b, tag] : t)
+        if (auto it = parent.find(b); it != parent.end()) tag = it->second;
+    for (const auto& [b, tag] : parent)
+        if (!t.count(b)) ++removed[tag];
+    return t;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -123,6 +146,7 @@ int main(int argc, char** argv) {
     std::optional<std::uint64_t> seed;
     std::optional<std::uint64_t> pop_seed;  // population seed (repeatable under rng_mode shared)
     std::optional<fs::path> resume;
+    std::optional<fs::path> bulk_file;
     double alter = 22.0, grow = 12.0, big_alter = 5.0, big_grow = 1.5, console_every = 2.0;
     fs::path profile_file = "profiles/expansion.json";
     std::optional<std::uint64_t> stop_at;
@@ -146,6 +170,7 @@ int main(int argc, char** argv) {
         else if (a == "--grow-net") grow_net = std::stod(v);
         else if (a == "--tap-weight") tap_weight = std::stod(v);
         else if (a == "--profile") profile_file = v;
+        else if (a == "--bulk") bulk_file = v;
         else if (a == "--stop-at") stop_at = std::stoull(v);
         else if (a == "--deals") kHandsPerNet = std::stoi(v);
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
@@ -168,6 +193,29 @@ int main(int argc, char** argv) {
         new_profile.apply_patch(nlohmann::json{{"overall", {{"add_method_weights",
             {{"v_tap", *tap_weight}, {"s_tap", *tap_weight}, {"m_tap", *tap_weight}}}}}});
     if (!resume) pop.create(kPopulation, new_profile.rng_mode());  // "shared": repeatable from the seeds
+    // --bulk: bulk every resumed net with this profile, then account for every removal by tag
+    std::map<std::uint64_t, Tags> tags;
+    std::ofstream removals;
+    if (bulk_file) {
+        if (!resume) { std::cerr << "--bulk needs --resume\n"; return 2; }
+        const Profile bulk = load_profile(*bulk_file);
+        double none[3] = {0, 0, 0};
+        for (std::uint64_t id : pop.ids()) {
+            const Tags orig = hidden_births(pop.get(id), kOriginal);
+            if (bulk.overall("growth_max_pct") > 0) {
+                const std::uint64_t nid = pop.mutate(id, bulk);
+                tags[nid] = inherit(orig, pop.get(nid), kBulk, none);
+                pop.remove(id);
+            } else {
+                tags[id] = orig;  // growth_max_pct 0: the control run, same accounting
+            }
+        }
+        const bool new_file = !fs::exists(out / "removals.csv");
+        removals.open(out / "removals.csv", std::ios::app);
+        if (new_file)
+            removals << "generation,removed_original,removed_bulk,removed_new,"
+                        "top10_original,top10_bulk,top10_new,all_original,all_bulk,all_new\n";
+    }
     const std::uint64_t deal_seed = seed ? *seed : fresh_seed();
     Rng deals(deal_seed);
 
@@ -322,6 +370,15 @@ int main(int argc, char** argv) {
         }
 
         // cull the bottom 30, refill with 3 mutated offspring of each of the top 10
+        double kept[3] = {0, 0, 0}, all[3] = {0, 0, 0}, removed[3] = {0, 0, 0};
+        if (bulk_file) {
+            for (std::size_t r = 0; r < order.size(); ++r)
+                for (const auto& [b, tag] : tags.at(ids[order[r]])) {
+                    ++all[tag];
+                    if (r < static_cast<std::size_t>(kKeep)) ++kept[tag];
+                }
+            for (std::size_t r = kKeep; r < order.size(); ++r) tags.erase(ids[order[r]]);
+        }
         for (std::size_t r = kKeep; r < order.size(); ++r) pop.remove(ids[order[r]]);
         const std::uint64_t added_before = growth_added(pop);
         for (int r = 0; r < kKeep; ++r) {
@@ -329,19 +386,23 @@ int main(int argc, char** argv) {
             const bool big = count(pop.get(parent)).neurons > kBigNet;
             for (int c = 0; c < kChildrenPerSurvivor; ++c) {
                 if (!new_rules) { pop.mutate(parent, big ? big_profile : profile); continue; }
-                pop.mutate(parent, new_profile);  // growth gating: spec/06
+                const std::uint64_t child = pop.mutate(parent, new_profile);  // growth gating: spec/06
+                if (bulk_file) tags[child] = inherit(tags.at(parent), pop.get(child), kNew, removed);
             }
         }
         pop.next_generation();
         row << growth_added(pop) - added_before << ',' << elapsed << '\n';  // same fixed formatting as the rest of the row
         csv << row.str();
         csv.flush();
+        if (bulk_file)
+            removals << gen << ',' << removed[0] << ',' << removed[1] << ',' << removed[2] << ',' << kept[0] << ','
+                     << kept[1] << ',' << kept[2] << ',' << all[0] << ',' << all[1] << ',' << all[2] << std::endl;
 
         if (gen % 1000 == 999) {
             // Reloading continues exactly (same ids, nets, RNG state) but empties the population's
             // in-memory run log, which otherwise grows by ~60 operations per generation.
             pop.save(out / "population.jpnet");
-            pop = Pop::load(out / "population.jpnet");
+            pop = Pop::load(out / "population.jpnet");  // same ids, so the tags stay valid
         }
     }
 

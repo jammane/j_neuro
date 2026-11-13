@@ -16,7 +16,8 @@ const std::map<std::string, double>& numeric_defaults() {
         {"sign_flip_prob", 0.02},   {"sigma_k", 1.0}, {"sigma_slots", 1.0},
         {"rewire_prob", 0.05},       {"insert_inversion_prob", 0.05}, {"min_age_for_removal", 5.0},
         {"slot_retarget_prob", 0.05}, {"width_peak", 0.5}, {"tap_peak", 0.25}, {"link_max_span", 0.25},
-        {"growth_gen_prob", 1.0}, {"growth_net_prob", 1.0}, {"slot_add_prob", 0.75}};
+        {"growth_gen_prob", 1.0}, {"growth_net_prob", 1.0}, {"slot_add_prob", 0.75},
+        {"open_slot_fill_pct", 0.0}};
     return d;
 }
 const std::set<std::string>& overridable() {
@@ -33,7 +34,7 @@ const char* const kOverallOrder[] = {
     "insert_inversion_prob", "min_age_for_removal", "add_method_weights", "slot_fill_type_weights",
     "rng_mode", "growth_budget", "constant_folding", "insert_depth", "slot_retarget_prob", "width_bias",
     "width_peak", "tap_peak", "prune", "link_max_span", "growth_gen_prob", "growth_net_prob", "no_growth_swap",
-    "slot_edit", "slot_add_prob"};
+    "slot_edit", "slot_add_prob", "open_slot_fill_pct"};
 const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap",
                                 "m_clone",   "m_insert", "v_link",   "s_link"};
 constexpr std::array<double, 11> kMethodDefaults{0, 10, 5, 5, 10, 10, 5, 60, 20, 24, 24};
@@ -73,6 +74,7 @@ void Profile::set_overall(const std::string& f, double v) {
     if (f == "link_max_span" && !(v > 0.0 && v <= 1.0)) throw ValidationError("link_max_span must be in (0, 1]");
     if ((f == "growth_gen_prob" || f == "growth_net_prob" || f == "slot_add_prob") && !(v >= 0.0 && v <= 1.0))
         throw ValidationError(f + " must be in [0, 1]");
+    if (f == "open_slot_fill_pct" && !(v >= 0.0 && v <= 100.0)) throw ValidationError(f + " must be in [0, 100]");
     overall_[f] = v;
 }
 
@@ -88,6 +90,8 @@ void Profile::merge_overall(const json& body) {
             if ((k == "growth_gen_prob" || k == "growth_net_prob" || k == "slot_add_prob") &&
                 !(overall_[k] >= 0.0 && overall_[k] <= 1.0))
                 throw ValidationError(k + " must be in [0, 1]");
+            if (k == "open_slot_fill_pct" && !(overall_[k] >= 0.0 && overall_[k] <= 100.0))
+                throw ValidationError(k + " must be in [0, 100]");
         } else if (k == "depth_shift_mode") {
             if (v.is_null()) { mode_ = "uniform"; continue; }
             if (!v.is_string() || (v != "uniform" && v != "center"))
@@ -100,8 +104,8 @@ void Profile::merge_overall(const json& body) {
             rng_mode_ = v.get<std::string>();
         } else if (k == "growth_budget") {
             if (v.is_null()) { growth_budget_ = "up_to"; continue; }
-            if (!v.is_string() || (v != "up_to" && v != "exact"))
-                throw ValidationError("growth_budget must be up_to or exact");
+            if (!v.is_string() || (v != "up_to" && v != "exact" && v != "fill"))
+                throw ValidationError("growth_budget must be up_to, exact or fill");
             growth_budget_ = v.get<std::string>();
         } else if (k == "constant_folding") {
             if (v.is_null()) { constant_folding_ = "off"; continue; }

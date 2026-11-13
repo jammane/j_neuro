@@ -1,4 +1,5 @@
 import json
+import math
 
 import pytest
 from helpers import M, S, V, load_golden, make_net, outputs_for, sample_inputs
@@ -349,6 +350,17 @@ def test_exact_growth_budget_adds_exactly_one():
     assert set(sizes["up_to"]) == {0, 1}                       # a random fraction of it
 
 
+def test_fill_growth_budget_retries_skipped_attempts():
+    net = Net.create(5, 2, DepthType.U32, 3, Priority.SPEED, Rng(1), 2, 0)
+    w = dict(only_method("v_tap"), v_insert=1.0)               # taps near the inputs break the mix rule
+    sizes = {}
+    for mode in ("exact", "fill"):
+        p = profile(growth_max_pct=1e-9, add_method_weights=w, growth_budget=mode)
+        sizes[mode] = [len(mutate(net, p, 1, Rng(s)).nodes) - len(net.nodes) for s in range(60)]
+    assert set(sizes["exact"]) == {0, 1}                       # one attempt, sometimes skipped
+    assert set(sizes["fill"]) == {1}                           # retried until one neuron is added
+
+
 def _fold_net():
     """output m max [3, 4]; 3 = identity of input 0; 4 = (5 + 2) where 5 = input * 0 (constant)."""
     return make_net(1, 1, 3, [(D16, M("max", [2, 3, None])), (200, V(0, "mul", 1.0)),
@@ -656,3 +668,56 @@ def test_biased_slot_edits():
             moved += d != 0
         if sign > 0:
             assert moved > 5                                   # (cuts here are mostly blocked by the path rule)
+
+
+def test_bulk_profile_grows_ten_percent_without_changing_outputs():
+    import math
+    import pathlib
+    bulk = profile_from_json((pathlib.Path(__file__).parents[2] / "profiles" / "bulk.json").read_text())
+    grow = Profile.default()
+    grow.overall["growth_max_pct"] = 3.0
+
+    def neurons(n):
+        return sum(1 for x in n.nodes if x.neuron is not None)
+
+    for seed in range(3):
+        r = Rng(seed)
+        net = Net.create(12, 3, DepthType.U32, 5, Priority.SPEED, r, 2, 3)
+        for g in range(1, 80):
+            net = mutate(net, grow, g, r)
+        big = mutate(net, bulk, 100, Rng(seed + 7))
+        target = max(1.0, 0.1 * neurons(net))
+        assert math.floor(target) <= neurons(big) - neurons(net) <= math.ceil(target) + 1
+        ri = Rng(seed + 99)
+        net.reset()
+        big.reset()
+        for _ in range(40):
+            x = [(ri.u() - 0.5) * 10 for _ in range(12)]
+            a, b = net.step(x), big.step(x)
+            assert [v.hex() for v in a] == [v.hex() for v in b]
+
+
+def test_open_slot_fill_fills_most_empty_slots():
+    grow = Profile.default()
+    grow.overall["growth_max_pct"] = 5.0
+    r = Rng(4)
+    net = Net.create(8, 2, DepthType.U32, 7, Priority.SPEED, r, 2, 3)
+    for g in range(1, 60):
+        net = mutate(net, grow, g, r)
+
+    def empties(n):
+        return {i: sum(1 for s in x.neuron.slots if s is None) for i, x in enumerate(n.nodes)
+                if isinstance(x.neuron, MNeuron) and any(s is not None for s in x.neuron.slots)}
+
+    before = empties(net)
+    assert sum(before.values()) > 20
+    p = profile(open_slot_fill_pct=80.0)                       # only phase 3, no growth attempts
+    child = mutate(net, p, 100, Rng(9))
+    after = empties(child)
+    filled = {i: before[i] - after[i] for i in before}
+    assert all(0 <= f <= math.ceil(0.8 * before[i]) for i, f in filled.items())
+    assert sum(filled.values()) >= 0.4 * sum(before.values())     # the mix rule blocks some (near inputs)
+    assert profile(open_slot_fill_pct=0.0) and mutate(net, profile(), 100, Rng(9)).nodes == net.nodes
+    with pytest.raises(Exception):
+        profile_from_json(json.dumps({"format": "j_neuro.profile", "spec_version": "0.5.0",
+                                      "overall": {"open_slot_fill_pct": 101}}))
