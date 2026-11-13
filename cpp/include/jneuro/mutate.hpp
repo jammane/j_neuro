@@ -61,10 +61,7 @@ public:
         run_phase("op_change_max_pct", &Mutation::op_change);
         run_phase("edit_max_pct", &Mutation::edit);
         const int g = grows();
-        if (g == 1) {
-            run_phase("growth_max_pct", &Mutation::growth);
-            open_slot_fill();
-        }
+        if (g == 1) run_phase("growth_max_pct", &Mutation::growth);
         else if (g == -1 && p_.no_growth_swap() == "on" && type_swap()) ++counts["type_swap"];
         run_phase("removal_max_pct", &Mutation::removal);
         run_phase("depth_shift_max_pct", &Mutation::depth_shift);
@@ -163,9 +160,39 @@ private:
                 caps_[ti(t)] = std::nullopt;
             used_[ti(t)] = 0;
         }
-        // fill: b is a target in neurons added; skipped attempts are retried, up to 10 * b tries
+        // fill: b is a target in neurons added; skipped attempts are retried, up to 10 * b tries.
+        // With open_slot_fill_pct, links into empty m slots count toward the same target.
+        const double open_pct = fill ? p_.overall("open_slot_fill_pct") : 0.0;
+        std::map<NodeId, std::int64_t> quota, fails;
         std::int64_t added = 0;
-        for (std::int64_t i = 0; fill ? (added < b && i < 10 * b) : i < b; ++i) {
+        for (std::int64_t i = 0; fill ? (added < b && i < 10 * b) : i < b;) {
+            if (open_pct > 0) {
+                std::optional<NodeId> r;
+                for (NodeId j : live_neurons()) {
+                    const auto* m = std::get_if<MNeuron>(&*net_.nodes[j].neuron);
+                    if (!m) continue;
+                    const auto e = std::count(m->slots.begin(), m->slots.end(), std::nullopt);
+                    if (!quota.count(j)) {
+                        if (static_cast<std::size_t>(e) == m->slots.size()) continue;  // no connected slot
+                        quota[j] = round_half_away(open_pct * static_cast<double>(e) / 100.0);
+                        fails[j] = 0;
+                    }
+                    if (!r && quota[j] > 0 && fails[j] < 3 && e > 0) r = j;
+                }
+                if (r) {  // a link (spec/06 open-slot fill); not counted in tries
+                    const NeuronType t = rng_.below(2) == 0 ? NeuronType::V : NeuronType::S;
+                    if (live_nodes().size() + 1 > static_cast<std::uint64_t>(Net<D>::d_max)) break;  // node cap
+                    if (link_into(t, *r, pick(empty_slots(*r)))) {
+                        --quota[*r];
+                        ++added;
+                        ++counts[t == NeuronType::V ? "v_link" : "s_link"];
+                    } else {
+                        ++fails[*r];
+                    }
+                    continue;
+                }
+            }
+            ++i;
             op_ = nullptr;
             if (auto t = (this->*attempt)()) {
                 ++used_[ti(*t)];
@@ -565,33 +592,6 @@ private:
             return std::nullopt;
         }
         return t;
-    }
-
-    /// Open-slot fill (spec/06): after the growth attempts, fill open_slot_fill_pct % of every
-    /// m_neuron's empty slots with links.
-    void open_slot_fill() {
-        const double pct = p_.overall("open_slot_fill_pct");
-        if (!(pct > 0)) return;
-        std::vector<NodeId> recv;
-        for (NodeId i : live_neurons()) {
-            const auto* m = std::get_if<MNeuron>(&*net_.nodes[i].neuron);
-            if (m && std::any_of(m->slots.begin(), m->slots.end(), [](const auto& s) { return s.has_value(); }))
-                recv.push_back(i);
-        }
-        for (NodeId r : recv) {
-            const std::size_t e = empty_slots(r).size();
-            if (e == 0) continue;
-            const std::int64_t k = rng_.prob_round(pct * static_cast<double>(e) / 100.0);
-            for (std::int64_t filled = 0, tries = 0; filled < k && tries < 10 * k;) {
-                ++tries;
-                const NeuronType t = rng_.below(2) == 0 ? NeuronType::V : NeuronType::S;
-                if (live_nodes().size() + 1 > static_cast<std::uint64_t>(Net<D>::d_max)) continue;  // node cap
-                if (link_into(t, r, pick(empty_slots(r)))) {
-                    ++filled;
-                    ++counts[t == NeuronType::V ? "v_link" : "s_link"];
-                }
-            }
-        }
     }
 
     /// A new neuron reading network inputs, feeding an empty slot of an m_neuron (spec/06).

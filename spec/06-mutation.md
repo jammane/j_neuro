@@ -61,7 +61,7 @@ A per-type value overrides the overall value for neurons of that type.
 | `slot_edit` | `toggle` | no | How an m slot edit picks each slot: `toggle` (a random slot, filled if empty, emptied if connected) or `biased` (first add with `slot_add_prob`, else cut; then a random slot of that kind) |
 | `slot_add_prob` | 0.75 | no | With `slot_edit = biased`: chance a slot change adds a connection |
 | `no_growth_swap` | `on` | no | `off` or `on`: in a growth generation, an offspring whose `growth_net_prob` draw fails gets one [type swap](#type-swap) instead |
-| `open_slot_fill_pct` | 0.0 | no | % of each m_neuron's empty slots that phase 3 fills with new links after its growth attempts, in [0, 100] ([open-slot fill](#open-slot-fill)) |
+| `open_slot_fill_pct` | 0.0 | no | With `growth_budget = fill`: % of each m_neuron's empty slots that phase 3 fills with new links, within the same growth target, in [0, 100] ([open-slot fill](#open-slot-fill)) |
 | `prune` | `static` | no | `any` or `static`: with `static`, edits never cut a live branch — an m slot is emptied only if its source is constant ([07](07-removal.md#constant-folding)), and a retarget never leaves its old source without readers |
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
@@ -120,7 +120,9 @@ while added < B and tries < 10 * B:
 
 A skipped attempt is retried, up to `10 * B` attempts in all, so a net with nowhere to grow
 stops. Slot fill adds two neurons (Q and W), so the phase can end one neuron over `B`. Per-type
-caps count successful attempts, as with the other budgets.
+caps count successful attempts, as with the other budgets. With `open_slot_fill_pct > 0` the
+loop also makes links into empty m slots, within the same `B` ([open-slot fill](#open-slot-fill)).
+
 `max_pct` is the phase's field (`op_change_max_pct`, …). `N` is converted to binary64 and
 `pct * N / 100.0` is evaluated left to right. Because a nonzero cap is never below 1, small
 nets can always mutate: a 1-neuron net with a 1% cap still gets up to 1 change.
@@ -448,34 +450,44 @@ RNG order: method, R, slot, source, depth (if drawn), op, inversion draws (v onl
 
 ### Open-slot fill
 
-Runs at the end of phase 3, after the growth attempts, when `open_slot_fill_pct > 0` (never
-in place of a type swap). It fills a share of every m_neuron's empty slots with live sources,
-so m_neurons read several inputs and a single slot cut no longer cuts them off.
+With `growth_budget = fill` and `open_slot_fill_pct > 0`, phase 3 also links live sources into
+the empty slots of m_neurons, so they read several inputs and a single slot cut no longer cuts
+them off. The links count toward the same target `B` as the growth attempts, so the net gains
+`B` neurons in all. (Under `up_to` and `exact` the field is ignored.) The fill loop of
+[budgets](#budgets) becomes:
 
 ```
-L = live m_neurons with at least one connected slot, ascending id     # fixed at the start
-for R in L:
-    E = number of empty slots of R; if E == 0: continue                # no draw
-    k = prob_round(open_slot_fill_pct * E / 100.0)
-    filled = 0; tries = 0
-    while filled < k and tries < 10 * k:
-        tries += 1
+quota = {}; fails = {}                                  # per m_neuron R
+added = 0; tries = 0
+while added < B and tries < 10 * B:
+    for R in live m_neurons with at least one connected slot, ascending id, not yet in quota:
+        quota[R] = round_half_away(open_slot_fill_pct * E(R) / 100.0); fails[R] = 0
+                                                        # E(R): R's empty slots now
+    R = first R in ascending id with quota[R] > 0, fails[R] < 3 and an empty slot
+    if R exists:                                        # a link; not counted in tries
         T = [v, s][below(2)]
-        if live nodes + 1 > D_MAX: continue                            # node cap, no further draws
-        slot = empty_slots(R)[below(count)]                            # ascending slot index
-        steps 3–6 of links with this R, slot and T                     # source, depth, build, rules
-        if it succeeded: filled += 1
+        if live nodes + 1 > D_MAX: stop the phase       # node cap
+        slot = empty_slots(R)[below(count)]             # ascending slot index
+        steps 3–6 of links with this R, slot and T      # source, depth, build, rules
+        if it succeeded: quota[R] -= 1; added += 1
+        else:            fails[R] += 1
+    else:
+        tries += 1
+        one growth attempt; if it succeeded: added += 2 if its method is slot_fill else 1
 ```
 
-`open_slot_fill_pct * E / 100.0` is evaluated left to right in binary64. A failed step undoes
-itself as in links (the draws already made stay drawn). A successful fill is counted as a
-`v_link` or `s_link`; per-type growth caps do not apply to it.
+`open_slot_fill_pct * E(R) / 100.0` is evaluated left to right in binary64. An m_neuron is
+given its quota the first time the loop sees it, so the m_neurons that growth adds (m_insert,
+m_tap, …) are filled too. A failed link undoes itself as in links (the draws already made stay
+drawn); after three failures (typically the mix rule, for m_neurons near the inputs) R is left
+as it is. A successful link counts as a `v_link` or `s_link`; per-type growth caps do not apply
+to links. Slot fill can still end the phase one neuron over `B`.
 
-RNG order per try: T, slot, then the link draws (source, depth if drawn, op, inversion draws
+RNG order per link: T, slot, then the link draws (source, depth if drawn, op, inversion draws
 for v).
 
-Informative: the new neurons are not neutral. Each reads a node no deeper than what R already
-reads, so R's output changes at once.
+Informative: links are not neutral. Each reads a node no deeper than what R already reads, so
+R's output changes at once.
 
 Informative: under `path_mix ≥ 1`, a tap's new paths skip every neuron between the inputs and
 R, so taps into m_neurons close to the inputs are often undone by the mix check.

@@ -198,10 +198,41 @@ class _Mutation:
 
     def run_phase(self, field, attempt):
         b, caps, used = self.budget(field)
-        # fill: b is a target in neurons added; skipped attempts are retried, up to 10 * b tries
+        # fill: b is a target in neurons added; skipped attempts are retried, up to 10 * b tries.
+        # With open_slot_fill_pct, links into empty m slots count toward the same target.
         fill = field == "growth_max_pct" and self.p.overall["growth_budget"] == "fill"
+        open_pct = float(self.p.overall["open_slot_fill_pct"]) if fill else 0.0
+        net, rng = self.net, self.rng
+        quota, fails = {}, {}
         added = tries = 0
         while (added < b and tries < 10 * b) if fill else tries < b:
+            if open_pct > 0:
+                r = None
+                for j in self.live_neurons():
+                    m = net.nodes[j].neuron
+                    if not isinstance(m, MNeuron):
+                        continue
+                    e = sum(1 for s in m.slots if s is None)
+                    if j not in quota:
+                        if e == len(m.slots):
+                            continue                      # no connected slot
+                        quota[j] = round_half_away(open_pct * float(e) / 100.0)
+                        fails[j] = 0
+                    if r is None and quota[j] > 0 and fails[j] < 3 and e > 0:
+                        r = j
+                if r is not None:                         # a link (spec/06 open-slot fill); not a try
+                    t = "v" if rng.below(2) == 0 else "s"
+                    if len(self.live_nodes()) + 1 > net.d_max:
+                        break                             # node cap (spec/03)
+                    empties = [s for s, x in enumerate(net.nodes[r].neuron.slots) if x is None]
+                    if self.link_into(t, r, empties[rng.below(len(empties))]) is not None:
+                        quota[r] -= 1
+                        added += 1
+                        op = "v_link" if t == "v" else "s_link"
+                        self.counts[op] = self.counts.get(op, 0) + 1
+                    else:
+                        fails[r] += 1
+                    continue
             tries += 1
             self.op = None
             t = attempt(caps, used)
@@ -544,32 +575,6 @@ class _Mutation:
             return None
         return t
 
-    def open_slot_fill(self):
-        """Open-slot fill (spec/06): after the growth attempts, fill open_slot_fill_pct % of every
-        m_neuron's empty slots with links."""
-        pct = float(self.p.overall["open_slot_fill_pct"])
-        if not pct > 0:
-            return
-        net, rng = self.net, self.rng
-        recv = [i for i in self.live_neurons() if isinstance(net.nodes[i].neuron, MNeuron)
-                and any(s is not None for s in net.nodes[i].neuron.slots)]
-        for r in recv:
-            e = sum(1 for s in net.nodes[r].neuron.slots if s is None)
-            if e == 0:
-                continue
-            k = rng.prob_round(pct * float(e) / 100.0)
-            filled = tries = 0
-            while filled < k and tries < 10 * k:
-                tries += 1
-                t = "v" if rng.below(2) == 0 else "s"
-                if len(self.live_nodes()) + 1 > net.d_max:
-                    continue                              # node cap (spec/03)
-                empties = [s for s, x in enumerate(net.nodes[r].neuron.slots) if x is None]
-                if self.link_into(t, r, empties[rng.below(len(empties))]) is not None:
-                    filled += 1
-                    op = "v_link" if t == "v" else "s_link"
-                    self.counts[op] = self.counts.get(op, 0) + 1
-
     def input_tap(self, t):
         """A new neuron reading network inputs, feeding an empty slot of an m_neuron (spec/06)."""
         net, rng = self.net, self.rng
@@ -763,7 +768,6 @@ class _Mutation:
         g = self.grows()
         if g:
             self.run_phase("growth_max_pct", self.growth)
-            self.open_slot_fill()
         elif g is None and self.p.overall["no_growth_swap"] == "on":
             if self.type_swap():
                 self.counts["type_swap"] = self.counts.get("type_swap", 0) + 1

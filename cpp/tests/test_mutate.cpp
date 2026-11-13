@@ -673,28 +673,51 @@ TEST_CASE("type swap when this net does not grow") {
     CHECK(swapped >= 20);
 }
 
-TEST_CASE("profiles/bulk.json grows a net by 10% without changing its outputs") {
+static Profile bulk_profile(double pct, double open_pct) {
     std::ifstream f(std::string(JNEURO_GOLDEN_DIR) + "/../../profiles/bulk.json");
-    REQUIRE(f);
     std::stringstream ss;
     ss << f.rdbuf();
-    const Profile bulk = profile_from_json(ss.str());
+    Profile p = profile_from_json(ss.str());
+    p.set_overall("growth_max_pct", pct);
+    p.set_overall("open_slot_fill_pct", open_pct);
+    return p;
+}
+
+static N32 grown_net(std::uint64_t seed) {
     Profile grow = Profile::defaults();
     grow.set_overall("growth_max_pct", 3.0);
-    auto neurons = [](const N32& n) {
-        std::size_t c = 0;
-        for (const auto& x : n.nodes) c += x.neuron.has_value();
-        return c;
-    };
-    for (std::uint64_t seed = 0; seed < 4; ++seed) {
-        Rng r(seed);
-        N32 net = N32::create(40, 6, 5, Priority::Speed, r, 2, 3);
-        for (std::uint64_t g = 1; g < 80; ++g) net = mutate(net, grow, g, r);
+    Rng r(seed);
+    N32 net = N32::create(40, 6, 5, Priority::Speed, r, 2, 3);
+    for (std::uint64_t g = 1; g < 80; ++g) net = mutate(net, grow, g, r);
+    return net;
+}
+
+static std::size_t neuron_count(const N32& n) {
+    std::size_t c = 0;
+    for (const auto& x : n.nodes) c += x.neuron.has_value();
+    return c;
+}
+
+TEST_CASE("profiles/bulk.json adds the requested percentage") {
+    for (std::uint64_t seed = 0; seed < 3; ++seed) {
+        const N32 net = grown_net(seed);
+        for (double pct : {10.0, 40.0}) {
+            Rng rb(seed + 7);
+            const N32 big = mutate(net, bulk_profile(pct, 80.0), 100, rb);
+            const double target = std::max(1.0, pct * static_cast<double>(neuron_count(net)) / 100.0);
+            const double added = static_cast<double>(neuron_count(big) - neuron_count(net));
+            CHECK(added >= std::floor(target));
+            CHECK(added <= std::ceil(target));
+        }
+    }
+}
+
+TEST_CASE("bulk growth without links leaves outputs unchanged") {
+    for (std::uint64_t seed = 0; seed < 3; ++seed) {
+        N32 net = grown_net(seed);
         Rng rb(seed + 7);
-        N32 big = mutate(net, bulk, 100, rb);
-        const double target = std::max(1.0, 0.1 * static_cast<double>(neurons(net)));
-        CHECK(static_cast<double>(neurons(big) - neurons(net)) >= std::floor(target));
-        CHECK(neurons(big) - neurons(net) <= static_cast<std::size_t>(std::ceil(target)) + 1);
+        N32 big = mutate(net, bulk_profile(10.0, 0.0), 100, rb);
+        CHECK(neuron_count(big) > neuron_count(net));
         Rng ri(seed + 99);
         net.reset();
         big.reset();
@@ -702,44 +725,18 @@ TEST_CASE("profiles/bulk.json grows a net by 10% without changing its outputs") 
             std::vector<double> in(40);
             for (auto& x : in) x = (ri.u() - 0.5) * 10;
             const auto a = net.step(in), b = big.step(in);
-            REQUIRE(a.size() == b.size());
             for (std::size_t k = 0; k < a.size(); ++k)
                 CHECK(std::bit_cast<std::uint64_t>(a[k]) == std::bit_cast<std::uint64_t>(b[k]));
         }
     }
 }
 
-TEST_CASE("open-slot fill fills most empty m slots") {
-    Profile grow = Profile::defaults();
-    grow.set_overall("growth_max_pct", 5.0);
-    Rng r(4);
-    N32 net = N32::create(8, 2, 7, Priority::Speed, r, 2, 3);
-    for (std::uint64_t g = 1; g < 60; ++g) net = mutate(net, grow, g, r);
-    auto empties = [](const N32& n) {
-        std::map<NodeId, int> e;
-        for (NodeId i = 0; i < n.nodes.size(); ++i) {
-            const auto* m = n.nodes[i].neuron ? std::get_if<MNeuron>(&*n.nodes[i].neuron) : nullptr;
-            if (!m) continue;
-            int empty = 0, connected = 0;
-            for (const auto& s : m->slots) ++(s ? connected : empty);
-            if (connected) e[i] = empty;
-        }
-        return e;
-    };
-    const auto before = empties(net);
-    Profile p = zero_profile();
-    p.set_overall("open_slot_fill_pct", 80.0);
-    Rng rc(9);
-    const auto after = empties(mutate(net, p, 100, rc));
-    int total = 0, filled = 0;
-    for (const auto& [i, e] : before) {
-        const int f = e - after.at(i);
-        CHECK(f >= 0);
-        CHECK(f <= static_cast<int>(std::ceil(0.8 * e)));
-        total += e;
-        filled += f;
-    }
-    CHECK(total > 20);
-    CHECK(filled >= 0.4 * total);  // the mix rule blocks some (near inputs)
+TEST_CASE("open-slot fill needs the fill budget") {
+    const N32 net = grown_net(1);
+    Profile p = bulk_profile(10.0, 80.0), q = bulk_profile(10.0, 0.0);
+    p.apply_patch(json{{"overall", {{"growth_budget", "exact"}}}});
+    q.apply_patch(json{{"overall", {{"growth_budget", "exact"}}}});
+    Rng r1(3), r2(3);
+    CHECK(to_bytes(mutate(net, p, 100, r1)) == to_bytes(mutate(net, q, 100, r2)));
     CHECK_THROWS(p.set_overall("open_slot_fill_pct", 101.0));
 }

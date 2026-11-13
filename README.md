@@ -58,8 +58,9 @@ pop = Population.load("run.jpnet")                     # resumes exactly, in Pyt
 ```
 
 Ready-made mutation profiles live in [`profiles/`](profiles/README.md): `expansion.json` (grows
-wide nets fast) and `training.json` (slow growth for training). Load one with
-`profile_from_json` in either language.
+wide nets fast), `training.json` (slow growth for training: 1% of a net's neurons, min 1, in 10% of
+generations for 10% of nets) and `bulk.json` (growth only: add a set percentage of neurons before a
+training pass). Load one with `profile_from_json` in either language.
 
 Nets are stored as binary `.jnet` files and populations as `.jpnet` files
 ([spec/09](spec/09-serialization.md)). Both languages write byte-identical files, so a run
@@ -93,7 +94,7 @@ Build and test instructions: [cpp/README.md](cpp/README.md), [python/README.md](
 | **Path rule** | Every input always has at least one path to every output. |
 | **Mix rule** | Every input-to-output path passes through at least `path_mix` v, s and m neurons each (default 2, set when a net is created). |
 | **Run rule** | No path has more than `max_run` 1:1 (v, s) or many:1 (m) neurons in a row (default 3), so the kinds alternate. |
-| **Mutation** | A profile sets "up to %" budgets for op changes, edits (including rewiring and slot retargeting), growth, removal and depth shifts. Growth has eleven methods: neutral path insertions (`v_insert`, `s_insert`, `m_after_m`, `m_insert`), branches into open m slots (`slot_fill`, input taps, `v_link`/`s_link`, `m_clone`), with receivers chosen to spread width across the net. Removal is exact neutral pruning with cascades, plus optional constant folding. Growth can be limited to a share of generations and nets, with an s↔v swap for the nets that miss out. Every mutation operation is counted. |
+| **Mutation** | A profile sets "up to %" budgets for op changes, edits (including rewiring and slot retargeting), growth, removal and depth shifts. Growth has eleven methods: neutral path insertions (`v_insert`, `s_insert`, `m_after_m`, `m_insert`), branches into open m slots (`slot_fill`, input taps, `v_link`/`s_link`, `m_clone`), with receivers chosen to spread width across the net. Removal is exact neutral pruning with cascades, plus optional constant folding. Growth can be limited to a share of generations and nets, with an s↔v swap for the nets that miss out. A `fill` growth budget adds an exact share of the net's neurons (retrying skipped attempts), optionally filling open m slots with links inside the same total (bulking). Every mutation operation is counted. |
 
 The full, normative definition lives in [`spec/`](spec/README.md).
 

@@ -1,5 +1,6 @@
 import json
 import math
+import pathlib
 
 import pytest
 from helpers import M, S, V, load_golden, make_net, outputs_for, sample_inputs
@@ -670,54 +671,56 @@ def test_biased_slot_edits():
             assert moved > 5                                   # (cuts here are mostly blocked by the path rule)
 
 
-def test_bulk_profile_grows_ten_percent_without_changing_outputs():
-    import math
-    import pathlib
-    bulk = profile_from_json((pathlib.Path(__file__).parents[2] / "profiles" / "bulk.json").read_text())
+def _grown_net(seed, n_in=12, n_out=3, q=5):
     grow = Profile.default()
     grow.overall["growth_max_pct"] = 3.0
+    r = Rng(seed)
+    net = Net.create(n_in, n_out, DepthType.U32, q, Priority.SPEED, r, 2, 3)
+    for g in range(1, 80):
+        net = mutate(net, grow, g, r)
+    return net
 
-    def neurons(n):
-        return sum(1 for x in n.nodes if x.neuron is not None)
 
+def _neurons(n):
+    return sum(1 for x in n.nodes if x.neuron is not None)
+
+
+def _bulk_profile(pct, open_pct):
+    p = profile_from_json((pathlib.Path(__file__).parents[2] / "profiles" / "bulk.json").read_text())
+    p.overall["growth_max_pct"] = pct
+    p.overall["open_slot_fill_pct"] = open_pct
+    return p
+
+
+def test_bulk_profile_adds_the_requested_percentage():
     for seed in range(3):
-        r = Rng(seed)
-        net = Net.create(12, 3, DepthType.U32, 5, Priority.SPEED, r, 2, 3)
-        for g in range(1, 80):
-            net = mutate(net, grow, g, r)
-        big = mutate(net, bulk, 100, Rng(seed + 7))
-        target = max(1.0, 0.1 * neurons(net))
-        assert math.floor(target) <= neurons(big) - neurons(net) <= math.ceil(target) + 1
+        net = _grown_net(seed)
+        for pct in (10.0, 40.0):
+            big = mutate(net, _bulk_profile(pct, 80.0), 100, Rng(seed + 7))
+            target = max(1.0, pct * _neurons(net) / 100.0)
+            assert math.floor(target) <= _neurons(big) - _neurons(net) <= math.ceil(target)
+
+
+def test_bulk_growth_without_links_leaves_outputs_unchanged():
+    for seed in range(3):
+        net = _grown_net(seed)
+        big = mutate(net, _bulk_profile(10.0, 0.0), 100, Rng(seed + 7))
+        assert _neurons(big) > _neurons(net)
         ri = Rng(seed + 99)
         net.reset()
         big.reset()
         for _ in range(40):
             x = [(ri.u() - 0.5) * 10 for _ in range(12)]
-            a, b = net.step(x), big.step(x)
-            assert [v.hex() for v in a] == [v.hex() for v in b]
+            assert [v.hex() for v in net.step(x)] == [v.hex() for v in big.step(x)]
 
 
-def test_open_slot_fill_fills_most_empty_slots():
-    grow = Profile.default()
-    grow.overall["growth_max_pct"] = 5.0
-    r = Rng(4)
-    net = Net.create(8, 2, DepthType.U32, 7, Priority.SPEED, r, 2, 3)
-    for g in range(1, 60):
-        net = mutate(net, grow, g, r)
-
-    def empties(n):
-        return {i: sum(1 for s in x.neuron.slots if s is None) for i, x in enumerate(n.nodes)
-                if isinstance(x.neuron, MNeuron) and any(s is not None for s in x.neuron.slots)}
-
-    before = empties(net)
-    assert sum(before.values()) > 20
-    p = profile(open_slot_fill_pct=80.0)                       # only phase 3, no growth attempts
-    child = mutate(net, p, 100, Rng(9))
-    after = empties(child)
-    filled = {i: before[i] - after[i] for i in before}
-    assert all(0 <= f <= math.ceil(0.8 * before[i]) for i, f in filled.items())
-    assert sum(filled.values()) >= 0.4 * sum(before.values())     # the mix rule blocks some (near inputs)
-    assert profile(open_slot_fill_pct=0.0) and mutate(net, profile(), 100, Rng(9)).nodes == net.nodes
+def test_open_slot_fill_needs_the_fill_budget():
+    net = _grown_net(1)
+    p = _bulk_profile(10.0, 80.0)
+    p.overall["growth_budget"] = "exact"
+    q = _bulk_profile(10.0, 0.0)
+    q.overall["growth_budget"] = "exact"
+    assert net_to_bytes(mutate(net, p, 100, Rng(3))) == net_to_bytes(mutate(net, q, 100, Rng(3)))
     with pytest.raises(Exception):
         profile_from_json(json.dumps({"format": "j_neuro.profile", "spec_version": "0.5.0",
                                       "overall": {"open_slot_fill_pct": 101}}))

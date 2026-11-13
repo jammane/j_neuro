@@ -69,7 +69,8 @@ def profile_variants():
     fill_small.overall["add_method_weights"].update({"slot_fill": 40, "v_tap": 30, "m_tap": 30})
     out["fill_growth_small"] = fill_small
     open_fill = Profile.default()
-    open_fill.overall["growth_max_pct"] = 10.0
+    open_fill.overall["growth_max_pct"] = 30.0
+    open_fill.overall["growth_budget"] = "fill"                # slot fill can end one over
     open_fill.overall["open_slot_fill_pct"] = 80.0
     out["open_slot_fill"] = open_fill
     open_bulk = Profile.default()
