@@ -144,6 +144,22 @@ struct Table {
     }
 };
 
+/// The net's 9 inputs for the decision on the current hand.
+inline void decision_inputs(const Table& table, const Deal& deal, std::vector<double>& in) {
+    const Hand& hand = table.hands[table.h];
+    in.assign(9, 0.0);
+    in[0] = input_value(deal.dealer[0]);
+    in[1] = 0.0;  // the dealer's second card is the hole card: face down, not visible to the player
+    for (int i = 0; i < kCardsPerHand; ++i)
+        in[2 + i] = static_cast<std::size_t>(i) < hand.revealed ? input_value(hand.cards[i]) : 0.0;
+}
+
+/// True if Split on the current hand would split (otherwise it stands).
+inline bool split_valid(const Table& table) {
+    const Hand& hand = table.hands[table.h];
+    return hand.revealed == 2 && hand.cards[0] == hand.cards[1] && table.hands.size() < static_cast<std::size_t>(kMaxHands);
+}
+
 /// Play one deal with `net`; returns the score. `observe(hand, deal, action)` sees every decision.
 template <class Observe>
 double play_deal(Net<D>& net, const Deal& deal, Observe&& observe) {
@@ -152,10 +168,7 @@ double play_deal(Net<D>& net, const Deal& deal, Observe&& observe) {
     std::vector<double> in(9);
     while (!table.finished()) {
         const Hand& hand = table.hands[table.h];
-        in[0] = input_value(deal.dealer[0]);
-        in[1] = 0.0;  // the dealer's second card is the hole card: face down, not visible to the player
-        for (int i = 0; i < kCardsPerHand; ++i)
-            in[2 + i] = static_cast<std::size_t>(i) < hand.revealed ? input_value(hand.cards[i]) : 0.0;
+        decision_inputs(table, deal, in);
         const Action a = decode(net.step(in)[0]);
         observe(hand, deal, a);
         table.act(deal, a);
@@ -177,6 +190,19 @@ inline bool winnable(const Deal& deal, const Table& table) {
     return false;
 }
 inline bool winnable(const Deal& deal) { return winnable(deal, Table(deal)); }
+
+/// True if some sequence of decisions ends with a score of 0 or more (a push counts).
+inline bool can_break_even(const Deal& deal, const Table& table) {
+    if (table.finished()) return table.score(deal) >= 0;
+    for (Action a : {Stand, Hit, Double, Split}) {
+        if (a == Split && !split_valid(table)) continue;  // an invalid split is a stand
+        Table next = table;
+        next.act(deal, a);
+        if (can_break_even(deal, next)) return true;
+    }
+    return false;
+}
+inline bool can_break_even(const Deal& deal) { return can_break_even(deal, Table(deal)); }
 
 /// The simple hit rule (a reference, not a net): hit below 12, or below 17 when the dealer's first
 /// card is 7 or higher; otherwise stand. Never doubles or splits.
