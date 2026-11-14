@@ -60,7 +60,9 @@ pop = Population.load("run.jpnet")                     # resumes exactly, in Pyt
 Ready-made mutation profiles live in [`profiles/`](profiles/README.md): `expansion.json` (grows
 wide nets fast), `training.json` (slow growth for training: 1% of a net's neurons, min 1, in 10% of
 generations for 10% of nets) and `bulk.json` (growth only: add a set percentage of neurons before a
-training pass). Load one with `profile_from_json` in either language.
+training pass), and `train-10-10-gc.json` / `train-15-15-gc.json` (training growth at 10%/10% or
+15%/15%, with every neuron a mutation removes grown back, so nets keep their size). Load one with
+`profile_from_json` in either language.
 
 Nets are stored as binary `.jnet` files and populations as `.jpnet` files
 ([spec/09](spec/09-serialization.md)). Both languages write byte-identical files, so a run
