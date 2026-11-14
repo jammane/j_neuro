@@ -144,14 +144,34 @@ struct Table {
     }
 };
 
-/// The net's 9 inputs for the decision on the current hand.
+/// Open-card mode: every card is face up (examples/blackjack/tune.cpp --open). The first 9 inputs
+/// stay as in the normal game (input 1, the hole card, stays 0 there), and 21 more follow:
+///   9      the dealer's hole card          10..14  the cards the dealer would draw (3rd to 7th)
+///   15..21 the current hand's cards still to come (card i while i >= revealed, else 0)
+///   22..28 the 7 cards a split would deal next (0 once the split blocks run out)
+///   29     the number of hands in play
+inline bool g_open_cards = false;
+constexpr std::size_t kInputs = 9, kOpenInputs = 30;
+inline std::size_t n_inputs() { return g_open_cards ? kOpenInputs : kInputs; }
+
+/// The net's inputs for the decision on the current hand.
 inline void decision_inputs(const Table& table, const Deal& deal, std::vector<double>& in) {
     const Hand& hand = table.hands[table.h];
-    in.assign(9, 0.0);
+    in.assign(n_inputs(), 0.0);
     in[0] = input_value(deal.dealer[0]);
     in[1] = 0.0;  // the dealer's second card is the hole card: face down, not visible to the player
     for (int i = 0; i < kCardsPerHand; ++i)
         in[2 + i] = static_cast<std::size_t>(i) < hand.revealed ? input_value(hand.cards[i]) : 0.0;
+    if (!g_open_cards) return;
+    in[9] = input_value(deal.dealer[1]);
+    for (int i = 2; i < kCardsPerHand; ++i) in[8 + i] = input_value(deal.dealer[i]);
+    for (int i = 0; i < kCardsPerHand; ++i)
+        in[15 + i] = static_cast<std::size_t>(i) >= hand.revealed ? input_value(hand.cards[i]) : 0.0;
+    for (std::size_t i = 0; i < static_cast<std::size_t>(kCardsPerHand); ++i) {
+        const std::size_t k = table.next_split_card + i;
+        in[22 + i] = k < deal.split_cards.size() ? input_value(deal.split_cards[k]) : 0.0;
+    }
+    in[29] = static_cast<double>(table.hands.size());
 }
 
 /// True if Split on the current hand would split (otherwise it stands).
@@ -165,7 +185,7 @@ template <class Observe>
 double play_deal(Net<D>& net, const Deal& deal, Observe&& observe) {
     Table table(deal);
     net.reset_state();  // s_neuron history covers one deal (keeps the cached plan: nets are not edited in place)
-    std::vector<double> in(9);
+    std::vector<double> in(n_inputs());
     while (!table.finished()) {
         const Hand& hand = table.hands[table.h];
         decision_inputs(table, deal, in);

@@ -9,9 +9,11 @@
 //               by --margin), how far the output must move. Per neuron: stress = sum of |pull| over
 //               decisions, conflict = 1 - |sum of pulls| / stress (decisions pulling opposite ways).
 //   5 decide    If the most stressed neuron's conflict is >= --conflict, try adding neurons there first;
-//               otherwise try adjusting first. Adding at a stressed node N: a new m_neuron goes in front
-//               of N (N's old neuron now writes a new node B, the m's first slot); the other slots
-//               start as v(B, mul 1), so the m starts neutral; then slot by slot a new s or v neuron
+//               otherwise try adjusting first. Adding at a stressed node N: a new m_neuron goes after
+//               N's neuron (N's old neuron now writes a new node B, the m's first slot, and N's readers
+//               read the m) or before it (on the connection N's neuron reads; for an m_neuron its most
+//               stressed slot); the other slots start as copies of that first connection
+//               (v(.., mul 1)), so the m starts neutral; then slot by slot a new s or v neuron
 //               reading an existing node (through a chain with enough v, s and m neurons for the mix
 //               and run rules) replaces the filler, with the m's op and the weight chosen to correct
 //               N on the decisions pulling it up against those pulling it down.
@@ -214,11 +216,16 @@ struct Grads {
     std::vector<std::vector<double>> dec_node;     // per decision with an error: dL/dvalue by node id
     std::vector<std::vector<double>> dec_vals;     // per decision: node values at its step
     std::vector<std::pair<const HandRec*, std::size_t>> dec_at;  // per decision: its hand and step
+    std::vector<std::pair<NodeId, std::uint32_t>> hist;  // length and history nodes (S, p) of hidden s_neurons
+    std::vector<std::vector<double>> dec_hval;           // per decision: the value of each of `hist`
 };
 
 Grads gradients(const Net<D>& net, const std::vector<HandRec*>& hands) {
     Grads g;
     g.w.assign(net.nodes.size(), 0.0);
+    for (NodeId s = net.n_inputs + net.n_outputs; s < net.nodes.size(); ++s)
+        if (const auto* sn = std::get_if<SNeuron>(&*net.nodes[s].neuron))
+            for (std::uint32_t p = 1; p <= sn->k + 1; ++p) g.hist.push_back({s, p});
     Tape tape(net);
     for (const HandRec* h : hands) {
         if (!h->has_path) continue;
@@ -232,6 +239,9 @@ Grads gradients(const Net<D>& net, const std::vector<HandRec*>& hands) {
             g.dec_node.push_back(std::move(node));
             g.dec_vals.push_back(tape.at(t));
             g.dec_at.push_back({h, t});
+            std::vector<double> hv;
+            for (const auto& [s, p] : g.hist) hv.push_back(tape.conn_value(t, s, p));
+            g.dec_hval.push_back(std::move(hv));
         }
     }
     return g;
@@ -322,6 +332,18 @@ bool valid_or_count(const Net<D>& net) {
     }
 }
 
+/// Neurons reading `id` at position 0 (its own value).
+std::vector<NodeId> live_readers(const Net<D>& net, NodeId id) {
+    std::vector<NodeId> out;
+    for (NodeId r = 0; r < net.nodes.size(); ++r) {
+        if (!net.nodes[r].neuron) continue;
+        bool reads = false;
+        for_each_conn(*net.nodes[r].neuron, [&](NodeId c, std::uint32_t p) { reads = reads || (c == id && p == 0); });
+        if (reads) out.push_back(r);
+    }
+    return out;
+}
+
 /// Up to n values spread over the sorted, distinct, finite values of v.
 std::vector<double> quantiles(std::vector<double> v, std::size_t n) {
     v.erase(std::remove_if(v.begin(), v.end(), [](double x) { return !std::isfinite(x); }), v.end());
@@ -346,7 +368,8 @@ MixCounts mix_counts(const Net<D>& net) {
     MixCounts mc;
     std::vector<NodeId> order(n);
     for (NodeId i = 0; i < n; ++i) order[i] = i;
-    std::stable_sort(order.begin(), order.end(), [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
+    // structural order (spec/03): a history reader can be shallower than its s_neuron
+    std::stable_sort(order.begin(), order.end(), [&](NodeId a, NodeId b) { return struct_depth(net, a) < struct_depth(net, b); });
     auto kind = [&](NodeId i) { return net.nodes[i].neuron ? static_cast<int>(type_of(*net.nodes[i].neuron)) : -1; };
     const auto rd = readers(net);
     mc.run1.assign(n, 0);
@@ -385,7 +408,10 @@ using Pick = std::function<std::size_t(const std::vector<Net<D>>&)>;  // best ca
 /// (op(B, B, ...) = B). Then, slot by slot, a new s or v neuron reading an existing node replaces
 /// the filler, chosen (with the m's op, at the first slot) to correct the m on the decisions
 /// pulling N up against those pulling it down.
-std::optional<Net<D>> grow_at(const Net<D>& net, NodeId N, const Grads& g, const Pick& pick) {
+/// Where phase 5 puts the new m_neuron, relative to the stressed node N's neuron.
+enum class Where { After, Before };
+
+std::optional<Net<D>> grow_at(const Net<D>& net, NodeId N, const Grads& g, const Pick& pick, Where where) {
     auto depth = [&](NodeId i) { return static_cast<std::uint64_t>(net.nodes[i].depth); };
     const std::uint32_t q = net.in_qty_max;
     if (q < 2) return std::nullopt;
@@ -394,51 +420,128 @@ std::optional<Net<D>> grow_at(const Net<D>& net, NodeId N, const Grads& g, const
         if (g.dec_node[d][N] != 0) dec.push_back(d);
     if (dec.size() < 2) { ++g_rejects["fewer than 2 decisions pull on the node"]; return std::nullopt; }
 
-    // depth room: B and the fillers sit between N's deepest input and N (N may move deeper)
-    std::uint64_t below = 0;
-    for (NodeId c : connections(*net.nodes[N].neuron)) below = std::max(below, depth(c));
-    std::uint64_t dm = depth(N);
-    if (dm < below + 3) {
-        if (!net.is_hidden(N)) { ++g_rejects["no depth room (output)"]; return std::nullopt; }
-        std::uint64_t ub = std::numeric_limits<std::uint64_t>::max();
-        for (NodeId r : readers(net)[N]) ub = std::min(ub, depth(r) - 1);
-        if (ub < below + 3) { ++g_rejects["no depth room"]; return std::nullopt; }
-        dm = ub;
-    }
-    const std::uint64_t d_b = below + (dm - below) / 3, d_f = below + 2 * (dm - below) / 3;
-
     Net<D> base = net.copy_genome();
-    base.nodes[N].depth = static_cast<D>(dm);
-    const NodeId B = static_cast<NodeId>(base.nodes.size());
-    base.nodes.push_back(Node<D>{base.nodes[N].birth, base.nodes[N].born_gen, static_cast<D>(d_b), base.nodes[N].neuron});
-    std::vector<std::optional<NodeId>> slots{B};
-    for (std::uint32_t i = 1; i < q; ++i) {
-        slots.push_back(static_cast<NodeId>(base.nodes.size()));
-        base.nodes.push_back(Node<D>{base.next_birth++, 0, static_cast<D>(d_f), VNeuron{B, Inversion::None, VOp::Mul, 1.0}});
+    NodeId M = N;                 // the new m_neuron's node
+    NodeId ref = N;               // the connection the m wraps: its slot 0, copied into the fillers
+    std::uint32_t ref_pos = 0;
+    std::uint64_t dm = 0;         // the m's depth
+    std::array<int, 3> down_extra{0, 0, 0};  // neurons between the m and N's readers (Before: N itself)
+    std::vector<std::optional<NodeId>> slots;
+    if (where == Where::After) {
+        // N's neuron moves to B; the m takes N's node, so N's readers read the m
+        const std::uint64_t lo = depth_floor(net, N);  // B's shallowest depth (N's neuron, its s gap included)
+        dm = depth(N);
+        if (dm < lo + 2) {  // room for B and the fillers below the m; N may move deeper
+            if (!net.is_hidden(N)) { ++g_rejects["no depth room (after, output)"]; return std::nullopt; }
+            std::uint64_t ub = std::numeric_limits<std::uint64_t>::max();
+            for (NodeId r : live_readers(net, N)) ub = std::min(ub, depth(r) - s_gap(net, *net.nodes[r].neuron) - 1);
+            if (ub < lo + 2) { ++g_rejects["no depth room (after)"]; return std::nullopt; }
+            dm = ub;
+        }
+        const std::uint64_t d_b = lo + (dm - lo) / 3, d_f = lo + 2 * (dm - lo) / 3;
+        base.nodes[N].depth = static_cast<D>(dm);
+        const NodeId B = static_cast<NodeId>(base.nodes.size());
+        base.nodes.push_back(Node<D>{base.nodes[N].birth, base.nodes[N].born_gen, static_cast<D>(d_b), base.nodes[N].neuron});
+        slots.push_back(B);
+        for (std::uint32_t i = 1; i < q; ++i) {
+            slots.push_back(static_cast<NodeId>(base.nodes.size()));
+            base.nodes.push_back(Node<D>{base.next_birth++, 0, static_cast<D>(d_f), VNeuron{B, Inversion::None, VOp::Mul, 1.0}});
+        }
+        base.nodes[N].neuron = MNeuron{AggOp::Min, slots};
+        base.nodes[N].birth = base.next_birth++;
+        base.nodes[N].born_gen = 0;
+        for (auto& node : base.nodes) {  // N's length and history move with its neuron to B (spec/06)
+            if (!node.neuron) continue;
+            if (auto* m = std::get_if<MNeuron>(&*node.neuron)) {
+                for (std::size_t i = 0; i < m->slots.size(); ++i)
+                    if (m->slots[i] == N && m->slot_pos(i) > 0) m->set(i, B, m->slot_pos(i));
+            } else if (auto* v = std::get_if<VNeuron>(&*node.neuron)) {
+                if (v->input == N && v->input_pos > 0) v->input = B;
+            } else if (auto& s = std::get<SNeuron>(*node.neuron); s.input == N && s.input_pos > 0) {
+                s.input = B;
+            }
+        }
+        ref = B;
+    } else {
+        // the m goes on the connection N's neuron reads (an m_neuron: its most stressed connected slot)
+        const Neuron& nn = *net.nodes[N].neuron;
+        std::optional<std::size_t> slot;
+        if (const auto* m = std::get_if<MNeuron>(&nn)) {
+            double best_stress = -1;
+            for (std::size_t i = 0; i < m->slots.size(); ++i) {
+                if (!m->slots[i]) continue;
+                double st = 0;
+                for (const auto& dn : g.dec_node) st += std::fabs(dn[*m->slots[i]]);
+                if (st > best_stress) { best_stress = st; slot = i; }
+            }
+            if (!slot) { ++g_rejects["no connection to wrap (before)"]; return std::nullopt; }
+            ref = *m->slots[*slot];
+            ref_pos = m->slot_pos(*slot);
+        } else {
+            const auto& in = std::holds_alternative<VNeuron>(nn) ? std::get<VNeuron>(nn).input : std::get<SNeuron>(nn).input;
+            if (!in) { ++g_rejects["no connection to wrap (before)"]; return std::nullopt; }
+            ref = *in;
+            ref_pos = std::holds_alternative<VNeuron>(nn) ? std::get<VNeuron>(nn).input_pos : std::get<SNeuron>(nn).input_pos;
+        }
+        const std::uint64_t dc = depth(ref) - ref_pos;     // the wrapped connection's depth
+        const std::uint64_t gn = s_gap(net, nn);            // an s_neuron N keeps its gap above the m
+        if (depth(N) < dc + gn + 3) { ++g_rejects["no depth room (before)"]; return std::nullopt; }
+        dm = depth(N) - 1 - gn;
+        const std::uint64_t d_f = dc + (dm - dc) / 2;
+        slots.push_back(ref);
+        for (std::uint32_t i = 1; i < q; ++i) {
+            slots.push_back(static_cast<NodeId>(base.nodes.size()));
+            base.nodes.push_back(Node<D>{base.next_birth++, 0, static_cast<D>(d_f),
+                                         VNeuron{ref, Inversion::None, VOp::Mul, 1.0, ref_pos}});
+        }
+        M = static_cast<NodeId>(base.nodes.size());
+        MNeuron mm{AggOp::Min, slots};
+        mm.set(0, ref, ref_pos);
+        base.nodes.push_back(Node<D>{base.next_birth++, 0, static_cast<D>(dm), mm});
+        Neuron& bn = *base.nodes[N].neuron;
+        if (auto* m = std::get_if<MNeuron>(&bn)) m->set(*slot, M, 0);
+        else if (auto* v = std::get_if<VNeuron>(&bn)) { v->input = M; v->input_pos = 0; }
+        else { auto& sn = std::get<SNeuron>(bn); sn.input = M; sn.input_pos = 0; }
+        down_extra[static_cast<std::size_t>(type_of(nn))] = 1;
     }
-    base.nodes[N].neuron = MNeuron{AggOp::Min, slots};
-    base.nodes[N].birth = base.next_birth++;
-    base.nodes[N].born_gen = 0;
     if (!valid_or_count(base)) return std::nullopt;
 
-    // sources: existing nodes whose values best line up with the pulls on N
-    std::vector<std::pair<double, NodeId>> ranked;
-    for (NodeId s = 0; s < net.nodes.size(); ++s) {
-        if (s == N || depth(s) + 2 > dm) continue;
+    // sources: existing nodes, and length and history nodes of s_neurons, whose values best line
+    // up with the pulls on N; the best kSources of each kind
+    struct Src {
+        double score;
+        NodeId node;
+        std::uint32_t pos;
+    };
+    auto score_of = [&](auto&& val) -> std::optional<double> {
         double wsum = 0, mean = 0;
-        for (std::size_t d : dec) { const double a = std::fabs(g.dec_node[d][N]); wsum += a; mean += a * g.dec_vals[d][s]; }
+        for (std::size_t d : dec) { const double a = std::fabs(g.dec_node[d][N]); wsum += a; mean += a * val(d); }
         mean /= wsum;
         double var = 0, cov = 0;
         for (std::size_t d : dec) {
-            const double a = std::fabs(g.dec_node[d][N]), x = g.dec_vals[d][s] - mean;
+            const double a = std::fabs(g.dec_node[d][N]), x = val(d) - mean;
             var += a * x * x;
             cov += g.dec_node[d][N] * x;
         }
-        if (!(var > 0) || !std::isfinite(var) || !std::isfinite(cov)) continue;
-        ranked.push_back({std::fabs(cov) / (std::sqrt(var / wsum) * wsum), s});
+        if (!(var > 0) || !std::isfinite(var) || !std::isfinite(cov)) return std::nullopt;
+        return std::fabs(cov) / (std::sqrt(var / wsum) * wsum);
+    };
+    std::vector<Src> nodes_ranked, hist_ranked;
+    for (NodeId s = 0; s < net.nodes.size(); ++s) {
+        if (s == N || depth(s) + 2 > dm) continue;
+        if (auto sc = score_of([&](std::size_t d) { return g.dec_vals[d][s]; })) nodes_ranked.push_back({*sc, s, 0});
     }
-    std::stable_sort(ranked.begin(), ranked.end(), [](auto& a, auto& b) { return a.first > b.first; });
-    if (ranked.size() > kSources) ranked.resize(kSources);
+    for (std::size_t i = 0; i < g.hist.size(); ++i) {
+        const auto [s, p] = g.hist[i];
+        if (s == N || depth(s) - p + 2 > dm) continue;  // N's own history moves to B; skip it
+        if (auto sc = score_of([&](std::size_t d) { return g.dec_hval[d][i]; })) hist_ranked.push_back({*sc, s, p});
+    }
+    std::vector<Src> ranked;
+    for (auto* list : {&nodes_ranked, &hist_ranked}) {
+        std::stable_sort(list->begin(), list->end(), [](const Src& a, const Src& b) { return a.score > b.score; });
+        if (list->size() > kSources) list->resize(kSources);
+        ranked.insert(ranked.end(), list->begin(), list->end());
+    }
     if (ranked.empty()) { ++g_rejects["no source varies with the pulls"]; return base; }
 
     // Each new slot is fed by a chain from its source with as many s, v and m neurons as the
@@ -451,19 +554,21 @@ std::optional<Net<D>> grow_at(const Net<D>& net, NodeId N, const Grads& g, const
     for (std::uint32_t k = 1; k < q; ++k) {
         const NodeId F = *slots[k];
         std::vector<Net<D>> cands;
-        std::vector<AggOp> ops{std::get<MNeuron>(*best.nodes[N].neuron).op};
+        std::vector<AggOp> ops{std::get<MNeuron>(*best.nodes[M].neuron).op};
         if (k == 1) ops = {AggOp::Min, AggOp::Max, AggOp::Mean, AggOp::Median};
         for (AggOp op : ops) {
             Net<D> b0 = best.copy_genome();
-            std::get<MNeuron>(*b0.nodes[N].neuron).op = op;
+            std::get<MNeuron>(*b0.nodes[M].neuron).op = op;
             cands.push_back(b0);  // the filler stays
             for (const auto& rs : ranked) {
-                const NodeId S = rs.second;
+                const NodeId S = rs.node;              // the node, or the s_neuron of a length / history node
+                const std::uint32_t sp = rs.pos;
+                const std::uint64_t sd = depth(S) - sp;  // the source connection's depth
                 for (XKind xk : {kAdd, kMul, kDiff, kPrev}) {
                     const int x_type = (xk == kAdd || xk == kMul) ? 0 : 1;
                     int need[3];
                     for (int t = 0; t < 3; ++t)
-                        need[t] = std::max(0, pm - mc.up[t][S] - mc.down[t][N] - (t == 2) - (t == x_type));
+                        need[t] = std::max(0, pm - mc.up[t][S] - mc.down[t][N] - down_extra[static_cast<std::size_t>(t)] - (t == 2) - (t == x_type));
                     {
                         // from S toward the m: alternate one-in (s, v) and many-in (single-slot min)
                         // neurons, never letting a run reach max_run (counting the run ending at
@@ -486,26 +591,28 @@ std::optional<Net<D>> grow_at(const Net<D>& net, NodeId N, const Grads& g, const
                         }
                         if (r1 + 1 > lim) put(2);           // X must not end a run that is too long
                         const std::uint64_t len = seq.size() + 1;  // the chain plus the slot's neuron
-                        if (dm < depth(S) + len + 1) { ++g_rejects["no depth room for the chain"]; continue; }
+                        if (dm < sd + len + 1) { ++g_rejects["no depth room for the chain"]; continue; }
                         Net<D> c = b0.copy_genome();
-                        auto d_at = [&](std::uint64_t i) { return static_cast<D>(depth(S) + (i + 1) * (dm - depth(S)) / (len + 1)); };
+                        auto d_at = [&](std::uint64_t i) { return static_cast<D>(sd + (i + 1) * (dm - sd) / (len + 1)); };
                         NodeId prev = S;
+                        std::uint32_t prev_pos = sp;  // the first neuron reads the source connection
                         for (std::size_t i = 0; i < seq.size(); ++i) {
                             Neuron nn;
-                            if (seq[i] == 0) nn = VNeuron{prev, Inversion::None, VOp::Mul, 1.0};
-                            else if (seq[i] == 1) nn = SNeuron{prev, AggOp::Mean, 1};
+                            if (seq[i] == 0) nn = VNeuron{prev, Inversion::None, VOp::Mul, 1.0, prev_pos};
+                            else if (seq[i] == 1) nn = SNeuron{prev, AggOp::Mean, 1, prev_pos};
                             else {
-                                std::vector<std::optional<NodeId>> sl(q, std::nullopt);
-                                sl[0] = prev;
-                                nn = MNeuron{AggOp::Min, sl};
+                                MNeuron mm{AggOp::Min, std::vector<std::optional<NodeId>>(q, std::nullopt)};
+                                mm.set(0, prev, prev_pos);
+                                nn = mm;
                             }
                             const NodeId id = static_cast<NodeId>(c.nodes.size());
                             c.nodes.push_back(Node<D>{c.next_birth++, 0, d_at(i), std::move(nn)});
                             prev = id;
+                            prev_pos = 0;
                         }
-                        if (xk == kAdd) c.nodes[F].neuron = VNeuron{prev, Inversion::None, VOp::Add, 0.0};
-                        else if (xk == kMul) c.nodes[F].neuron = VNeuron{prev, Inversion::None, VOp::Mul, 1.0};
-                        else c.nodes[F].neuron = SNeuron{prev, xk == kDiff ? AggOp::Mean : AggOp::Lag, 1};
+                        if (xk == kAdd) c.nodes[F].neuron = VNeuron{prev, Inversion::None, VOp::Add, 0.0, prev_pos};
+                        else if (xk == kMul) c.nodes[F].neuron = VNeuron{prev, Inversion::None, VOp::Mul, 1.0, prev_pos};
+                        else c.nodes[F].neuron = SNeuron{prev, xk == kDiff ? AggOp::Mean : AggOp::Lag, 1, prev_pos};
                         c.nodes[F].depth = d_at(seq.size());
                         if (!valid_or_count(c)) continue;
                         if (xk == kDiff || xk == kPrev) { cands.push_back(std::move(c)); continue; }
@@ -517,7 +624,7 @@ std::optional<Net<D>> grow_at(const Net<D>& net, NodeId N, const Grads& g, const
                                 const auto& [h, t] = g.dec_at[d];
                                 tape.clear();
                                 for (std::size_t i = 0; i <= t; ++i) tape.push(h->path[i].in);
-                                const double xin = tape.at(t)[prev], bv = tape.at(t)[B];
+                                const double xin = tape.conn_value(t, prev, prev_pos), bv = tape.conn_value(t, ref, ref_pos);
                                 ws.push_back(xk == kAdd ? bv - xin : bv / xin);
                             }
                         }
@@ -549,6 +656,47 @@ long allowed_broken(int accepted, long ledger, long x, long broken_prev) {
 }
 
 std::size_t neurons(const Net<D>& net) { return net.nodes.size() - net.n_inputs; }
+
+/// Even depths: hidden nodes keep their depth order (ties by id) and are spread evenly over
+/// [1, D_MAX - 1]. Every connection stays strictly shallower than its reader and the gaps are far
+/// wider than an s gap, so outputs are unchanged (nets without length or history reads only).
+void respace_even(Net<D>& net) {
+    std::vector<NodeId> hidden;
+    for (NodeId i = net.n_inputs + net.n_outputs; i < net.nodes.size(); ++i) hidden.push_back(i);
+    std::stable_sort(hidden.begin(), hidden.end(), [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
+    const std::uint64_t step = static_cast<std::uint64_t>(Net<D>::d_max) / (hidden.size() + 1);
+    for (std::size_t k = 0; k < hidden.size(); ++k) net.nodes[hidden[k]].depth = static_cast<D>(step * (k + 1));
+    net.reset();
+    net.validate();
+}
+
+/// Connections reading a length or history node (position >= 1), and those reading a length node.
+std::size_t history_reads(const Net<D>& net) {
+    std::size_t n = 0;
+    for (const auto& node : net.nodes)
+        if (node.neuron) for_each_conn(*node.neuron, [&](NodeId, std::uint32_t p) { n += p > 0; });
+    return n;
+}
+/// The tape must reproduce Net::step exactly; checked on the given hands.
+bool tape_matches(const Net<D>& net, const std::vector<HandRec*>& hands, std::size_t count) {
+    Tape tape(net);
+    Net<D> n = net.copy_genome();
+    for (std::size_t i = 0; i < std::min(count, hands.size()); ++i) {
+        std::vector<Step> path;
+        play(tape, hands[i]->deal, &path);
+        n.reset_state();
+        for (std::size_t t = 0; t < path.size(); ++t)
+            if (to_bits(n.step(path[t].in)[0]) != to_bits(tape.output(t))) return false;
+    }
+    return true;
+}
+
+std::size_t length_reads(const Net<D>& net) {
+    std::size_t n = 0;
+    for (const auto& node : net.nodes)
+        if (node.neuron) for_each_conn(*node.neuron, [&](NodeId, std::uint32_t p) { n += p == 1; });
+    return n;
+}
 
 struct Holdout {
     double pts = 0, even_pct = 0;
@@ -591,6 +739,8 @@ int main(int argc, char** argv) {
     int n_blocks = 100, x = 20, max_rounds = 100, n_holdout = 10000;
     std::uint64_t seed = 777;
     double conflict_at = 0.5;
+    bool open = false;               // open-card blackjack: every card face up (game.hpp)
+    std::string start_kind = "pop";  // pop: the population's best net (widened with add_input if open); fresh
     for (int i = 1; i + 1 < argc; i += 2) {
         const std::string a = argv[i], v = argv[i + 1];
         if (a == "--pop") pop_file = v;
@@ -602,6 +752,8 @@ int main(int argc, char** argv) {
         else if (a == "--max-rounds") max_rounds = std::stoi(v);
         else if (a == "--margin") g_margin = std::stod(v);
         else if (a == "--conflict") conflict_at = std::stod(v);
+        else if (a == "--open") open = v == "1" || v == "on" || v == "yes";
+        else if (a == "--start") start_kind = v;
         else if (a == "--out") out = v;
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
     }
@@ -630,11 +782,16 @@ int main(int argc, char** argv) {
     for (std::size_t i = 0; i < hands.size(); ++i) blocks[i / x].push_back(&hands[i]);
 
     // the starting net: the population's net that plays the most dealt hands to 0 or more
-    Pop pop = Pop::load(pop_file);
+    if (start_kind != "pop" && start_kind != "fresh") { std::cerr << "--start must be pop or fresh\n"; return 2; }
     Net<D> net;
-    {
+    if (start_kind == "fresh") {
+        // a minimal net (spec/03) with the trainer's parameters
+        Rng r(seed);
+        net = Net<D>::create(static_cast<std::uint32_t>(open ? kOpenInputs : kInputs), 1, 3, Priority::Speed, r, 2, 3);
+    } else {
+        Pop pop = Pop::load(pop_file);
         long best = -1;
-        for (auto id : pop.ids()) {
+        for (auto id : pop.ids()) {  // played as the normal 9-input game
             if (net_id && id != *net_id) continue;
             Net<D> n = pop.get(id).copy_genome();
             long even = 0;
@@ -642,6 +799,27 @@ int main(int argc, char** argv) {
             if (even > best) { best = even; net = pop.get(id).copy_genome(); }
         }
         if (best < 0) { std::cerr << "no such net\n"; return 2; }
+        // open cards: append the 21 new inputs, silenced (spec/12 add_input, active = false), so the
+        // net plays exactly as before until tuning gives them weight
+        while (open && net.n_inputs < kOpenInputs) {
+            respace_even(net);  // room for add_input's medians in front of outputs (spec/12)
+            net = add_input(net, std::nullopt, false, 0);
+        }
+    }
+    g_open_cards = open;
+    // TUNE_GRADCHECK=history: first make the net read length and history nodes (library mutation
+    // with history_read_prob), so the checks below cover them
+    if (const char* gc = std::getenv("TUNE_GRADCHECK"); gc && std::string(gc) == "history") {
+        Profile hp = Profile::defaults();
+        hp.set_overall("history_read_prob", 0.6);
+        hp.set_overall("rewire_prob", 0.6);
+        hp.set_overall("edit_max_pct", 40.0);
+        hp.set_overall("growth_max_pct", 20.0);
+        hp.set_overall("removal_max_pct", 0.0);
+        Rng r(seed);
+        for (int gen = 1; gen <= 60 && history_reads(net) < 6; ++gen) net = mutate(net, hp, gen, r);
+        std::cerr << "  grown to " << neurons(net) << " neurons, " << history_reads(net) << " length/history reads ("
+                  << length_reads(net) << " length)\n";
     }
     // the tape must reproduce Net::step exactly
     {
@@ -676,6 +854,12 @@ int main(int argc, char** argv) {
         for (int i = 0; i < n_holdout; ++i) hold.emplace_back(r.next_u64());
     }
     save_net(out / "start.jnet", net);
+    {
+        long can = 0;
+        for (const Deal& d : hold) can += can_break_even(d);
+        std::cout << "ceiling: " << std::fixed << std::setprecision(1) << 100.0 * can / std::max<std::size_t>(1, hold.size())
+                  << "% of holdout hands can reach 0 or more\n";
+    }
     const Holdout h0 = holdout(net, hold);
     std::cout << "start: " << neurons(net) << " neurons, " << hands.size() << " usable hands in " << n_blocks << " blocks of "
               << x << ", holdout " << std::fixed << std::setprecision(4) << h0.pts << " pts/deal, "
@@ -683,9 +867,9 @@ int main(int argc, char** argv) {
 
     std::ofstream log(out / "attempts.csv"), slog(out / "stress.csv");
     log << "attempt,block,result,rounds,block_works,ledger_broken,ledger,broken_pct,neurons,weight_steps,op_changes,"
-           "growths,holdout_pts,holdout_even_pct,seconds\n";
+           "growths,history_reads,holdout_pts,holdout_even_pct,seconds\n";
     slog << "attempt,block,round,rank,node,kind,stress,conflict,decided\n";
-    log << "0,-1,start,0,0,0,0,0," << neurons(net) << ",0,0,0," << h0.pts << ',' << h0.even_pct << ",0\n";
+    log << "0,-1,start,0,0,0,0,0," << neurons(net) << ",0,0,0," << history_reads(net) << "," << h0.pts << ',' << h0.even_pct << ",0\n";
 
     std::deque<int> queue;
     for (int b = 0; b < n_blocks; ++b) queue.push_back(b);
@@ -701,7 +885,7 @@ int main(int argc, char** argv) {
         const long allowed = allowed_broken(accepted, static_cast<long>(ledger.size()), x, broken_prev);
         std::vector<HandRec*> all = blocks[blk];
         all.insert(all.end(), ledger.begin(), ledger.end());
-        int rounds = 0, n_w = 0, n_o = 0, n_g = 0;
+        int rounds = 0, n_w = 0, n_o = 0, n_g = 0, n_before = 0;
         bool ok = false;
         Eval cur;
         for (; rounds < max_rounds && !g_stop; ++rounds) {
@@ -738,6 +922,7 @@ int main(int argc, char** argv) {
             const Pick pick = [&](const std::vector<Net<D>>& c) { return best_of(c, nullptr); };
             auto try_kind = [&](int kind) -> bool {
                 std::vector<Net<D>> cands;
+                std::vector<char> before;  // growth: whether each candidate's m went before N's neuron
                 if (kind == 0) cands = weight_candidates(net, g.w);
                 else if (kind == 1) cands = op_candidates(net, st);
                 else {
@@ -746,7 +931,11 @@ int main(int argc, char** argv) {
                         if (sites == kTopGrow) break;
                         if (grow_first && s.conflict < conflict_at) continue;
                         ++sites;
-                        if (auto c = grow_at(net, s.id, g, pick)) cands.push_back(std::move(*c));
+                        for (Where w : {Where::After, Where::Before})  // the m after N's neuron, or before it
+                            if (auto c = grow_at(net, s.id, g, pick, w)) {
+                                cands.push_back(std::move(*c));
+                                before.push_back(w == Where::Before);
+                            }
                     }
                 }
                 if (cands.empty()) return false;
@@ -754,6 +943,11 @@ int main(int argc, char** argv) {
                 if (best == cands.size()) return false;
                 net = cands[best].copy_genome();
                 (kind == 0 ? n_w : kind == 1 ? n_o : n_g) += 1;
+                if (kind == 2) n_before += before[best];
+                if (kind == 2 && !tape_matches(net, blocks[blk], 30)) {
+                    std::cerr << "tape differs from Net::step after a growth\n";
+                    std::exit(1);
+                }
                 return true;
             };
             const std::array<int, 3> order = grow_first ? std::array<int, 3>{2, 0, 1} : std::array<int, 3>{0, 1, 2};
@@ -800,14 +994,14 @@ int main(int argc, char** argv) {
         const double pct = ledger.empty() ? 0.0 : 100.0 * (ok ? cur.ledger_broken : broken_prev) / ledger.size();
         log << attempt << ',' << blk << ',' << (ok ? "accepted" : "stuck") << ',' << rounds << ',' << cur.block_works << ','
             << cur.ledger_broken << ',' << ledger.size() << ',' << pct << ',' << neurons(net) << ',' << n_w << ',' << n_o
-            << ',' << n_g << ',' << (ok ? h.pts : 0.0) << ',' << (ok ? h.even_pct : 0.0) << ',' << secs() << '\n';
+            << ',' << n_g << ',' << history_reads(net) << ',' << (ok ? h.pts : 0.0) << ',' << (ok ? h.even_pct : 0.0) << ',' << secs() << '\n';
         log.flush();
         slog.flush();
         std::cout << "attempt " << std::setw(4) << attempt << "  block " << std::setw(3) << blk << "  "
                   << (ok ? "accepted" : "stuck   ") << "  rounds " << std::setw(3) << rounds << "  works " << std::setw(2)
                   << cur.block_works << "/" << x << "  broken " << std::setw(4) << (ok ? cur.ledger_broken : broken_prev) << "/"
                   << std::setw(4) << ledger.size() << " (" << std::fixed << std::setprecision(1) << pct << "%)  neurons "
-                  << neurons(net) << "  w/o/g " << n_w << "/" << n_o << "/" << n_g;
+                  << neurons(net) << "  w/o/g " << n_w << "/" << n_o << "/" << n_g << " (before " << n_before << ")  hist " << history_reads(net);
         if (ok) std::cout << "  holdout " << std::setprecision(4) << h.pts << " pts, " << std::setprecision(1) << h.even_pct << "% >=0";
         std::cout << "  " << std::setprecision(0) << secs() << "s\n" << std::flush;
         if (!queue.empty() && failed.size() == queue.size()) {
