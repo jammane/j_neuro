@@ -78,6 +78,7 @@ public:
 
 private:
     using Attempt = std::optional<NeuronType> (Mutation::*)();
+    bool no_slot_fill_ = false;  // set while replacement places its last neuron
 
     /// spec/06 replacement: grow as many neurons as were removed (phase 3 attempts, no gating, no caps).
     void replace_removed() {
@@ -88,7 +89,10 @@ private:
         for (std::int64_t tries = 0; added < r && tries < 10 * r;) {
             ++tries;
             op_ = nullptr;
-            if (growth()) {
+            no_slot_fill_ = r - added == 1;  // slot fill adds two: not for the last neuron, so replacement is exact
+            const auto grown = growth();
+            no_slot_fill_ = false;
+            if (grown) {
                 ++counts[op_];
                 const std::int64_t n = std::string_view(op_) == "slot_fill" ? 2 : 1;
                 added += n;
@@ -581,6 +585,7 @@ private:
         static const char* const kNames[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap",  "s_tap",
                                              "m_tap",     "m_clone",  "m_insert", "v_link",    "s_link"};
         op_ = kNames[method];
+        if (method == 0 && no_slot_fill_) return std::nullopt;  // replacement's last neuron (spec/06)
         const std::uint64_t needed = method == 0 ? 2 : 1;
         if (live_nodes().size() + needed > static_cast<std::uint64_t>(Net<D>::d_max)) return std::nullopt;  // node cap
         if (method == 0) return slot_fill();
@@ -674,9 +679,10 @@ private:
         });
         const auto src = source(cands, h);
         if (!src) return std::nullopt;
-        const std::uint64_t lo = cdepth(*src) + 1 + gap_of(t);  // an s link keeps its gap
+        const Wide lo_w = Wide{cdepth(*src)} + 1 + gap_of(t);  // an s link keeps its gap (exact: no wrap)
         const std::uint64_t hi = static_cast<std::uint64_t>(net_.nodes[r].depth) - 1;
-        if (lo > hi) return std::nullopt;
+        if (lo_w > hi) return std::nullopt;
+        const auto lo = static_cast<std::uint64_t>(lo_w);
         const std::uint64_t d = place(lo, hi);
         Neuron neuron;
         if (t == NeuronType::V) {
@@ -782,7 +788,7 @@ private:
         const std::uint64_t lo = depth_floor(net_, a, &removed_);  // N's floor, its own s gap included
         // B fits when lo <= depth(A) - 1 - gx (kept unsigned: compare lo + 1 + gx <= depth(A))
         std::uint64_t top = depth(a);
-        if (lo + 1 + gx > top) {
+        if (Wide{lo} + 1 + gx > top) {
             if (!net_.is_hidden(a)) return std::nullopt;
             // A may move deeper, up to its position-0 readers (history reads move to B)
             std::uint64_t ub = static_cast<std::uint64_t>(Net<D>::d_max) - 1;
@@ -790,7 +796,7 @@ private:
                 for_each_conn(*net_.nodes[r].neuron, [&](NodeId c, std::uint32_t pos) {
                     if (c == a && pos == 0) ub = std::min(ub, depth(r) - gap_of(type_at(r)) - 1);
                 });
-            if (lo + 1 + gx > ub) return std::nullopt;  // spec: lo <= ub - 1 - gap(X), else skip
+            if (Wide{lo} + 1 + gx > ub) return std::nullopt;  // spec: lo <= ub - 1 - gap(X), else skip
             net_.nodes[a].depth = static_cast<D>(ub);
             top = ub;
         }
@@ -856,7 +862,7 @@ private:
         const std::uint64_t d_w = place(2 + g, d_r - 1);
         const std::uint64_t d_q = place(1 + g, d_w - 1);
         std::vector<NodeId> cands;
-        for (NodeId j : live_nodes()) if (depth(j) + g < d_q) cands.push_back(j);
+        for (NodeId j : live_nodes()) if (depth(j) < d_q - g) cands.push_back(j);  // d_q >= 1 + g: no wrap
         Neuron qn;
         if (t == NeuronType::V) {
             const NodeId in = pick(cands);

@@ -15,6 +15,10 @@ namespace jneuro {
 
 using Removed = std::vector<bool>;
 
+/// Exact unsigned arithmetic past 2^64 for depth sums near D_MAX of U64 nets (the spec's integers are
+/// unbounded, as in Python): depth + gap must not wrap around.
+__extension__ typedef unsigned __int128 Wide;  // GCC/Clang extension
+
 /// Connected node ids of a neuron, in slot order (duplicates kept).
 inline std::vector<NodeId> connections(const Neuron& n) {
     std::vector<NodeId> out;
@@ -106,7 +110,7 @@ const char* depth_rule_error(const Net<D>& net, const Removed* removed = nullptr
         if (err) return err;
         if (const auto* s = std::get_if<SNeuron>(&*net.nodes[i].neuron)) {
             const std::uint64_t in = s->input ? conn_depth(net, *s->input, s->input_pos) : 0;
-            if (in + q + 1 >= d) return "s gap: an s_neuron's input must be shallower than its depth - (in_qty_max + 1)";
+            if (Wide{in} + q + 1 >= d) return "s gap: an s_neuron's input must be shallower than its depth - (in_qty_max + 1)";
         }
     }
     return nullptr;

@@ -573,16 +573,20 @@ garbage collection, including nodes grown in phase 3 and removed again). Then:
 added = 0; tries = 0
 while added < R and tries < 10 * R:
     tries += 1
-    make one growth attempt (phase 3: method draw, then that method)
+    make one growth attempt (phase 3: method draw, then that method), except:
+        if R - added == 1 and the drawn method is slot_fill: skip (no further draws)
     if it succeeded: added += 2 if its method is slot_fill else 1
 ```
+
+The exception makes replacement exact: slot fill adds two neurons, so it is not used for the last
+one, and the count never ends over `R`.
 
 The attempts are phase 3's, with the profile's `add_method_weights`, but without phase 3's
 gating (every generation, every offspring) and without per-type caps; new neurons get
 `born_gen = generation`, so the grace period protects them. Open-slot fill does not run here.
 Constant folding replaces a neuron by a constant but removes no node, so it adds nothing to `R`
 (what it strands is collected and counted). Phase 3 growth is not affected, so a net's neuron count
-changes only by phase 3's growth (slot fill can end one neuron over).
+changes only by phase 3's growth.
 
 Informative: selection can still keep the offspring whose removals helped; replacement reinvests
 the removed neurons elsewhere instead of letting the net shrink.

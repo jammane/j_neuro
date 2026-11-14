@@ -173,6 +173,7 @@ class _Mutation:
         self.op = None                    # name of the operation being attempted (for counts)
         self.growth_generation = growth_generation
         self.counts = {}                  # operation name -> successful uses (informative)
+        self.no_slot_fill = False         # set while replacement places its last neuron
 
     # helpers
     def live_neurons(self):
@@ -563,6 +564,8 @@ class _Mutation:
         dflt = DEFAULTS["add_method_weights"]
         method = METHODS[rng.weighted([float(w.get(m, dflt[m])) for m in METHODS])]  # missing = default
         self.op = method
+        if method == "slot_fill" and self.no_slot_fill:
+            return None                                   # replacement's last neuron (spec/06)
         needed = 2 if method == "slot_fill" else 1
         if len(self.live_nodes()) + needed > self.net.d_max:
             return None                                   # node cap (spec/03)
@@ -883,7 +886,10 @@ class _Mutation:
         while added < r and tries < 10 * r:
             tries += 1
             self.op = None
-            if self.growth(caps, used) is not None:
+            self.no_slot_fill = r - added == 1        # slot fill adds two: not for the last neuron
+            grown = self.growth(caps, used)
+            self.no_slot_fill = False
+            if grown is not None:
                 self.counts[self.op] = self.counts.get(self.op, 0) + 1
                 n = 2 if self.op == "slot_fill" else 1
                 added += n

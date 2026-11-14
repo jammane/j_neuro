@@ -87,7 +87,7 @@ Net<D> Net<D>::create(std::uint32_t n_inputs, std::uint32_t n_outputs, std::uint
         for (std::size_t c = 0; c < level.size(); c += q) {
             AggOp op = static_cast<AggOp>(rng.choice(4));
             net.nodes.push_back(Node<D>{0, 0, 0,
-                MNeuron{op, slots(level, c, std::min<std::size_t>(c + q, level.size()))}});
+                MNeuron{op, slots(level, c, std::min<std::size_t>(c + q, level.size())), {}}});
             next.push_back(static_cast<NodeId>(net.nodes.size() - 1));
         }
         hidden_levels.push_back(next);
@@ -145,10 +145,10 @@ Net<D> Net<D>::create(std::uint32_t n_inputs, std::uint32_t n_outputs, std::uint
             switch (chain_o[j]) {
                 case Part::Merge: {
                     AggOp op = static_cast<AggOp>(rng.choice(4));
-                    neuron = MNeuron{op, slots(prev, 0, prev.size())};
+                    neuron = MNeuron{op, slots(prev, 0, prev.size()), {}};
                     break;
                 }
-                case Part::Min: neuron = MNeuron{AggOp::Min, slots(prev, 0, prev.size())}; break;
+                case Part::Min: neuron = MNeuron{AggOp::Min, slots(prev, 0, prev.size()), {}}; break;
                 case Part::S: neuron = SNeuron{prev[0], AggOp::Mean, 1}; break;
                 case Part::V:
                 case Part::SepV: neuron = identity_v(prev[0]); break;
@@ -179,19 +179,22 @@ void respace_05(Net<D>& net) {
     std::stable_sort(order.begin(), order.end(), [&](NodeId a, NodeId b) { return net.nodes[a].depth < net.nodes[b].depth; });
     std::vector<std::uint64_t> nd(n, 0);
     const std::uint64_t dmax = Net<D>::d_max;
+    // Wide (analysis.hpp): exact past 2^64 (U64 nets)
     for (NodeId id : order) {
         const auto& node = net.nodes[id];
         if (net.is_input(id) || !node.neuron) { nd[id] = 0; continue; }
-        std::uint64_t floor = 0;
+        Wide floor = 0;
         for (NodeId c : connections(*node.neuron))
-            if (c < n) floor = std::max(floor, nd[c] + 1);
+            if (c < n) floor = std::max(floor, Wide{nd[c]} + 1);
         if (floor == 0) floor = 1;
-        if (std::holds_alternative<SNeuron>(*node.neuron)) floor += std::uint64_t{net.in_qty_max} + 1;
+        if (std::holds_alternative<SNeuron>(*node.neuron)) floor += Wide{net.in_qty_max} + 1;
         if (net.is_output(id)) {
             if (floor > dmax) throw ValidationError("0.5 conversion: no depth room for the s gap");
             nd[id] = dmax;
         } else {
-            nd[id] = std::max<std::uint64_t>(node.depth, floor);
+            const Wide d = std::max<Wide>(node.depth, floor);
+            if (d > dmax - 1) throw ValidationError("0.5 conversion: no depth room for the s gap");
+            nd[id] = static_cast<std::uint64_t>(d);
             if (nd[id] > dmax - 1) throw ValidationError("0.5 conversion: no depth room for the s gap");
         }
     }

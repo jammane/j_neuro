@@ -136,7 +136,9 @@ def profile_variants():
     hist.overall["add_method_weights"].update({"v_link": 40, "s_link": 40, "s_insert": 20})
     out["history_reads"] = hist
     for name, extra in (("gc_replace", {}), ("gc_replace_fold", {"constant_folding": "on", "prune": "any",
-                                                                  "slot_edit": "biased"})):
+                                                                  "slot_edit": "biased"}),
+                        ("gc_replace_slot_fill", {"constant_folding": "on", "prune": "any", "slot_edit": "biased",
+                                                  "add_method_weights": {"slot_fill": 400}})):
         g = Profile.default()                                  # replacement of removed neurons (spec/06)
         for f in PHASES:
             g.overall[f] = 40.0
