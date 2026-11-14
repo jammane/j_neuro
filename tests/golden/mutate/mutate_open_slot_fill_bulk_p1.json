@@ -54,7 +54,8 @@
    "slot_edit": "toggle",
    "slot_add_prob": 0.75,
    "open_slot_fill_pct": 80.0,
-   "history_read_prob": 0.0
+   "history_read_prob": 0.0,
+   "gc_replace": "off"
   },
   "v": {},
   "s": {},

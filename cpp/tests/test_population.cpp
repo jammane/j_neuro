@@ -384,7 +384,7 @@ TEST_CASE("pop: mutation counts cover every operation") {
     prof.set_overall("slot_retarget_prob", 0.5);
     prof.set_overall("growth_net_prob", 0.7);  // failed draws swap s <-> v
     prof.set_overall("rewire_prob", 0.3);
-    prof.apply_patch(json{{"overall", {{"constant_folding", "on"},
+    prof.apply_patch(json{{"overall", {{"constant_folding", "on"}, {"gc_replace", "on"},
         {"add_method_weights", {{"v_tap", 40}, {"s_tap", 40}, {"m_tap", 40}, {"m_clone", 40}, {"slot_fill", 40}}}}}});
     auto all_used = [&] {
         for (auto& [op, n] : p.mutation_counts()) if (n == 0) return false;

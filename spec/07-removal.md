@@ -153,7 +153,9 @@ change has made it non-constant.
    (outputs themselves included; a connection to a history node reaches its s_neuron). Input nodes are always kept.
 2. Mark every unmarked live hidden node as removed.
 
-Such nodes cannot influence any output, so removing them never changes results.
+Such nodes cannot influence any output, so removing them never changes results. With the profile's
+`gc_replace` on, phase 6 then grows as many neurons as were removed
+([06](06-mutation.md#replacement-gc_replace)).
 
 ## Compaction
 

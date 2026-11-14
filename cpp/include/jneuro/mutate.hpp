@@ -21,7 +21,7 @@ inline const std::vector<std::string>& mutation_operations() {
     static const std::vector<std::string> ops = {
         "op_change", "v_weight", "s_k", "m_slots", "rewire", "m_retarget", "slot_fill", "v_insert",
         "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap", "m_clone", "m_insert", "v_link", "s_link", "type_swap", "bypass", "remove_silenced",
-        "depth_shift", "fold_constant"};
+        "depth_shift", "fold_constant", "gc_replace"};
     return ops;
 }
 
@@ -71,12 +71,31 @@ public:
             if (folded) counts["fold_constant"] += folded;
         }
         garbage_collect(net_, removed_);
+        if (p_.gc_replace() == "on") replace_removed();
         compact(net_, removed_);
         return std::move(net_);
     }
 
 private:
     using Attempt = std::optional<NeuronType> (Mutation::*)();
+
+    /// spec/06 replacement: grow as many neurons as were removed (phase 3 attempts, no gating, no caps).
+    void replace_removed() {
+        std::int64_t r = 0;
+        for (bool x : removed_) r += x;
+        for (auto& c : caps_) c = std::nullopt;
+        std::int64_t added = 0;
+        for (std::int64_t tries = 0; added < r && tries < 10 * r;) {
+            ++tries;
+            op_ = nullptr;
+            if (growth()) {
+                ++counts[op_];
+                const std::int64_t n = std::string_view(op_) == "slot_fill" ? 2 : 1;
+                added += n;
+                counts["gc_replace"] += n;
+            }
+        }
+    }
     static constexpr std::array<NeuronType, 3> kTypes{NeuronType::V, NeuronType::S, NeuronType::M};
 
     /// Phase 3 runs only in a growth generation, and then with growth_net_prob (spec/06).

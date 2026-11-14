@@ -726,3 +726,23 @@ def test_open_slot_fill_needs_the_fill_budget():
     with pytest.raises(Exception):
         profile_from_json(json.dumps({"format": "j_neuro.profile", "spec_version": "0.5.0",
                                       "overall": {"open_slot_fill_pct": 101}}))
+
+
+def test_gc_replace_keeps_the_neuron_count():
+    """spec/06 replacement: with phase 3 off, a mutation that removes neurons grows them back, so
+    the count stays (slot fill can end one over); without it the same mutations shrink nets."""
+    shrank = 0
+    for seed in range(20):
+        net = _grown_net(seed)
+        base = {"op_change_max_pct": 10.0, "edit_max_pct": 40.0, "growth_max_pct": 0.0,
+                "removal_max_pct": 40.0, "depth_shift_max_pct": 0.0, "min_age_for_removal": 0,
+                "prune": "any", "slot_edit": "biased", "constant_folding": "on"}
+        on = Profile(dict(base, gc_replace="on"))
+        off = Profile(dict(base, gc_replace="off"))
+        n = _neurons(net)
+        child_on = mutate(net, on, 100, Rng(seed))
+        child_off = mutate(net, off, 100, Rng(seed))
+        child_on.validate()
+        assert n <= _neurons(child_on) <= n + 1
+        shrank += _neurons(child_off) < n
+    assert shrank >= 5                                       # the removals the replacement made up for

@@ -99,6 +99,7 @@ A per-type value overrides the overall value for neurons of that type.
 | `no_growth_swap` | `on` | no | `off` or `on`: in a growth generation, an offspring whose `growth_net_prob` draw fails gets one [type swap](#type-swap) instead |
 | `open_slot_fill_pct` | 0.0 | no | With `growth_budget = fill`: % of each m_neuron's empty slots that phase 3 fills with new links, within the same growth target, in [0, 100] ([open-slot fill](#open-slot-fill)) |
 | `history_read_prob` | 0.0 | no | Probability that a new connection made by rewiring, retargeting, connecting a slot or a link reads a length or history node of an s_neuron instead of a node ([choosing a source](#principles)), in [0, 1] |
+| `gc_replace` | `off` | no | `off` or `on`: after garbage collection, phase 6 grows as many neurons as the mutation removed, so removal never shrinks a net ([replacement](#replacement-gc_replace)) |
 | `prune` | `static` | no | `any` or `static`: with `static`, edits never cut a live branch — an m slot is emptied only if its source is constant ([07](07-removal.md#constant-folding)), and a retarget never leaves its old source without readers |
 
 All percentages are of the **whole net's neuron count** (non-input nodes). Profiles may be
@@ -114,8 +115,8 @@ Mutation runs these phases in this order:
 3. Growth (additions)
 4. Removal ([07](07-removal.md))
 5. Depth shifts
-6. Constant folding if `constant_folding` is `on`, then garbage collection and compaction
-   ([07](07-removal.md))
+6. Constant folding if `constant_folding` is `on`, then garbage collection, then replacement if
+   `gc_replace` is `on` ([below](#replacement-gc_replace)), then compaction ([07](07-removal.md))
 
 Removed nodes are only **marked** (tombstoned) until phase 6; ids do not change before then.
 A **live** node is one not marked removed. The **live neuron list** is all live non-input
@@ -561,6 +562,30 @@ depth = d
 
 Depth shifts never change outputs. They redistribute gaps so later insertions find room. An
 s_neuron's history nodes move with it.
+
+## Replacement (`gc_replace`)
+
+With `gc_replace = on`, phase 6 replaces every neuron the mutation removed. After garbage
+collection, let `R` be the number of nodes marked removed (by the removal phase, its cascades and
+garbage collection, including nodes grown in phase 3 and removed again). Then:
+
+```
+added = 0; tries = 0
+while added < R and tries < 10 * R:
+    tries += 1
+    make one growth attempt (phase 3: method draw, then that method)
+    if it succeeded: added += 2 if its method is slot_fill else 1
+```
+
+The attempts are phase 3's, with the profile's `add_method_weights`, but without phase 3's
+gating (every generation, every offspring) and without per-type caps; new neurons get
+`born_gen = generation`, so the grace period protects them. Open-slot fill does not run here.
+Constant folding replaces a neuron by a constant but removes no node, so it adds nothing to `R`
+(what it strands is collected and counted). Phase 3 growth is not affected, so a net's neuron count
+changes only by phase 3's growth (slot fill can end one neuron over).
+
+Informative: selection can still keep the offspring whose removals helped; replacement reinvests
+the removed neurons elsewhere instead of letting the net shrink.
 
 ## Diversity injection
 

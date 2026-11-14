@@ -327,6 +327,7 @@ def test_mutation_counts_cover_every_operation():
     prof.overall["slot_retarget_prob"] = 0.5
     prof.overall["growth_net_prob"] = 0.7                       # failed draws swap s <-> v
     prof.overall["rewire_prob"] = 0.3
+    prof.overall["gc_replace"] = "on"                           # removed neurons are grown back
     for gen in range(60):
         if all(p.mutation_counts().values()):
             break

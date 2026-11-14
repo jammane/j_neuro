@@ -34,7 +34,7 @@ const char* const kOverallOrder[] = {
     "insert_inversion_prob", "min_age_for_removal", "add_method_weights", "slot_fill_type_weights",
     "rng_mode", "growth_budget", "constant_folding", "insert_depth", "slot_retarget_prob", "width_bias",
     "width_peak", "tap_peak", "prune", "link_max_span", "growth_gen_prob", "growth_net_prob", "no_growth_swap",
-    "slot_edit", "slot_add_prob", "open_slot_fill_pct", "history_read_prob"};
+    "slot_edit", "slot_add_prob", "open_slot_fill_pct", "history_read_prob", "gc_replace"};
 const char* const kMethods[] = {"slot_fill", "v_insert", "s_insert", "m_after_m", "v_tap", "s_tap", "m_tap",
                                 "m_clone",   "m_insert", "v_link",   "s_link"};
 constexpr std::array<double, 11> kMethodDefaults{0, 10, 5, 5, 10, 10, 5, 60, 20, 24, 24};
@@ -115,6 +115,10 @@ void Profile::merge_overall(const json& body) {
             if (!v.is_string() || (v != "off" && v != "on"))
                 throw ValidationError("constant_folding must be off or on");
             constant_folding_ = v.get<std::string>();
+        } else if (k == "gc_replace") {
+            if (v.is_null()) { gc_replace_ = "off"; continue; }
+            if (!v.is_string() || (v != "off" && v != "on")) throw ValidationError("gc_replace must be off or on");
+            gc_replace_ = v.get<std::string>();
         } else if (k == "insert_depth") {
             if (v.is_null()) { insert_depth_ = "midpoint"; continue; }
             if (!v.is_string() || (v != "uniform" && v != "midpoint"))
@@ -188,6 +192,7 @@ json Profile::to_json() const {
         else if (key == "rng_mode") overall[key] = rng_mode_;
         else if (key == "growth_budget") overall[key] = growth_budget_;
         else if (key == "constant_folding") overall[key] = constant_folding_;
+        else if (key == "gc_replace") overall[key] = gc_replace_;
         else if (key == "insert_depth") overall[key] = insert_depth_;
         else if (key == "width_bias") overall[key] = width_bias_;
         else if (key == "prune") overall[key] = prune_;

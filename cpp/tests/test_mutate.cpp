@@ -740,3 +740,29 @@ TEST_CASE("open-slot fill needs the fill budget") {
     CHECK(to_bytes(mutate(net, p, 100, r1)) == to_bytes(mutate(net, q, 100, r2)));
     CHECK_THROWS(p.set_overall("open_slot_fill_pct", 101.0));
 }
+
+TEST_CASE("gc_replace keeps the neuron count") {
+    // spec/06 replacement: with phase 3 off, removed neurons are grown back (slot fill can end one
+    // over); without it the same mutations shrink nets.
+    int shrank = 0;
+    for (std::uint64_t seed = 0; seed < 20; ++seed) {
+        const auto net = grown_net(seed);
+        auto prof = [&](const char* gc) {
+            Profile p = Profile::defaults();
+            p.apply_patch(nlohmann::json{{"overall", {{"op_change_max_pct", 10.0}, {"edit_max_pct", 40.0},
+                {"growth_max_pct", 0.0}, {"removal_max_pct", 40.0}, {"depth_shift_max_pct", 0.0},
+                {"min_age_for_removal", 0}, {"prune", "any"}, {"slot_edit", "biased"},
+                {"constant_folding", "on"}, {"gc_replace", gc}}}});
+            return p;
+        };
+        const auto n = neuron_count(net);
+        Rng r1(seed), r2(seed);
+        const auto on = mutate(net, prof("on"), 100, r1);
+        const auto off = mutate(net, prof("off"), 100, r2);
+        on.validate();
+        CHECK(neuron_count(on) >= n);
+        CHECK(neuron_count(on) <= n + 1);
+        shrank += neuron_count(off) < n;
+    }
+    CHECK(shrank >= 5);
+}

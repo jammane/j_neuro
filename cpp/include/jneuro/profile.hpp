@@ -30,6 +30,8 @@ public:
     const std::string& growth_budget() const { return growth_budget_; }
     /// "off" or "on" (spec/07): fold constant neurons before garbage collection.
     const std::string& constant_folding() const { return constant_folding_; }
+    /// "off" or "on": phase 6 grows as many neurons as the mutation removed (spec/06 replacement).
+    const std::string& gc_replace() const { return gc_replace_; }
     /// Order: slot_fill, v_insert, s_insert, m_after_m, v_tap, s_tap, m_tap, m_clone, m_insert, v_link, s_link.
     const std::array<double, 11>& add_method_weights() const { return amw_; }
     /// "uniform" or "midpoint" (spec/06): where new nodes are placed within their depth range.
@@ -60,6 +62,7 @@ private:
     std::string rng_mode_ = "fresh";
     std::string growth_budget_ = "up_to";
     std::string constant_folding_ = "off";
+    std::string gc_replace_ = "off";
     std::array<double, 11> amw_{0, 10, 5, 5, 10, 10, 5, 60, 20, 24, 24};
     std::string insert_depth_ = "midpoint";
     std::string width_bias_ = "deficit";

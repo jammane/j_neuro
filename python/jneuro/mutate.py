@@ -53,12 +53,13 @@ DEFAULTS = {
     "slot_add_prob": 0.75,
     "open_slot_fill_pct": 0.0,
     "history_read_prob": 0.0,
+    "gc_replace": "off",
 }
 CHOICES = {"depth_shift_mode": ("uniform", "center"), "rng_mode": ("fresh", "shared"),
            "growth_budget": ("up_to", "exact", "fill"), "constant_folding": ("off", "on"),
            "insert_depth": ("uniform", "midpoint"), "width_bias": ("none", "center", "deficit"),
            "prune": ("any", "static"), "no_growth_swap": ("off", "on"),
-           "slot_edit": ("toggle", "biased")}
+           "slot_edit": ("toggle", "biased"), "gc_replace": ("off", "on")}
 OVERRIDABLE = set(PHASE_FIELDS) | {"sigma_weight", "sign_flip_prob", "sigma_k", "sigma_slots",
                                    "rewire_prob", "insert_inversion_prob", "min_age_for_removal",
                                    "slot_retarget_prob"}
@@ -867,13 +868,31 @@ class _Mutation:
             if folded:
                 self.counts["fold_constant"] = self.counts.get("fold_constant", 0) + folded
         garbage_collect(self.net, self.removed)
+        if self.p.overall["gc_replace"] == "on":
+            self.replace_removed()
         compact(self.net, self.removed)
         return self.net
+
+    def replace_removed(self):
+        """spec/06 replacement: grow as many neurons as were removed (phase 3 attempts, no gating,
+        no per-type caps)."""
+        r = len(self.removed)
+        caps = {t: None for t in TYPES}
+        used = {t: 0 for t in TYPES}
+        added = tries = 0
+        while added < r and tries < 10 * r:
+            tries += 1
+            self.op = None
+            if self.growth(caps, used) is not None:
+                self.counts[self.op] = self.counts.get(self.op, 0) + 1
+                n = 2 if self.op == "slot_fill" else 1
+                added += n
+                self.counts["gc_replace"] = self.counts.get("gc_replace", 0) + n
 
 
 # Every operation name that mutation counts (informative; not part of the spec's results).
 OPERATIONS = ("op_change", "v_weight", "s_k", "m_slots", "rewire", "m_retarget") + METHODS + \
-             ("type_swap", "bypass", "remove_silenced", "depth_shift", "fold_constant")
+             ("type_swap", "bypass", "remove_silenced", "depth_shift", "fold_constant", "gc_replace")
 
 
 def is_growth_generation(seed: int, generation: int, profile: Profile) -> bool:
