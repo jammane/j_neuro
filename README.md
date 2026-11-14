@@ -119,6 +119,8 @@ examples/    C++ example programs (built by CMake with the library)
 | [`blackjack_trainer`](examples/blackjack/README.md) | Evolves nets that play blackjack (5-deck shoe, real payout) against the same deals, logging score and win rate beside two fixed reference strategies. |
 | [`blackjack_analyze`](examples/blackjack/README.md#analysis) | Plays a saved population on fresh deals: each net's result, its mix of actions, and the best net's structure and decision table. |
 | [`highlow_trainer`](examples/highlow/README.md) | Evolves nets that guess the next card of a shoe (suit, and higher/lower/equal), where remembering earlier cards can help. |
+| [`categorize_trainer`](examples/categorize/README.md) | Evolves nets that sort 64×64 black-and-white images of 188 symbols (ASCII and Latin-1, in 30 fonts, at several sizes and positions) into categories the nets define themselves. The score asks only for consistent, usable categories, not particular ones. |
+| [`categorize_analyze`](examples/categorize/README.md#analysis) | Shows what the categories hold: per category its size, most common symbols, how many fonts, sizes and positions it spans, and a `.bmp` sheet of its members. |
 | [`expansion_test`](examples/expansion/README.md) | Mutation only, no scoring: how a profile grows a net — method use, paths, width by depth and open m slots per generation. |
 
 All of them run until interrupted or `--stop-at N`, save their population, and resume with

@@ -30,8 +30,13 @@ to this section in the same change.
 | [pytest](https://pytest.org) | Python (tests only) | test runner | MIT |
 | [Catch2](https://github.com/catchorg/Catch2) | C++ (tests only) | test framework | BSL-1.0 |
 | [nlohmann/json](https://github.com/nlohmann/json) | C++ | profile and run-log JSON | MIT |
+| [stb_truetype](https://github.com/nothings/stb) (Sean Barrett) | C++ example `categorize` only | rendering font glyphs into test images | MIT or public domain (Unlicense), at the user's choice |
 
-None of these are bundled with j_neuro; they are installed by the user's package manager.
+None of these are bundled with j_neuro; they are installed by the user's package manager, except
+stb_truetype, which CMake downloads at configure time from a pinned commit
+(`9f755b604db3492df2cbeb39bf84b81e3e3932e3`, v1.28), checks against its SHA-256 and keeps in the
+build directory. It is never committed to the repository. If the download fails, only the
+categorize example is skipped.
 (NumPy's own binary wheels bundle further libraries under their own licenses; j_neuro does not
 redistribute them.)
 
@@ -168,6 +173,30 @@ SOFTWARE.
 | Dominator analysis (e.g. "A Simple, Fast Dominance Algorithm", 2001; Lengauer–Tarjan, 1979) | Keith D. Cooper, Timothy J. Harvey, Ken Kennedy; Thomas Lengauer, Robert E. Tarjan | Computing deletion immunity ([spec/07](spec/07-removal.md)) |
 | SHA-256, FIPS 180-4 | NIST | `.jnet` / `.jpnet` checksums and hashes ([spec/09](spec/09-serialization.md)); implemented in-house for C++, Python's `hashlib` |
 | NEAT — NeuroEvolution of Augmenting Topologies (2002) | Kenneth O. Stanley, Risto Miikkulainen | Inspiration for neutral structural insertion |
+
+<details><summary>stb_truetype license (used under its MIT alternative)</summary>
+
+```
+ALTERNATIVE A - MIT License
+Copyright (c) 2017 Sean Barrett
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
 
 ## Licenses and standards
 

@@ -106,6 +106,6 @@ header-mostly; `cpp/src/` holds only the non-template parts.
 ## Examples
 
 The programs in `examples/` are C++ only and are built with the library: `blackjack_trainer`,
-`blackjack_analyze`, `highlow_trainer` and `expansion_test`. They write to `runs/`, run until Ctrl+C
+`blackjack_analyze`, `highlow_trainer`, `categorize_trainer`, `categorize_analyze` and `expansion_test`. They write to `runs/`, run until Ctrl+C
 or `--stop-at N`, and resume with `--resume FILE.jpnet`. Training runs are long: don't start one
 unless the user asks.
