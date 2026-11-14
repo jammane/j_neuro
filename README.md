@@ -121,6 +121,8 @@ examples/    C++ example programs (built by CMake with the library)
 | [`blackjack_trainer`](examples/blackjack/README.md) | Evolves nets that play blackjack (5-deck shoe, real payout) against the same deals, logging score and win rate beside two fixed reference strategies. |
 | [`blackjack_analyze`](examples/blackjack/README.md#analysis) | Plays a saved population on fresh deals: each net's result, its mix of actions, and the best net's structure and decision table. |
 | [`highlow_trainer`](examples/highlow/README.md) | Evolves nets that guess the next card of a shoe (suit, and higher/lower/equal), where remembering earlier cards can help. |
+| [`chess_trainer`](examples/chess/README.md) | 64 nets play each other at chess, round robin: the loser of a match (or both, after three draws) is mutated from itself, so every player keeps its own lineage. Complete rules engine, perft-checked; nets can only pick legal moves. |
+| [`chess_play`](examples/chess/README.md#playing-a-net-yourself) | Play a game against any saved chess net from the terminal. |
 | [`expansion_test`](examples/expansion/README.md) | Mutation only, no scoring: how a profile grows a net — method use, paths, width by depth and open m slots per generation. |
 
 All of them run until interrupted or `--stop-at N`, save their population, and resume with
