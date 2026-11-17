@@ -14,11 +14,38 @@
 // With --baseline N, after each round the round's best player also plays 2N games against a random
 // mover and 2N against a greedy capturer (off by default, so every cycle goes to the round robin).
 // Play a saved net yourself with chess_play.
+//
+// Every --puzzle-every rounds (default 50, and round 0) every player attempts every puzzle in
+// --puzzles (default examples/chess/puzzles.csv: 200 Lichess puzzles, ratings 500 to 2999); the
+// solve rates go to puzzles.csv (a running log), and the players x puzzles matrix of the latest check
+// (puzzles easiest to hardest) to puzzle_matrix.csv and puzzle_matrix.txt. --puzzles-now 1 also checks
+// before the first round.
 // One game at a time, at the lowest CPU priority.
+//
+// A new run starts with mating drills (--mate-max N rounds at most, 0 to skip): each player has a
+// mating set (KQ, KR, KRR, KQR, KBB) against a bare king making random legal moves, from random
+// legal positions, and must mate under the usual draw rules. Each drill round every player and a
+// mutation of itself play the same --mate-drills drills; the one with more mates (then fewer plies)
+// keeps the slot (ties: the mutation). When the players' mean success reaches --mate-until % the
+// round robin starts. Drill results go to mate.csv.
 //
 // Usage: chess_trainer [--out DIR] [--seed N] [--pop-seed N] [--resume DIR] [--profile FILE]
 //                      [--rounds N] [--baseline N] [--q N] [--init NET.jnet ...] [--perft]
 //        chess_trainer --ladder MAX_GENERATIONS [--out DIR] [--seed N] [--profile FILE] [--q N]
+//        chess_trainer --mate-core MAX_GENERATIONS --init NET.jnet [--out DIR] [--seed N] [--profile FILE]
+//                      [--mate-until PCT]
+//
+// --mate-core: core training on mating drills, one lineage. The elite holds a record from when it
+// won its place, the total score on a fixed training set of 10 drills per material set (a mate
+// scores 1 point, a stalemate 0.48; otherwise how boxed in the defending king got at its tightest
+// moment, up to 0.44: see restriction_score in players.hpp); it
+// does not play again. Each generation one challenger, a mutation of the elite, plays the training
+// set (on 3 threads) and takes over if it matches or beats the record (ties go to the challenger);
+// its score is then the record. The training set is a fixed pool of 500 drills (100 per material
+// set), all of them every generation; the defender's moves change seed every 5,000 generations, and
+// the elite is then re-scored.
+// Every 100 generations the elite plays a fixed test of 20 drills per set; stops when it mates in
+// --mate-until % (default 80) or at MAX_GENERATIONS. Saves mate_core.jnet and mate_core.csv.
 //
 // --ladder: two players under the tournament's rules, to find where net size levels off under the
 // profile: a net and a mutation of it play matches (up to 3 games, colors switching); the loser
@@ -46,6 +73,7 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <thread>
 
 using namespace jneuro;
 using namespace chess;
@@ -82,6 +110,13 @@ int main(int argc, char** argv) {
     std::optional<fs::path> resume;
     fs::path profile_file = "profiles/expansion.json";
     int baseline = 0;  // off by default: no cycles on fixed opponents until the players are decent
+    fs::path puzzle_file = "examples/chess/puzzles.csv";
+    std::uint64_t puzzle_every = 50;  // every player attempts every puzzle each N rounds (0: never)
+    bool puzzles_now = false;         // --puzzles-now 1: also check before the first round (e.g. on resume)
+    double mate_until = 80.0;         // mating drills until the players' mean success reaches this %
+    std::uint64_t mate_max = 2000;    // ... or this many drill rounds (0: no drills)
+    int mate_drills = 20;             // drills per player per round
+    std::optional<std::uint64_t> mate_core;  // --mate-core GENERATIONS: one lineage on mating drills
     std::uint32_t q = 5;
     bool perft_only = false;
     std::optional<std::uint64_t> ladder;
@@ -102,8 +137,15 @@ int main(int argc, char** argv) {
         else if (a == "--baseline") baseline = std::stoi(v);
         else if (a == "--q") q = static_cast<std::uint32_t>(std::stoul(v));
         else if (a == "--ladder") ladder = std::stoull(v);
+        else if (a == "--puzzles") puzzle_file = v;
+        else if (a == "--puzzle-every") puzzle_every = std::stoull(v);
+        else if (a == "--puzzles-now") puzzles_now = v == "1" || v == "on" || v == "yes";
+        else if (a == "--mate-until") mate_until = std::stod(v);
+        else if (a == "--mate-max") mate_max = std::stoull(v);
+        else if (a == "--mate-drills") mate_drills = std::stoi(v);
+        else if (a == "--mate-core") mate_core = std::stoull(v);
         else if (a == "--ladder-from") ladder_from = v;
-        else if (a == "--ladder-bulk") ladder_bulk = std::stod(v);
+        else if (a == "--ladder-bulk" || a == "--bulk-first") ladder_bulk = std::stod(v);
         else if (a == "--init") init_nets.push_back(v);
         else { std::cerr << "unknown option " << a << "\n"; return 2; }
     }
@@ -127,6 +169,135 @@ int main(int argc, char** argv) {
     if (resume) out = *resume;
     fs::create_directories(out);
     const Profile profile = load_profile(profile_file);
+
+    if (mate_core) {  // core training on mating drills: one elite and two mutations, 3 games at once
+        if (init_nets.size() != 1) { std::cerr << "--mate-core needs one --init NET.jnet\n"; return 2; }
+        const std::uint64_t mseed = seed ? *seed : fresh_seed();
+        Rng r(mseed);
+        Net<D> elite = std::get<Net<D>>(load_net(init_nets[0]));
+        if (ladder_bulk > 0) {  // --bulk-first PCT: grow the starting net first (profiles/bulk.json)
+            Profile bulk = load_profile("profiles/bulk.json");
+            bulk.set_overall("growth_max_pct", ladder_bulk);
+            const std::size_t before = elite.nodes.size() - kInputs;
+            elite = mutate(elite, bulk, 0, r, nullptr, true);
+            std::cout << "bulk +" << ladder_bulk << "%: " << before << " -> " << elite.nodes.size() - kInputs << " neurons\n";
+        }
+        std::ofstream ccsv(out / "mate_core.csv");
+        ccsv << "generation,test_mates_pct";
+        for (const MateSet& m : mate_sets()) ccsv << ',' << m.name << "_pct";
+        ccsv << ",test_plies_per_mate,record_score,record_mates,new_best_records,challenger_took,elite_kept,challenger_no_mates,neurons,seconds\n";
+        {
+            std::ofstream info(out / "run_info.txt", std::ios::app);
+            info << "mate_core " << timestamp() << " seed " << mseed << " profile " << profile_file.string() << " init "
+                 << init_nets[0].string() << "\n";
+        }
+        // the fixed test: 20 drills per set, half each color, the same every time
+        auto test = [&](Net<D>& net, std::vector<int>& by, long& plies) {
+            by.assign(mate_sets().size(), 0);
+            plies = 0;
+            Rng tr(0x7E57ULL);
+            const Chooser me = net_player(net);
+            int mates = 0;
+            for (std::size_t s = 0; s < mate_sets().size(); ++s)
+                for (int i = 0; i < 20; ++i) {
+                    const int p = mate_drill(me, mate_sets()[s], i % 2 == 0 ? 1 : -1, tr);
+                    if (p >= 0) { ++mates; ++by[s]; plies += p; }
+                }
+            return mates;
+        };
+        // the training set: the whole fixed pool of 500 positions (100 per material set) every
+        // generation; the defender's random moves change seed every 5,000 generations, and the elite
+        // is then re-scored
+        struct Record { long score = 0; int mates = 0; long plies = 0; };  // score: thousandths of a point
+        auto points = [](long thousandths) {  // "12.345": exact, whatever the stream's precision
+            std::ostringstream o;
+            o << thousandths / 1000 << '.' << std::setw(3) << std::setfill('0') << thousandths % 1000;
+            return o.str();
+        };
+        constexpr std::uint64_t kPool = 500;
+        const int train_drills = static_cast<int>(kPool);  // the full pool every generation
+        constexpr std::uint64_t kEpoch = 5000;
+        std::uint64_t epoch = 0;
+        auto train_score = [&](Net<D>& net) {
+            std::array<Record, 3> part{};  // three threads, each a third of the drills
+            std::vector<std::thread> th;
+            for (int t = 0; t < 3; ++t)
+                th.emplace_back([&, t] {
+                    Net<D> local = net.copy_genome();  // each thread its own copy (nets keep evaluation state)
+                    const Chooser player = net_player(local);
+                    for (int i = t; i < train_drills; i += 3) {
+                        const std::uint64_t k = (epoch * static_cast<std::uint64_t>(train_drills) + static_cast<std::uint64_t>(i)) % kPool;
+                        Rng pos(0x7A1Aull + k * 0x9E3779B97F4A7C15ULL);  // pool drill k: a fixed position
+                        const std::uint64_t dseed = (0xDEFull + epoch * 0x2545F4914F6CDD1DULL) ^ (k * 0xBF58476D1CE4E5B9ULL);
+                        const MateSet& set = mate_sets()[k % mate_sets().size()];
+                        const int color = (k / mate_sets().size()) % 2 == 0 ? 1 : -1;
+                        const DrillResult d = scored_drill(player, set, color, pos, dseed);
+                        auto& x = part[static_cast<std::size_t>(t)];
+                        x.score += d.score;
+                        if (d.mate) { ++x.mates; x.plies += d.plies; }
+                    }
+                });
+            for (auto& x : th) x.join();
+            Record rec;
+            for (const Record& x : part) { rec.score += x.score; rec.mates += x.mates; rec.plies += x.plies; }
+            return rec;
+        };
+        Record record = train_score(elite);
+        std::cout << "elite record to beat: score " << points(record.score) << " (" << record.mates << " of " << train_drills << " mated)\n"
+                  << std::flush;
+        constexpr std::uint64_t kEvery = 100;
+        long mated = 0, elite_kept = 0, took = 0, none = 0;
+        const auto t0 = std::chrono::steady_clock::now();
+        std::uint64_t gen = 1;
+        for (; gen <= *mate_core && !g_stop; ++gen) {
+            // one challenger, a mutation of the elite; only the challenger plays (the fixed training set),
+            // and it takes over if it matches or beats the elite's record (ties go to the challenger)
+            if (gen / kEpoch != epoch) {  // the next 50 pool drills and new defender moves: the elite is re-scored
+                epoch = gen / kEpoch;
+                record = train_score(elite);
+                std::cout << "defender moves " << epoch << ": elite re-scored " << points(record.score) << " (" << record.mates
+                          << " mated)\n"
+                          << std::flush;
+            }
+            Net<D> challenger = mutate(elite, profile, gen, r, nullptr, is_growth_generation(mseed, gen, profile));
+            const Record rc = train_score(challenger);
+            if (rc.score >= record.score) {  // matches or beats the record: ties go to the challenger
+                elite = std::move(challenger);
+                const bool better = rc.score > record.score;
+                record = rc;
+                ++took;
+                if (better) ++mated;  // a new best record
+            } else {
+                ++elite_kept;
+            }
+            if (rc.mates == 0) ++none;
+            if (gen % kEvery == 0) {
+                std::vector<int> by;
+                long tp = 0;
+                const int tm = test(elite, by, tp);
+                const double pct = 100.0 * tm / (20.0 * static_cast<double>(mate_sets().size()));
+                const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                const double neurons = static_cast<double>(elite.nodes.size() - kInputs);
+                ccsv << gen << ',' << pct;
+                for (int b : by) ccsv << ',' << 5.0 * b;
+                ccsv << ',' << (tm ? static_cast<double>(tp) / tm : 0.0) << ',' << points(record.score) << ',' << record.mates << ',' << mated
+                     << ',' << took << ',' << elite_kept << ',' << none << ',' << neurons << ',' << s << '\n';
+                ccsv.flush();
+                std::cout << std::fixed << std::setprecision(1) << "generation " << gen << ": test " << pct << "% mates (";
+                for (std::size_t b = 0; b < by.size(); ++b) std::cout << (b ? " " : "") << mate_sets()[b].name << ' ' << 5.0 * by[b] << '%';
+                std::cout << "); record " << points(record.score) << " (" << record.mates << "/" << train_drills << " mated); "
+                          << mated << " new best, challenger took " << took << ", elite kept " << elite_kept << ", challenger no mates "
+                          << none << "; neurons " << neurons << "  " << std::setprecision(0) << s << "s\n" << std::flush;
+                save_net(out / "mate_core.jnet", elite);
+                mated = elite_kept = took = none = 0;
+                if (pct >= mate_until) { std::cout << "test success reached " << mate_until << "%\n"; break; }
+            }
+        }
+        save_net(out / "mate_core.jnet", elite);
+        std::cout << "mate core training stopped at generation " << std::min(gen, *mate_core) << " ("
+                  << elite.nodes.size() - kInputs << " neurons); saved " << (out / "mate_core.jnet").string() << "\n";
+        return 0;
+    }
 
     if (ladder) {  // two players, the tournament's rules: where does their size level off?
         const std::uint64_t lseed = seed ? *seed : fresh_seed();
@@ -204,6 +375,8 @@ int main(int argc, char** argv) {
     // players: slot -> current population id; a loser's mutated self takes its slot
     std::vector<std::uint64_t> slot(kPlayers);
     std::uint64_t round = 0, run_seed = 0;
+    int phase_mate = 0;                 // 1: mating drills, 0: round robin
+    std::uint64_t mate_round = 0;       // drill rounds done
     std::optional<Pop> pop_holder;
     if (resume) {
         pop_holder.emplace(Pop::load(out / "population.jpnet"));
@@ -211,6 +384,7 @@ int main(int argc, char** argv) {
         st >> round >> run_seed;
         for (auto& s : slot) st >> s;
         if (!st) { std::cerr << "cannot read " << (out / "state.txt").string() << "\n"; return 2; }
+        if (!(st >> phase_mate >> mate_round)) { phase_mate = 0; mate_round = 0; }  // older state files: round robin
     } else {
         pop_holder.emplace(q, kInputs, 1, Priority::Speed, pop_seed);
         if (!init_nets.empty()) {  // each seed net fills an equal share of the slots: itself, then mutations of it
@@ -234,6 +408,7 @@ int main(int argc, char** argv) {
             for (int k = 0; k < kPlayers; ++k) slot[static_cast<std::size_t>(k)] = ids[static_cast<std::size_t>(k)];
         }
         run_seed = seed ? *seed : fresh_seed();
+        phase_mate = mate_max > 0 ? 1 : 0;
     }
     Pop& pop = *pop_holder;
     {
@@ -241,6 +416,14 @@ int main(int argc, char** argv) {
         info << "start " << timestamp() << " round " << round << " seed " << run_seed << " population_seed " << pop.seed()
              << " profile " << profile_file.string() << (resume ? " resumed" : "") << "\n";
     }
+    const std::vector<Puzzle> puzzles = puzzle_every ? load_puzzles(puzzle_file.string()) : std::vector<Puzzle>{};
+    if (puzzle_every && puzzles.empty()) std::cerr << "no puzzles in " << puzzle_file.string() << " (puzzle checks off)\n";
+    const int bands[] = {500, 1000, 1500, 2000, 2500, 3000};  // puzzle rating bands, very easy to very hard
+    const bool new_pcsv = !fs::exists(out / "puzzles.csv");
+    std::ofstream pcsv(out / "puzzles.csv", std::ios::app);
+    if (new_pcsv)
+        pcsv << "round,puzzles,mean_solved_pct,best_solved_pct,best_slot,worst_solved_pct,band_500_999_pct,band_1000_1499_pct,"
+                "band_1500_1999_pct,band_2000_2499_pct,band_2500_2999_pct,seconds\n";
     const bool new_csv = !fs::exists(out / "rounds.csv");
     std::ofstream csv(out / "rounds.csv", std::ios::app);
     if (new_csv)
@@ -261,10 +444,138 @@ int main(int argc, char** argv) {
         std::ofstream st(out / "state.txt");
         st << round << ' ' << run_seed;
         for (auto s : slot) st << ' ' << s;
-        st << '\n';
+        st << ' ' << phase_mate << ' ' << mate_round << '\n';
+    };
+
+    // Every player attempts every puzzle: the summary goes to puzzles.csv (a running log), the full
+    // players x puzzles matrix (puzzles easiest to hardest) to puzzle_matrix.csv and .txt (the latest
+    // check only).
+    auto puzzle_check = [&](std::uint64_t at) {
+        std::vector<std::vector<char>> hit(kPlayers, std::vector<char>(puzzles.size(), 0));
+        std::vector<int> solved(kPlayers, 0);
+        double band_solved[5] = {}, band_n[5] = {};
+        for (int k = 0; k < kPlayers; ++k) {
+            Net<D>& net = pop.get(slot[static_cast<std::size_t>(k)]);
+            const Chooser me = net_player(net);
+            for (std::size_t i = 0; i < puzzles.size(); ++i) {
+                const bool ok = solve(me, puzzles[i]);
+                hit[static_cast<std::size_t>(k)][i] = ok;
+                solved[static_cast<std::size_t>(k)] += ok;
+                for (int b = 0; b < 5; ++b)
+                    if (puzzles[i].rating >= bands[b] && puzzles[i].rating < bands[b + 1]) { band_solved[b] += ok; band_n[b] += 1; }
+            }
+        }
+        const auto [lo, hi] = std::minmax_element(solved.begin(), solved.end());
+        double mean = 0;
+        for (int v : solved) mean += v;
+        mean /= kPlayers;
+        const double n = static_cast<double>(puzzles.size());
+        pcsv << at << ',' << puzzles.size() << ',' << 100 * mean / n << ',' << 100 * *hi / n << ',' << (hi - solved.begin()) << ','
+             << 100 * *lo / n;
+        for (int b = 0; b < 5; ++b) pcsv << ',' << (band_n[b] ? 100 * band_solved[b] / band_n[b] : 0.0);
+        pcsv << ',' << secs() << '\n';
+        pcsv.flush();
+        // the matrix: puzzles sorted by rating (stable), one row per player
+        std::vector<std::size_t> order(puzzles.size());
+        for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+        std::stable_sort(order.begin(), order.end(), [&](std::size_t x, std::size_t y) { return puzzles[x].rating < puzzles[y].rating; });
+        std::ofstream mc(out / "puzzle_matrix.csv"), mt(out / "puzzle_matrix.txt");
+        mc << "slot,solved";
+        for (std::size_t j = 0; j < order.size(); ++j) mc << ",p" << j + 1 << '_' << puzzles[order[j]].rating;
+        mc << '\n';
+        mt << "round " << at << ": players (rows) x " << order.size() << " puzzles (columns, easiest " << puzzles[order.front()].rating
+           << " to hardest " << puzzles[order.back()].rating << "); # solved, . missed\n"
+           << "rating bands start at columns:";
+        for (int b = 0; b < 5; ++b)
+            for (std::size_t j = 0; j < order.size(); ++j)
+                if (puzzles[order[j]].rating >= bands[b]) { mt << ' ' << bands[b] << "@" << j + 1; break; }
+        mt << "\n";
+        for (int k = 0; k < kPlayers; ++k) {
+            mc << k << ',' << solved[static_cast<std::size_t>(k)];
+            mt << "slot " << std::setw(2) << k << " " << std::setw(3) << solved[static_cast<std::size_t>(k)] << " ";
+            for (std::size_t j : order) {
+                mc << ',' << static_cast<int>(hit[static_cast<std::size_t>(k)][j]);
+                mt << (hit[static_cast<std::size_t>(k)][j] ? '#' : '.');
+            }
+            mc << '\n';
+            mt << '\n';
+        }
+        std::cout << std::fixed << std::setprecision(1) << "  puzzles at round " << at << ": mean " << 100 * mean / n
+                  << "% solved, best " << 100 * *hi / n << "% (slot " << (hi - solved.begin()) << "), worst " << 100 * *lo / n
+                  << "%; by rating 500-999 / 1000-1499 / 1500-1999 / 2000-2499 / 2500-2999:";
+        for (int b = 0; b < 5; ++b) std::cout << ' ' << (band_n[b] ? 100 * band_solved[b] / band_n[b] : 0.0) << '%';
+        std::cout << "\n" << std::flush;
+    };
+    if (!puzzles.empty() && puzzle_every && (puzzles_now || !resume) && round % puzzle_every != 0) puzzle_check(round);
+
+    const bool new_mcsv = !fs::exists(out / "mate.csv");
+    std::ofstream mcsv(out / "mate.csv", std::ios::app);
+    if (new_mcsv) {
+        mcsv << "round,mate_round,mean_success_pct";
+        for (const MateSet& m : mate_sets()) mcsv << ',' << m.name << "_pct";
+        mcsv << ",mean_plies_to_mate,mutations_kept,mean_neurons,seconds\n";
+    }
+    // a player's drills: the same positions and defender moves for a player and its mutation
+    struct Drills { int mates = 0; long plies = 0; std::vector<int> by; };
+    auto drills_of = [&](Net<D>& net) {
+        Drills d;
+        d.by.assign(mate_sets().size(), 0);
+        Rng r(run_seed ^ 0xD5111ULL ^ (mate_round * 0x9E3779B97F4A7C15ULL));
+        const Chooser me = net_player(net);
+        for (int i = 0; i < mate_drills; ++i) {
+            const std::size_t set = static_cast<std::size_t>(i) % mate_sets().size();
+            const int color = (i / static_cast<int>(mate_sets().size())) % 2 == 0 ? 1 : -1;
+            const int plies = mate_drill(me, mate_sets()[set], color, r);
+            if (plies >= 0) { ++d.mates; d.plies += plies; ++d.by[set]; }
+        }
+        return d;
     };
 
     while (!g_stop && !(rounds && round >= *rounds)) {
+        if (phase_mate) {  // mating drills: each player against its own mutation, the better one stays
+            std::vector<int> by(mate_sets().size(), 0);
+            long mates = 0, plies = 0, kept = 0;
+            for (int k = 0; k < kPlayers && !g_stop; ++k) {
+                const std::uint64_t parent = slot[static_cast<std::size_t>(k)];
+                const std::uint64_t child = pop.mutate(parent, profile);
+                const Drills dp = drills_of(pop.get(parent)), dc = drills_of(pop.get(child));
+                const bool take = dc.mates > dp.mates || (dc.mates == dp.mates && dc.plies <= dp.plies);  // ties: the mutation
+                pop.remove(take ? parent : child);
+                slot[static_cast<std::size_t>(k)] = take ? child : parent;
+                const Drills& d = take ? dc : dp;
+                kept += take;
+                mates += d.mates;
+                plies += d.plies;
+                for (std::size_t s = 0; s < by.size(); ++s) by[s] += d.by[s];
+            }
+            if (g_stop) break;
+            const double per_set = static_cast<double>(kPlayers) * mate_drills / static_cast<double>(mate_sets().size());
+            const double success = 100.0 * static_cast<double>(mates) / (static_cast<double>(kPlayers) * mate_drills);
+            double neurons = 0;
+            for (auto s : slot) neurons += static_cast<double>(pop.get(s).nodes.size() - kInputs);
+            neurons /= kPlayers;
+            mcsv << round << ',' << mate_round << ',' << success;
+            for (int b : by) mcsv << ',' << 100.0 * b / per_set;
+            mcsv << ',' << (mates ? static_cast<double>(plies) / static_cast<double>(mates) : 0.0) << ',' << kept << ',' << neurons << ','
+                 << secs() << '\n';
+            mcsv.flush();
+            std::cout << std::fixed << std::setprecision(1) << "drills " << mate_round << " (round " << round << "): " << success
+                      << "% mates;";
+            for (std::size_t s = 0; s < by.size(); ++s) std::cout << ' ' << mate_sets()[s].name << ' ' << 100.0 * by[s] / per_set << '%';
+            std::cout << "; " << (mates ? static_cast<double>(plies) / static_cast<double>(mates) : 0.0) << " plies/mate, " << kept
+                      << " mutations kept, neurons " << neurons << "  " << std::setprecision(0) << secs() << "s\n" << std::flush;
+            if (!puzzles.empty() && puzzle_every && round % puzzle_every == 0) puzzle_check(round);
+            ++mate_round;
+            if (success >= mate_until || mate_round >= mate_max) {
+                phase_mate = 0;
+                std::cout << "mating drills done after " << mate_round << " rounds (" << std::setprecision(1) << success
+                          << "% mates): round robin from round " << round + 1 << "\n";
+            }
+            ++round;
+            pop.next_generation();
+            save();
+            continue;
+        }
         // this round's pairings in a shuffled order; which of the two starts as white, at random
         std::vector<std::pair<int, int>> pairs;
         for (int a = 0; a < kPlayers; ++a)
@@ -340,6 +651,7 @@ int main(int argc, char** argv) {
                   << " plies/game, neurons " << neurons << "; best slot " << best << " (" << wins[static_cast<std::size_t>(best)]
                   << " wins): vs random " << res[0][0] << "/" << res[0][1] << "/" << res[0][2] << ", vs greedy " << res[1][0] << "/"
                   << res[1][1] << "/" << res[1][2] << " (W/D/L)  " << std::setprecision(0) << secs() << "s\n" << std::flush;
+        if (!puzzles.empty() && puzzle_every && round % puzzle_every == 0) puzzle_check(round);
         ++round;
         pop.next_generation();
         save();
