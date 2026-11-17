@@ -55,4 +55,9 @@ class ValidationError(ValueError):
     """A genome or parameter set violates the spec."""
 
 
+class DeadNodeError(ValidationError):
+    """A net that is valid except that some node reaches no output (spec/09). Load with
+    `collect_dead` to garbage-collect such nodes instead."""
+
+
 IDENTITY_WEIGHT = {VOp.MUL: 1.0, VOp.DIV: 1.0, VOp.ADD: 0.0, VOp.SUB: 0.0}

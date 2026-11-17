@@ -12,7 +12,25 @@ TEST_CASE("invalid golden") {
     REQUIRE(cases.size() >= 25);
     for (auto& [name, c] : cases) {
         INFO(name);
-        CHECK_THROWS_AS(from_bytes(hex_to_bytes(c["jnet"].get<std::string>())), ValidationError);
+        const Bytes data = hex_to_bytes(c["jnet"].get<std::string>());
+        const bool dead = c["reason"].get<std::string>() == "dead node";
+        if (dead) CHECK_THROWS_AS(from_bytes(data), DeadNodeError);
+        CHECK_THROWS_AS(from_bytes(data), ValidationError);
+        if (!dead) {
+            try {
+                from_bytes(data);
+            } catch (const DeadNodeError&) {
+                FAIL("dead node error for a case that is not one");
+            } catch (const ValidationError&) {
+            }
+        }
+        if (c.contains("collected_jnet")) {  // spec/10: collect_dead repairs exactly these
+            const AnyNet net = from_bytes(data, true);
+            std::visit([&](const auto& n) { CHECK(bytes_to_hex(to_bytes(n)) == c["collected_jnet"].get<std::string>()); }, net);
+        } else {
+            CHECK_FALSE(dead);
+            CHECK_THROWS_AS(from_bytes(data, true), ValidationError);
+        }
     }
 }
 

@@ -98,6 +98,11 @@ Loading MUST fail. Cases cover every structural rule plus binary damage: wrong m
 format version, wrong spec version, truncation, trailing bytes, checksum mismatch and
 out-of-range enumeration bytes.
 
+A case whose only fault is dead nodes has `"reason": "dead node"`, fails with the dead node error,
+and adds `"collected_jnet"`: loading with `collect_dead` ([09](09-serialization.md#collecting-dead-nodes-on-load))
+MUST yield a net that saves to exactly those bytes. Every other `invalid` case MUST still fail with
+`collect_dead`.
+
 ## Required coverage
 
 The golden set SHOULD include at least:

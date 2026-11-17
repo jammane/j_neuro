@@ -242,7 +242,7 @@ void Net<D>::validate() const {
     if (!run_ok(*this)) throw ValidationError("run rule: some path has too many 1:1 or many:1 neurons in a row");
     const auto reach = reaching_output(*this);
     for (NodeId i = n_inputs + n_outputs; i < n; ++i)
-        if (!reach[i]) throw ValidationError("dead node " + std::to_string(i));
+        if (!reach[i]) throw DeadNodeError("dead node " + std::to_string(i) + ": does not reach any output");
 }
 
 }  // namespace jneuro

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Union
 
 from .net import MNeuron, Net, Node, SNeuron, VNeuron
-from .types import AggOp, DepthType, Inversion, Priority, ValidationError, VOp
+from .types import AggOp, DeadNodeError, DepthType, Inversion, Priority, ValidationError, VOp
 
 MAGIC = b"JNET"
 NET_FORMAT_VERSION = 2     # .jnet; 1 = spec 0.5 (read and converted, spec/09)
@@ -153,8 +153,10 @@ def net_to_bytes(net: Net) -> bytes:
     return w.finish()
 
 
-def net_from_bytes(data: bytes) -> Net:
-    """Parse and fully validate .jnet bytes."""
+def net_from_bytes(data: bytes, collect_dead: bool = False) -> Net:
+    """Parse and fully validate .jnet bytes. Raises ValidationError, or DeadNodeError when the only
+    fault is nodes that reach no output. With `collect_dead`, such nodes are garbage-collected
+    instead (no replacement) and the net compacted (spec/09 collecting dead nodes on load)."""
     r = Reader(bytes(data), "jnet")
     legacy = r.header(MAGIC)
     priority = r.enum(Priority, "priority")
@@ -212,7 +214,17 @@ def net_from_bytes(data: bytes) -> Net:
     net = Net(priority, depth_type, q, n_in, n_out, nodes, next_birth, path_mix, max_run)
     if legacy:
         respace_05(net)
-    net.validate()
+    if not collect_dead:
+        net.validate()
+        return net
+    try:
+        net.validate()
+    except DeadNodeError:                # every other check passed: collect, compact, check again
+        from .removal import compact, garbage_collect
+        removed = set()
+        garbage_collect(net, removed)
+        compact(net, removed)
+        net.validate()
     return net
 
 
@@ -248,5 +260,5 @@ def save_net(net: Net, path: Union[str, Path]):
     Path(path).write_bytes(net_to_bytes(net))
 
 
-def load_net(path: Union[str, Path]) -> Net:
-    return net_from_bytes(Path(path).read_bytes())
+def load_net(path: Union[str, Path], collect_dead: bool = False) -> Net:
+    return net_from_bytes(Path(path).read_bytes(), collect_dead)

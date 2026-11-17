@@ -8,7 +8,7 @@ from typing import List, Optional, Union
 from .aggregate import aggregate
 from .numerics import bitnot, canon, ieee_div
 from .rng import Rng
-from .types import IDENTITY_WEIGHT, AggOp, DepthType, Inversion, Priority, ValidationError, VOp
+from .types import IDENTITY_WEIGHT, AggOp, DeadNodeError, DepthType, Inversion, Priority, ValidationError, VOp
 
 
 # A connection is (node, position): position 0 reads the node, position 1 the length node of the
@@ -106,18 +106,18 @@ class Net:
         return net_to_bytes(self)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "Net":
+    def from_bytes(cls, data: bytes, collect_dead: bool = False) -> "Net":
         from .jnet import net_from_bytes
-        return net_from_bytes(data)
+        return net_from_bytes(data, collect_dead)
 
     def save(self, path):
         from .jnet import save_net
         save_net(self, path)
 
     @classmethod
-    def load(cls, path) -> "Net":
+    def load(cls, path, collect_dead: bool = False) -> "Net":
         from .jnet import load_net
-        return load_net(path)
+        return load_net(path, collect_dead)
 
     def get_warmup_steps(self) -> int:
         """Steps after a reset before every s_neuron history on any path is filled (spec/05)."""
@@ -423,7 +423,7 @@ class Net:
         reach = reaching_output(self)
         for i in range(self.n_inputs + self.n_outputs, n):
             if i not in reach:
-                raise ValidationError(f"dead node {i}: does not reach any output")
+                raise DeadNodeError(f"dead node {i}: does not reach any output")
 
 
 def eval_v(n: VNeuron, x: float) -> float:

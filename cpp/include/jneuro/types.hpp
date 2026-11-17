@@ -25,6 +25,12 @@ struct ValidationError : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
+/// A net that is valid except that some node reaches no output (spec/09). Load with
+/// `collect_dead` to garbage-collect such nodes instead.
+struct DeadNodeError : ValidationError {
+    using ValidationError::ValidationError;
+};
+
 std::string to_string(Priority);
 std::string to_string(DepthType);
 std::string to_string(Inversion);

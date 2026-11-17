@@ -294,6 +294,28 @@ bad("dangling_reference", "reference", lambda g: g["nodes"][3]["neuron"].__setit
 bad("dead_node", "dead node", lambda g: (
     g["nodes"].append({"birth": 6, "born_gen": 0, "depth": 50, "neuron": v(0, "mul", 1.0)}),
     g.__setitem__("next_birth", 7)))
+# collect_dead (spec/09): the dead node goes; next_birth stays
+collected = copy.deepcopy(chain)
+collected["next_birth"] = 7
+invalid["dead_node"]["collected_jnet"] = encode(collected)
+
+# dead nodes among live ones: id 3 is dead, 7 (an s_neuron reading 3) and 8 (reading 7's history
+# node 1) only feed each other. collect_dead drops all three and renumbers: 4 5 6 -> 3 4 5.
+dead = genome(2, 1, 3, [
+    (D32, v(6, "sub", 0.5)),                 # id 2: output
+    (40, v(0, "mul", 3.0)),                  # id 3: dead
+    (100, v(0, "mul", 2.0)),                 # id 4
+    (100, v(1, "add", 1.0)),                 # id 5
+    (200, m("max", [4, 5, None])),           # id 6
+    (150, s(3, "mean", 1)),                  # id 7: dead
+    (300, v((7, 1), "add", 0.0)),            # id 8: dead
+], "U32")
+invalid["dead_nodes_renumbered"] = {"kind": "invalid", "jnet": encode(dead), "reason": "dead node"}
+collected = copy.deepcopy(chain)
+for node, birth in zip(collected["nodes"], [0, 1, 2, 4, 5, 6]):
+    node["birth"] = birth
+collected["next_birth"] = 9
+invalid["dead_nodes_renumbered"]["collected_jnet"] = encode(collected)
 bad("in_qty_max_too_small", "in_qty_max >= 3",
     lambda g: (g["params"].__setitem__("in_qty_max", 1),
                g["nodes"][5]["neuron"].__setitem__("slots", [3])))

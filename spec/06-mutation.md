@@ -570,16 +570,25 @@ collection, let `R` be the number of nodes marked removed (by the removal phase,
 garbage collection, including nodes grown in phase 3 and removed again). Then:
 
 ```
+L0 = number of live nodes
 added = 0; tries = 0
 while added < R and tries < 10 * R:
     tries += 1
     make one growth attempt (phase 3: method draw, then that method), except:
         if R - added == 1 and the drawn method is slot_fill: skip (no further draws)
-    if it succeeded: added += 2 if its method is slot_fill else 1
+    if it succeeded:
+        garbage collection (07)
+        added = number of live nodes - L0
 ```
 
-The exception makes replacement exact: slot fill adds two neurons, so it is not used for the last
-one, and the count never ends over `R`.
+The exception makes replacement exact: an attempt adds at most two neurons (slot fill), so slot
+fill is not used for the last one, and the count never ends over `R`.
+
+Garbage collection after each successful attempt keeps the result free of dead nodes. Path
+insertion leaves its A (now N) with no reader when A was read only at history positions, since
+those reads move to B ([path insertion](#path-insertion-v_insert-s_insert-m_after_m-m_insert)); in phase 3 the phase 6 garbage collection removes it, but replacement
+runs after it. Such an attempt adds B, loses A and counts zero. An attempt that strands nothing
+leaves garbage collection without effect, so it adds 1 (2 for slot fill) as before.
 
 The attempts are phase 3's, with the profile's `add_method_weights`, but without phase 3's
 gating (every generation, every offspring) and without per-type caps; new neurons get

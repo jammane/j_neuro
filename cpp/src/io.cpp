@@ -1,4 +1,5 @@
 #include <jneuro/io.hpp>
+#include <jneuro/removal.hpp>
 
 #include <algorithm>
 #include <fstream>
@@ -114,7 +115,7 @@ void Reader::done() const {
 namespace {
 
 template <class D>
-Net<D> parse_net(detail::Reader& r, Priority priority, bool legacy) {
+Net<D> parse_net(detail::Reader& r, Priority priority, bool legacy, bool collect_dead) {
     constexpr std::size_t W = sizeof(D);
     const std::uint64_t none = static_cast<std::uint64_t>(Net<D>::d_max);
     Net<D> net;
@@ -174,25 +175,38 @@ Net<D> parse_net(detail::Reader& r, Priority priority, bool legacy) {
     }
     r.done();
     if (legacy) respace_05(net);
-    net.validate();
+    if (!collect_dead) {
+        net.validate();
+        return net;
+    }
+    try {
+        net.validate();
+    } catch (const DeadNodeError&) {  // every other check passed: collect, compact, check again
+        Removed removed(net.nodes.size(), false);
+        garbage_collect(net, removed);
+        compact(net, removed);
+        net.validate();
+    }
     return net;
 }
 
 }  // namespace
 
-AnyNet from_bytes(const Bytes& data) {
+AnyNet from_bytes(const Bytes& data, bool collect_dead) {
     detail::Reader r(data, "jnet");
     const bool legacy = r.header("JNET");
     const auto priority = static_cast<Priority>(r.enum_byte(3, "priority"));
     switch (static_cast<DepthType>(r.enum_byte(3, "depth_type"))) {
-        case DepthType::U16: return parse_net<std::uint16_t>(r, priority, legacy);
-        case DepthType::U32: return parse_net<std::uint32_t>(r, priority, legacy);
-        case DepthType::U64: return parse_net<std::uint64_t>(r, priority, legacy);
+        case DepthType::U16: return parse_net<std::uint16_t>(r, priority, legacy, collect_dead);
+        case DepthType::U32: return parse_net<std::uint32_t>(r, priority, legacy, collect_dead);
+        case DepthType::U64: return parse_net<std::uint64_t>(r, priority, legacy, collect_dead);
     }
     throw ValidationError("jnet: unknown depth_type");
 }
 
-AnyNet load_net(const std::filesystem::path& path) { return from_bytes(read_file(path)); }
+AnyNet load_net(const std::filesystem::path& path, bool collect_dead) {
+    return from_bytes(read_file(path), collect_dead);
+}
 
 AnyNet create(std::uint32_t n_inputs, std::uint32_t n_outputs, DepthType depth_type, std::uint32_t q,
               Priority priority, Rng& rng, std::uint32_t path_mix, std::uint32_t max_run) {

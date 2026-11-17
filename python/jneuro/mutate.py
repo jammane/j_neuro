@@ -878,10 +878,13 @@ class _Mutation:
 
     def replace_removed(self):
         """spec/06 replacement: grow as many neurons as were removed (phase 3 attempts, no gating,
-        no per-type caps)."""
+        no per-type caps). Garbage collection follows every successful attempt (path insertion
+        strands its A when only history reads read it), and `added` is the live count's growth
+        since replacement began."""
         r = len(self.removed)
         caps = {t: None for t in TYPES}
         used = {t: 0 for t in TYPES}
+        base = len(self.net.nodes) - len(self.removed)
         added = tries = 0
         while added < r and tries < 10 * r:
             tries += 1
@@ -891,9 +894,10 @@ class _Mutation:
             self.no_slot_fill = False
             if grown is not None:
                 self.counts[self.op] = self.counts.get(self.op, 0) + 1
-                n = 2 if self.op == "slot_fill" else 1
-                added += n
-                self.counts["gc_replace"] = self.counts.get("gc_replace", 0) + n
+                garbage_collect(self.net, self.removed)
+                now = len(self.net.nodes) - len(self.removed) - base
+                self.counts["gc_replace"] = self.counts.get("gc_replace", 0) + now - added
+                added = now
 
 
 # Every operation name that mutation counts (informative; not part of the spec's results).

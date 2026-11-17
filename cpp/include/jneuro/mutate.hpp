@@ -81,10 +81,18 @@ private:
     bool no_slot_fill_ = false;  // set while replacement places its last neuron
 
     /// spec/06 replacement: grow as many neurons as were removed (phase 3 attempts, no gating, no caps).
+    /// Garbage collection follows every successful attempt (path insertion strands its A when only
+    /// history reads read it), and `added` is the live count's growth since replacement began.
     void replace_removed() {
         std::int64_t r = 0;
         for (bool x : removed_) r += x;
         for (auto& c : caps_) c = std::nullopt;
+        auto live_count = [&] {
+            std::int64_t n = 0;
+            for (bool x : removed_) n += !x;
+            return n;
+        };
+        const std::int64_t base = live_count();
         std::int64_t added = 0;
         for (std::int64_t tries = 0; added < r && tries < 10 * r;) {
             ++tries;
@@ -94,9 +102,10 @@ private:
             no_slot_fill_ = false;
             if (grown) {
                 ++counts[op_];
-                const std::int64_t n = std::string_view(op_) == "slot_fill" ? 2 : 1;
-                added += n;
-                counts["gc_replace"] += n;
+                garbage_collect(net_, removed_);
+                const std::int64_t now = live_count() - base;
+                counts["gc_replace"] += now - added;
+                added = now;
             }
         }
     }

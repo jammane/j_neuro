@@ -35,11 +35,13 @@ using AnyNet = std::variant<Net<std::uint16_t>, Net<std::uint32_t>, Net<std::uin
 /// The canonical .jnet bytes of a net.
 template <class D>
 Bytes to_bytes(const Net<D>& net);
-/// Parse and fully validate .jnet bytes. Throws ValidationError.
-AnyNet from_bytes(const Bytes& data);
+/// Parse and fully validate .jnet bytes. Throws ValidationError, or DeadNodeError when the only fault
+/// is nodes that reach no output. With `collect_dead`, such nodes are garbage-collected instead (no
+/// replacement) and the net compacted (spec/09 collecting dead nodes on load).
+AnyNet from_bytes(const Bytes& data, bool collect_dead = false);
 template <class D>
 void save_net(const std::filesystem::path& path, const Net<D>& net);
-AnyNet load_net(const std::filesystem::path& path);
+AnyNet load_net(const std::filesystem::path& path, bool collect_dead = false);
 
 Bytes read_file(const std::filesystem::path& path);
 void write_file(const std::filesystem::path& path, const Bytes& data);

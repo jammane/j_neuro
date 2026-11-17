@@ -87,6 +87,23 @@ A reader MUST reject a `.jnet` unless all of these hold:
 - The path, mix and run rules hold; no node fails to reach an output.
 - `birth` values unique and all `< next_birth`.
 
+A file that fails only because some node reaches no output is rejected with a distinct error, the
+**dead node error**, a kind of validation error, so a caller can tell it from damage.
+
+#### Collecting dead nodes on load
+
+A reader MUST also offer loading with `collect_dead`. A file that passes every check but the
+dead-node check is then repaired instead of rejected: garbage collection
+([07](07-removal.md#garbage-collection-phase-6)) marks every hidden node that reaches no output
+removed, compaction deletes them (remaining nodes keep their order and `birth`; `next_birth` is
+unchanged), and the result must pass every check. Garbage collection never replaces a node, and no
+random number is drawn. A file that is valid is loaded unchanged; any other failure is still an
+error.
+
+Informative: implementations before the 0.6.0 replacement fix could write nets with dead nodes
+(`gc_replace` on with `history_read_prob` > 0); `collect_dead` loads them, and outputs are
+unchanged, since a dead node feeds no output.
+
 ### Reading 0.5 nets
 
 A format-1 file written under spec 0.5 is read with every position 0, then its depths are

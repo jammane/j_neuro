@@ -165,9 +165,8 @@ def history_profiles():
     return out
 
 
-def make_mutate_history():
-    """Parents grown with history_read_prob > 0, so op and k changes, path insertions (history moves
-    with N), removal, folding and depth shifts all meet length and history connections."""
+def history_parents():
+    """Parents grown with history_read_prob > 0."""
     grow = Profile.default()
     for f in PHASES:
         grow.overall[f] = 35.0
@@ -184,6 +183,13 @@ def make_mutate_history():
                 for c in ([node.neuron.input_pos] if not hasattr(node.neuron, "slots")
                           else [node.neuron.slot_pos(i) for i in range(len(node.neuron.slots))]) if c > 0)
     assert reads > 0, "history parents should read length or history nodes"
+    return parents
+
+
+def make_mutate_history():
+    """Op and k changes, path insertions (history moves with N), removal, folding and depth shifts
+    all meet length and history connections."""
+    parents = history_parents()
     for pname, prof in history_profiles().items():
         for pi, parent in enumerate(parents):
             seed = 17 * pi + len(pname)
@@ -193,6 +199,26 @@ def make_mutate_history():
                   {"kind": "mutate", "seed": seed, "generation": gen,
                    "jnet": net_to_bytes(parent).hex(), "profile": prof.to_dict(),
                    "expected_jnet": net_to_bytes(child).hex()})
+
+
+def make_mutate_gc_replace_history():
+    """Replacement after a path insertion whose A only history reads read: A is left with no reader
+    and garbage-collected at once (spec/06 replacement). Before that fix these children had a dead
+    node."""
+    parents = history_parents()
+    p = Profile.default()
+    for f in PHASES:
+        p.overall[f] = 40.0
+    p.overall.update({"history_read_prob": 0.3, "rewire_prob": 0.3, "min_age_for_removal": 0,
+                      "insert_depth": "uniform", "gc_replace": "on", "constant_folding": "on", "prune": "any"})
+    p.overall["add_method_weights"].update({"s_insert": 60, "v_insert": 60, "m_insert": 30, "v_link": 30,
+                                            "s_link": 30})
+    for pi, seed in ((0, 82), (2, 111), (2, 139)):
+        child = mutate(parents[pi], p, 30, Rng(seed))
+        write("mutate", f"mutate_gc_replace_history_p{pi}_s{seed}",
+              {"kind": "mutate", "seed": seed, "generation": 30,
+               "jnet": net_to_bytes(parents[pi]).hex(), "profile": p.to_dict(),
+               "expected_jnet": net_to_bytes(child).hex()})
 
 
 def make_mutate():
@@ -350,6 +376,7 @@ if __name__ == "__main__":
         make_mutate()
         make_mutate_mix()
         make_mutate_history()
+        make_mutate_gc_replace_history()
     if what in ("diversity", "all"):
         make_diversity()
     if what in ("population", "all"):

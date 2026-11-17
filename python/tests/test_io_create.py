@@ -5,7 +5,7 @@ import struct
 import pytest
 from helpers import M, S, V, load_golden, make_net
 
-from jneuro import AggOp, DepthType, MNeuron, Net, Priority, SNeuron, ValidationError, VNeuron
+from jneuro import AggOp, DeadNodeError, DepthType, MNeuron, Net, Priority, SNeuron, ValidationError, VNeuron
 from jneuro.analysis import connections, mix_ok, path_rule_ok, run_ok
 from jneuro.jnet import load_net, net_from_bytes, net_to_bytes, save_net
 from jneuro.rng import Rng
@@ -16,8 +16,21 @@ D16 = 65535
 
 @pytest.mark.parametrize("name,case", INVALID, ids=[c[0] for c in INVALID])
 def test_invalid_golden(name, case):
-    with pytest.raises(ValidationError):
-        net_from_bytes(bytes.fromhex(case["jnet"]))
+    data = bytes.fromhex(case["jnet"])
+    with pytest.raises(ValidationError) as e:
+        net_from_bytes(data)
+    assert isinstance(e.value, DeadNodeError) == (case["reason"] == "dead node")
+    if "collected_jnet" in case:                 # spec/10: collect_dead repairs exactly these
+        assert net_to_bytes(net_from_bytes(data, collect_dead=True)).hex() == case["collected_jnet"]
+    else:
+        assert case["reason"] != "dead node"
+        with pytest.raises(ValidationError):
+            net_from_bytes(data, collect_dead=True)
+
+
+def test_collect_dead_keeps_valid_nets():
+    net = make_net(1, 1, 3, [(D16, V(0, "add", 0.5))])
+    assert net_to_bytes(net_from_bytes(net_to_bytes(net), collect_dead=True)) == net_to_bytes(net)
 
 
 def test_invalid_present():
